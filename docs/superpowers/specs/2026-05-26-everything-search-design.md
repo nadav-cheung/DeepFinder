@@ -166,6 +166,8 @@ struct UsageStats {
 
 所有文件名入库前做 **NFC 统一化**（`name.precomposedStringWithCanonicalMapping`），查询时同样统一化。
 
+**大小写处理**：默认不区分大小写（APFS 默认行为）。FullSubstringMap 的 key 统一用 `.lowercased()` 存储，查询时同样 `.lowercased()`。显示时使用 `originalName` 保留原始大小写。
+
 ### 2.2 索引结构（速度优先）
 
 | 索引 | 结构 | 用途 | 查询速度 | 内存/文件 |
@@ -219,6 +221,7 @@ PinyinIndex 单独一个 Trie，存储拼音 token → FileRecord.ID 映射。
 - 跳过：`/System`, `/Library`, `.Trash`, `.git`, `node_modules`, `.Spotlight-V100`，可配置
 - 默认排除隐私目录：`~/Library/Caches`, `~/Library/Cookies`, `~/Library/Keychains`
 - 只索引当前用户 home 目录 + 系统共享目录（不索引其他用户 home）
+- **外置磁盘/网络卷**：全部索引。卷卸载时从索引移除，重新挂载时增量更新
 - `TaskGroup` 按卷并行扫描
 - 边扫边建索引：扫描过程中即可搜索，不等全部完成
 - 全量扫描使用 `DispatchQueue.global(qos: .userInitiated)` 高优先级（速度第一）
@@ -308,9 +311,19 @@ protocol SearchProvider: Sendable {
 
 struct SearchQuery: Sendable {
     let id: String             // 唯一查询 ID，用于取消
-    let text: String           // 已 NFC 统一化
+    let text: String           // 已 NFC 统一化 + lowercased
     let limit: Int             // 默认 100
     let options: SearchOptions
+}
+
+struct SearchOptions: Sendable {
+    var caseSensitive: Bool = false        // 默认不区分大小写
+    var searchScope: SearchScope = .all    // 搜索范围
+
+    enum SearchScope: Sendable {
+        case all                    // 全局搜索
+        case directories([String])  // 指定目录
+    }
 }
 
 struct SearchResult: Sendable {
@@ -338,6 +351,8 @@ enum MatchType: Sendable {
 
 **防抖策略**：FileIndexProvider（内存索引）不需要防抖，每按键直接查询，零延迟。未来 mdfind/AI Provider 各自配置防抖时间。
 
+**分页加载**：默认返回前 100 条结果。结果列表底部显示"还有 N 个结果"按钮，点击加载下一批 100 条。虚拟化列表（LazyVStack）保证滚动性能。
+
 ### 3.3 排序策略
 
 | 因素 | 权重 | 说明 |
@@ -360,21 +375,22 @@ enum MatchType: Sendable {
 
 ### 4.1 窗口
 
-- NSPanel 浮动窗口，无标题栏，透明背景
+- NSPanel 浮动窗口，无标题栏
+- **Liquid Glass** 材质：`.glassEffect(.regular, in: .rect(cornerRadius: 24))` — macOS 26 原生玻璃效果
 - `.floating` 窗口层级
-- `.ultraThinMaterial` 毛玻璃背景
 - 点击外部 / Esc 自动关闭
 - 屏幕顶部居中（`NSScreen.main` — 当前活跃屏幕，非主屏幕）
+- `GlassEffectContainer` 包裹搜索框和结果列表，统一渲染 + 形态动画
 
 ### 4.2 Apple Intelligence 光晕
 
 - **触发条件**：搜索框获得焦点时激活
-- **视觉**：AngularGradient 多色旋转描边
+- **视觉**：AngularGradient 多色旋转描边，叠加在 Liquid Glass 容器外围
   - 颜色：青蓝 / 紫 / 珊瑚粉 / 暖琥珀
   - 旋转周期：~1.8s
   - 4 层叠加（不同线宽 + 模糊半径）
   - 外层柔光 halo
-- **M4 优化**：GPU 性能充足，4 层光晕无性能压力。60fps 满帧运行
+- **M4 优化**：GPU 性能充足，60fps 满帧运行
 - **无障碍**：`accessibilityReduceMotion` 时降级为静态渐变边框
 - **面板不可见时暂停动画**，避免 GPU 空转
 - **索引扫描中**：光晕持续旋转 + 进度文字 "正在索引... x / y 文件"
@@ -383,14 +399,17 @@ enum MatchType: Sendable {
 
 ```
 SearchPanelView
-├── GlowBorderView (IntelligenceStrokeView)
-├── SearchBarView (图标 + TextField + 清除按钮)
-└── ResultsListView
-    └── ResultRowView
-        ├── 文件图标 (FileIconCache)
-        ├── 文件名 (高亮匹配部分)
-        ├── 路径
-        └── 大小 / 日期
+├── GlassEffectContainer
+│   ├── GlowBorderView (Apple Intelligence 光晕)
+│   ├── SearchBarView (图标 + TextField + 清除按钮)
+│   │       .glassEffect() — Liquid Glass 搜索栏
+│   └── ResultsListView
+│       └── ResultRowView
+│           ├── 文件图标 (FileIconCache)
+│           ├── 文件名 (高亮匹配部分，保留原始大小写)
+│           ├── 路径
+│           └── 大小 / 日期
+│       └── LoadMoreButton ("还有 N 个结果")
 ```
 
 **文件图标缓存**：

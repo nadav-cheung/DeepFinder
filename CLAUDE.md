@@ -53,6 +53,10 @@ Index layer has zero UI dependencies and can be tested in isolation.
 
 **Apple Intelligence glow**: AngularGradient (teal/violet/coral/amber) rotating ~1.8s, 4 layers, 60fps on M4+. Static border for reduceMotion. Paused when panel hidden.
 
+**UI material**: macOS 26 Liquid Glass (`.glassEffect()`) for the search panel and controls. `GlassEffectContainer` for unified rendering. Apple Intelligence glow overlays on top.
+
+**Search behavior**: Case-insensitive by default (preserves original case for display). NFC normalized. Paginated results (100 per page, "load more" button). No debounce for in-memory queries. External and network volumes indexed (removed on unmount).
+
 ## Reference
 
 Full architecture spec: `docs/superpowers/specs/2026-05-26-everything-search-design.md`
