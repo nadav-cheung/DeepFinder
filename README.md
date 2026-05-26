@@ -4,7 +4,8 @@ A blazing-fast file search utility for macOS, inspired by [Everything](https://w
 
 ## Features
 
-- Instant file name search with custom in-memory index
+- Instant file name search with custom in-memory index (O(1) substring lookup)
+- Pinyin search for Chinese filenames
 - Spotlight-like UI with Apple Intelligence glow animation
 - Global hotkey to invoke search from anywhere (⌥Space)
 - Menu bar app — no Dock icon, stays out of your way
@@ -12,8 +13,8 @@ A blazing-fast file search utility for macOS, inspired by [Everything](https://w
 
 ## Requirements
 
-- macOS 14 (Sonoma) or later
-- Xcode 16+
+- Apple Silicon M4 or later
+- macOS 26 (Tahoe) or later
 
 ## Build
 

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Everything Search — a macOS file search app rivaling Windows Everything. Menu bar app (LSUIElement=true), no Dock icon, invoked via global hotkey (⌥Space). Apple Silicon M4+ only, arm64, minimum macOS 15 (Sequoia). **Speed is the #1 priority — memory and CPU are not constraints.**
+Everything Search — a macOS file search app rivaling Windows Everything. Menu bar app (LSUIElement=true), no Dock icon, invoked via global hotkey (⌥Space). Apple Silicon M4+ only, arm64, minimum macOS 26 (Tahoe). **Speed is the #1 priority — memory and CPU are not constraints.**
 
 ## Build & Test
 

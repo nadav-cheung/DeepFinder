@@ -8,7 +8,7 @@
 |------|-----|
 | 名称 | everything-search |
 | 平台 | macOS only, Apple Silicon M4+ |
-| 最低系统 | macOS 15 (Sequoia) |
+| 最低系统 | macOS 26 (Tahoe) |
 | 架构 | arm64 only |
 | 技术栈 | Swift + SwiftUI |
 | 应用形态 | Menu Bar App (LSUIElement=true) |
@@ -69,7 +69,8 @@
 │  ┌──────▼──────────────────────▼────────────┐  │
 │  │     InMemoryIndex (actor)                 │  │
 │  │  - Trie (前缀匹配)                        │  │
-│  │  - TrigramIndex (子串匹配)                │  │
+│  │  - FullSubstringMap (子串 O(1) 直查)      │  │
+│  │  - TrigramIndex (长文件名兜底)            │  │
 │  │  - PinyinIndex (拼音搜索)                 │  │
 │  │  - FileRecord[] (路径、大小、日期)        │  │
 │  └──────────────────────────────────────────┘  │
@@ -89,7 +90,7 @@
 | SearchProvider (协议) | 统一搜索接口，返回 AsyncSequence |
 | FileIndexProvider | MVP 唯一的 Provider，调用自建索引 |
 | IndexingEngine (actor) | 文件扫描 + FSEvents 监听 → 维护内存索引 |
-| InMemoryIndex (actor) | Trie + TrigramIndex + PinyinIndex，纯内存 |
+| InMemoryIndex (actor) | Trie + FullSubstringMap + TrigramIndex + PinyinIndex，纯内存 |
 | IndexPersistence | SQLite WAL 存储 FileRecord[]，内存重建索引 |
 
 ### 依赖方向
@@ -219,10 +220,8 @@ PinyinIndex 单独一个 Trie，存储拼音 token → FileRecord.ID 映射。
 - 默认排除隐私目录：`~/Library/Caches`, `~/Library/Cookies`, `~/Library/Keychains`
 - 只索引当前用户 home 目录 + 系统共享目录（不索引其他用户 home）
 - `TaskGroup` 按卷并行扫描
-- 使用 `DispatchQueue.global(qos: .utility)` 降低优先级，避免影响前台
 - 边扫边建索引：扫描过程中即可搜索，不等全部完成
-
-**M4+ 性能预估**：百万文件首次扫描 < 10 秒。全量扫描使用 `DispatchQueue.global(qos: .userInitiated)` 高优先级（用户主动启动，速度优先）。
+- 全量扫描使用 `DispatchQueue.global(qos: .userInitiated)` 高优先级（速度第一）
 
 ### 2.4 FSEvents 增量更新
 
@@ -275,7 +274,7 @@ final class MockEventStream: FileSystemEventStream { ... }
 **持久化策略 — SQLite 混合方案：**
 
 - SQLite 存储 `FileRecord[]`（简单表：id, name, path, metadata 列）
-- 不持久化 Trie / TrigramIndex 结构 → 启动时从 FileRecord[] 重建（M4 上 ~1-2s）
+- 不持久化索引结构（Trie / FullSubstringMap / TrigramIndex / PinyinIndex）→ 启动时从 FileRecord[] 重建（M4 上 ~1-2s）
 - 增量持久化：内存缓冲变更，每 5 秒或每 100 条变更批量写入（避免 FSEvents 高频回调导致 I/O 抖动）
 - WAL 模式：读写不互斥
 - 索引损坏恢复：加载时校验（行数 + checksum），失败则删除重建 + 进度 UI
@@ -290,13 +289,15 @@ final class MockEventStream: FileSystemEventStream { ... }
 
 ```swift
 protocol SearchProvider: Sendable {
+    associatedtype SearchStream: AsyncSequence where SearchStream.Element == SearchResult
+
     var name: String { get }
     var isReady: Bool { get }
 
     /// 流式搜索，支持增量返回结果。
     /// MVP 的内存索引可一次 yield 全部结果。
     /// 未来的 AI/内容搜索可增量 yield。
-    func search(query: SearchQuery) -> AsyncSequence<SearchResult, Never>
+    func search(query: SearchQuery) -> SearchStream
 
     /// 取消进行中的查询
     func cancel(queryID: String)
@@ -440,7 +441,7 @@ final class FileIconCache {
 App Launch
   ├─ 检查 ~/.everything-search/index.db
   ├─ [存在] 加载 FileRecord[] (SQLite, <1s)
-  │         重建内存索引 (Trie + Trigram, <2s)
+  │         重建内存索引 (Trie + FullSubstringMap + Trigram, <2s)
   │         indexState = .stale → 立即可搜索
   ├─ [不存在] 全量扫描 → 边扫边建索引 → 显示进度
   ├─ 启动 FSEventStream（立即捕获变更）
@@ -522,7 +523,7 @@ everything-search/
     ├── IndexTests/
     │   ├── TrieTests.swift
     │   ├── TrigramIndexTests.swift
-│   │   ├── FullSubstringMapTests.swift
+    │   ├── FullSubstringMapTests.swift
     │   ├── PinyinIndexTests.swift
     │   ├── InMemoryIndexTests.swift
     │   ├── InMemoryIndexPerformanceTests.swift
@@ -565,7 +566,7 @@ everything-search/
 
 | Phase | 内容 | 依赖 |
 |-------|------|------|
-| 1 | FileRecord → Trie → TrigramIndex → PinyinIndex → InMemoryIndex (actor) → Fixtures + Tests | 无 |
+| 1 | FileRecord → Trie → FullSubstringMap → TrigramIndex → PinyinIndex → InMemoryIndex (actor) → Fixtures + Tests | 无 |
 | 2 | FileSystemEventStream protocol → FileScanner → FSEventWatcher → IndexPersistence → IndexRecovery | Phase 1 |
 | 3 | SearchProvider 协议 → SearchCoordinator → Performance benchmarks | Phase 2 |
 | 4 | SearchPanelView → SearchBarView → ResultsListView → IntelligenceGlow → FileIconCache | Phase 3 |
