@@ -4,7 +4,7 @@ import Foundation
 
 /// Describes how a query matched a file name.
 /// Lower rawValue = higher priority (used for result ordering).
-enum MatchType: Int, Comparable, Sendable {
+enum MatchType: Int, Codable, Comparable, Sendable {
     case exact = 0
     case prefix = 1
     case pinyin = 2
@@ -36,7 +36,7 @@ struct SearchQuery: Sendable {
 
 /// A single search result from a provider.
 /// Equality is determined by record.id for deduplication purposes.
-struct SearchResult: Sendable, Equatable {
+struct SearchResult: Codable, Sendable, Equatable {
     let record: FileRecord
     let providerID: String
     let score: Double
