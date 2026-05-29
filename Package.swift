@@ -10,7 +10,10 @@ let package = Package(
     targets: [
         .target(
             name: "DeepFinder",
-            path: "Sources"
+            path: "Sources",
+            linkerSettings: [
+                .linkedLibrary("edit")
+            ]
         ),
         .testTarget(
             name: "DeepFinderTests",
