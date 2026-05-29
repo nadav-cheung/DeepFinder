@@ -16,17 +16,157 @@
 | 数据目录 | ~/.everything-search/ |
 | 分发渠道 | GitHub Releases + Homebrew Cask |
 
-## MVP 范围
+## 功能路线图
 
-**只做文件名搜索**，架构为后续功能预留扩展性：
+对标 Windows Everything 全部功能，采用渐进式开发。每个版本独立可用，逐步叠加能力。
 
-| 阶段 | 功能 |
+**设计原则**：性能优先，内存/CPU 不受约束。SearchProvider 协议 + 插件式架构确保新功能不影响现有代码。
+
+### v1.0 — 核心搜索
+
+| 功能 | 说明 |
 |------|------|
-| MVP | 文件名搜索（前缀 + 子串 + 拼音） |
-| V2 | 高级搜索语法（通配符、正则、布尔表达式） |
-| V3 | 元数据过滤（大小、日期、类型、扩展名） |
-| V4 | 内容搜索 |
-| V5 | AI 语义搜索 |
+| 文件名搜索 | 前缀 + 任意子串 + 拼音（FullSubstringMap O(1)) |
+| 实时监控 | FSEvents 增量更新 |
+| 全局热键 | ⌥Space 唤起，Esc 关闭 |
+| Menu Bar App | LSUIElement=true，无 Dock 图标 |
+| Spotlight 风格 UI | Liquid Glass + Apple Intelligence 光晕 |
+| 持久化索引 | SQLite WAL，启动重建 <2s |
+| 拼音搜索 | CFStringTokenizer → 拼音 Trie，支持首字母缩写 |
+| NFC 统一化 | 所有文件名 NFC 统一化，避免 Unicode 比较问题 |
+
+### v1.1 — 高级搜索语法
+
+对标 Everything 搜索语法。
+
+| 功能 | 示例 | 说明 |
+|------|------|------|
+| 布尔运算符 | `ABC 123` (AND), `ABC\|123` (OR), `!ABC` (NOT) | 空格=AND, \|=OR, !=NOT |
+| 通配符 | `*.pdf`, `report_??.xlsx` | `*` 任意字符, `?` 单字符 |
+| 正则表达式 | `regex:^report_\d{4}` | regex: 前缀激活 |
+| 路径限定 | `Documents\ report`, `parent:~/Documents` | 路径内搜索 |
+| 修饰符 | `case:`, `file:`, `folder:`, `ext:pdf;doc`, `path:` | 搜索选项控制 |
+| 搜索历史 | ↑↓ 回溯历史查询 | 持久化最近 100 条 |
+
+### v1.2 — 元数据过滤
+
+对标 Everything functions（size:, dm:, ext: 等）。
+
+| 功能 | 示例 | 说明 |
+|------|------|------|
+| 大小过滤 | `size:>1mb`, `size:100kb..10mb` | 支持 kb/mb/gb 单位和范围 |
+| 日期过滤 | `dm:today`, `dc:thisweek`, `dm:2026-01-01..2026-03-31` | 创建/修改/访问日期 |
+| 扩展名过滤 | `ext:pdf;doc;xlsx` | 分号分隔多扩展名 |
+| 类型过滤 | `audio:`, `video:`, `pic:`, `doc:` | 预定义文件类型宏 |
+| 文件/文件夹 | `file:`, `folder:` | 限定结果类型 |
+| 路径深度 | `depth:3` | 限定目录层级 |
+| 高级搜索面板 | GUI 表单构建复杂查询 | 对标 Everything Advanced Search |
+
+### v1.3 — 搜索体验
+
+对标 Everything 书签、过滤器、排序。
+
+| 功能 | 说明 |
+|------|------|
+| 书签 | 保存搜索+排序+过滤，一键恢复 |
+| 自定义过滤器 | 预定义搜索条件 + 快捷键 + 宏（如 `photos:` → `ext:jpg;png;heic pic:`）|
+| 结果排序 | 名称/大小/日期/扩展名/路径，自然排序（natural sort）|
+| 排序持久化 | 记住上次排序方式 |
+| Quick Look | Space 预览文件 |
+| 右键菜单 | 在 Finder 中显示 / 复制路径 / 拖拽 / 打开方式 |
+| 搜索建议 | 基于历史和热门文件的自动补全 |
+| 高亮匹配 | 结果中高亮匹配的子串，保留原始大小写 |
+
+### v1.4 — 内容搜索
+
+对标 Everything content: 函数。
+
+| 功能 | 示例 | 说明 |
+|------|------|------|
+| 内容搜索 | `*.eml dm:thisweek content:banana` | 流式读取，结合其他过滤先缩小范围 |
+| 编码支持 | UTF-8, UTF-16, UTF-16BE | 自动检测或手动指定 |
+| 文件类型限定 | `ext:swift;py;md content:TODO` | 只搜索特定扩展名的内容 |
+| 行号定位 | 结果显示匹配行号，点击跳转编辑器 | 仅文本文件 |
+
+**注意**：内容不预建索引（对标 Everything 设计），查询时实时扫描，需结合其他过滤缩小范围。
+
+### v1.5 — 重复文件与高级查找
+
+对标 Everything dupe: 系列函数。
+
+| 功能 | 示例 | 说明 |
+|------|------|------|
+| 按名称查重 | `dupe:` | 相同文件名的文件 |
+| 按大小查重 | `size:>1mb sizedupe:` | 相同大小的文件 |
+| 按内容哈希查重 | `hashdupe:` | SHA-256，比 Everything 更精确 |
+| 空文件夹 | `empty:` | 查找空目录 |
+| 文件名长度 | `len:>100` | 超长文件名查找 |
+| 子项计数 | `childcount:0`, `childfilecount:>10` | 目录内文件/子目录数量 |
+
+### v2.0 — 扩展索引
+
+对标 Everything File Lists + Folder Indexing + Index Journal。
+
+| 功能 | 说明 |
+|------|------|
+| 外置卷索引 | USB/Thunderbolt 磁盘自动索引，卸载时保留索引，重新挂载增量更新 |
+| 网络卷索引 | SMB/AFP/NFS 共享目录索引 |
+| 虚拟文件夹索引 | 对标 1.5 新功能，索引非本地路径 |
+| 离线文件列表 | 对标 File Lists — 光盘/归档媒体的离线索引 |
+| Spotlight 元数据 | 通过 mdls 集成 Spotlight 元数据（尺寸、时长、标签等）|
+| 索引日志 | 对标 Index Journal — 记录文件变更历史 |
+| 排除规则 | 可配置的排除/包含路径和模式 |
+
+### v2.1 — 媒体元数据
+
+对标 Everything 图片/音频元数据搜索，macOS 通过 mdls + AVFoundation 实现。
+
+| 功能 | 示例 | 说明 |
+|------|------|------|
+| 图片尺寸 | `width:>2560`, `dimensions:800x600..1920x1080` | EXIF 元数据 |
+| 图片方向 | `orientation:landscape` | portrait/landscape |
+| 音频标签 | `artist:周杰伦`, `album:范特西`, `genre:pop` | ID3/AAC 元数据 |
+| 视频信息 | `duration:>300`, `codec:h264` | AVFoundation 元数据 |
+| PDF 元数据 | `pdf-author:xxx`, `pdf-pages:>50` | PDFKit 提取 |
+
+### v2.2 — 服务与集成
+
+对标 Everything HTTP Server + ETP/FTP + CLI + SDK。
+
+| 功能 | 说明 |
+|------|------|
+| HTTP 搜索服务 | 本地 Web 界面，浏览器搜索文件 |
+| 命令行工具 | `es search "keyword"` — 终端搜索，输出 JSON/纯文本 |
+| URL Scheme | `everything://search?q=keyword` — 其他 app 调起搜索 |
+| Shortcuts 集成 | Apple Shortcuts 动作，支持自动化 |
+| AppleScript | 脚本化搜索和结果获取 |
+| Share Extension | 从其他 app 搜索文件 |
+
+### v3.0 — AI 语义搜索
+
+超越 Everything 的下一代功能。
+
+| 功能 | 说明 |
+|------|------|
+| 语义搜索 | 自然语言查询 → 向量嵌入 → 相似文件 |
+| 智能建议 | 基于使用习惯的搜索推荐 |
+| 内容理解 | AI 读取文件内容并生成摘要/标签 |
+| 智能分类 | 自动文件分类（工作/个人/项目/媒体） |
+
+### macOS 特有增强
+
+Windows Everything 不具备，利用 macOS 平台能力：
+
+| 功能 | 说明 |
+|------|------|
+| Finder 标签 | 搜索 macOS Finder Tags（红/橙/黄/绿/蓝/紫/灰）|
+| Finder 评论 | 搜索 Spotlight Comments |
+| iCloud 同步状态 | 区分本地/云端/仅云端文件 |
+| APFS 快照 | 在 Time Machine 快照中搜索历史版本 |
+| 沙盒友好 | 未来可选沙盒版本上架 App Store（功能受限） |
+| Apple Watch | 手表上查找最近文件（Complication） |
+| Widgets | 桌面/通知中心小组件显示搜索/最近文件 |
+| Live Activity | 索引进度 Live Activity（锁屏/通知中心）|
 
 ---
 

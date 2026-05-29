@@ -25,14 +25,25 @@ swift run                                # Run the app
 
 ## Version Roadmap
 
-| Version | Milestone | Deliverables | Branch |
-|---------|-----------|-------------|--------|
-| `v0.1.0` | Index core | FileRecord, Trie, FullSubstringMap, TrigramIndex, PinyinIndex, InMemoryIndex, fixtures, tests | `dev/v0.1` |
-| `v0.2.0` | File system | FileSystemEventStream protocol, FileScanner, FSEventWatcher, IndexPersistence, index recovery | `dev/v0.2` |
-| `v0.3.0` | Search | SearchProvider protocol, SearchCoordinator, performance benchmarks | `dev/v0.3` |
-| `v0.4.0` | UI | SearchPanel, SearchBar, ResultsList, IntelligenceGlow, FileIconCache | `dev/v0.4` |
-| `v0.5.0` | Integration | GlobalHotkey, StatusBar, AppDelegate, Settings | `dev/v0.5` |
-| `v1.0.0` | Release | QuickLook, context menus, drag-and-drop, UI tests, polish | `dev/v1.0` |
+渐进式开发，每个版本独立可用。详细功能清单见 `docs/superpowers/specs/2026-05-26-everything-search-design.md` §功能路线图。
+
+| Version | Milestone | Key Features |
+|---------|-----------|-------------|
+| `v0.1.0` | Index core | FileRecord, Trie, FullSubstringMap, TrigramIndex, PinyinIndex, InMemoryIndex |
+| `v0.2.0` | File system | FSEventStream, FileScanner, FSEventWatcher, IndexPersistence |
+| `v0.3.0` | Search | SearchProvider protocol, SearchCoordinator, benchmarks |
+| `v0.4.0` | UI | SearchPanel, ResultsList, IntelligenceGlow, FileIconCache |
+| `v0.5.0` | Integration | GlobalHotkey, StatusBar, AppDelegate, Settings |
+| **`v1.0`** | **核心搜索** | 完整可用：文件名搜索 + FSEvents + 热键 + UI |
+| `v1.1` | 高级语法 | 布尔/通配符/正则/路径限定/修饰符/搜索历史 |
+| `v1.2` | 元数据过滤 | size/date/ext/type 过滤, 高级搜索面板 |
+| `v1.3` | 搜索体验 | 书签/自定义过滤器/排序/Quick Look/右键菜单 |
+| `v1.4` | 内容搜索 | content: 函数, 编码支持, 行号定位 |
+| `v1.5` | 重复查找 | dupe/sizedupe/hashdupe/empty/childcount |
+| `v2.0` | 扩展索引 | 外置卷/网络卷/离线文件列表/Spotlight 元数据/索引日志 |
+| `v2.1` | 媒体元数据 | 图片尺寸/音频标签/视频信息/PDF 元数据 |
+| `v2.2` | 服务集成 | HTTP 搜索/CLI/URL Scheme/Shortcuts/AppleScript |
+| `v3.0` | AI 语义 | 语义搜索/智能建议/内容理解/智能分类 |
 
 **Current**: `v0.1.0` in progress — FileRecord ✅, remaining: Trie, FullSubstringMap, TrigramIndex, PinyinIndex, InMemoryIndex
 
