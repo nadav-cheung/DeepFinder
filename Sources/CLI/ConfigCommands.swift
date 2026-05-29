@@ -1,0 +1,215 @@
+import Foundation
+
+// MARK: - CLIOutputWriter
+
+/// Protocol for CLI output, enabling test injection.
+///
+/// Production writes to stdout/stderr. Tests capture output for assertions.
+protocol CLIOutputWriter: Sendable {
+    func write(_ text: String)
+    func writeError(_ text: String)
+}
+
+// MARK: - StdoutWriter
+
+/// Production CLI output: writes to stdout and stderr.
+struct StdoutWriter: CLIOutputWriter {
+    func write(_ text: String) {
+        fputs(text, stdout)
+        fflush(stdout)
+    }
+
+    func writeError(_ text: String) {
+        fputs(text, stderr)
+        fflush(stderr)
+    }
+}
+
+// MARK: - ConfigCommandRunner
+
+/// Executes `deepfinder config` subcommands.
+///
+/// All operations delegate to the daemon via IPC (configGet/configSet).
+/// The runner formats output for display and returns exit codes.
+struct ConfigCommandRunner {
+
+    // MARK: - get
+
+    /// Get a single config key and display its value.
+    ///
+    /// - Parameters:
+    ///   - key: Configuration key name.
+    ///   - client: IPC client for daemon communication.
+    ///   - output: Output writer for display.
+    /// - Returns: Exit code (0 = success, non-zero = error).
+    static func get(
+        key: String,
+        client: any IPCClientProtocol,
+        output: any CLIOutputWriter
+    ) async -> Int32 {
+        let request = IPCRequest.configGet(key: key)
+        let response: IPCResponse
+        do {
+            response = try await client.send(request)
+        } catch {
+            output.writeError("Error: could not reach daemon — \(error.localizedDescription)\n")
+            return 2
+        }
+
+        switch response {
+        case .ack:
+            output.write("OK\n")
+            return 0
+        case .error(let ipcError):
+            output.writeError("Error: \(ipcError)\n")
+            return 3
+        default:
+            output.writeError("Error: unexpected response from daemon\n")
+            return 2
+        }
+    }
+
+    // MARK: - set
+
+    /// Set a config key to a given value via IPC.
+    ///
+    /// - Parameters:
+    ///   - key: Configuration key name.
+    ///   - value: New value for the key.
+    ///   - client: IPC client for daemon communication.
+    ///   - output: Output writer for display.
+    /// - Returns: Exit code (0 = success, non-zero = error).
+    static func set(
+        key: String,
+        value: String,
+        client: any IPCClientProtocol,
+        output: any CLIOutputWriter
+    ) async -> Int32 {
+        let request = IPCRequest.configSet(key: key, value: value)
+        let response: IPCResponse
+        do {
+            response = try await client.send(request)
+        } catch {
+            output.writeError("Error: could not reach daemon — \(error.localizedDescription)\n")
+            return 2
+        }
+
+        switch response {
+        case .ack:
+            output.write("OK\n")
+            return 0
+        case .error(let ipcError):
+            output.writeError("Error: \(ipcError)\n")
+            return 3
+        default:
+            output.writeError("Error: unexpected response from daemon\n")
+            return 2
+        }
+    }
+
+    // MARK: - list
+
+    /// List all configuration items.
+    ///
+    /// Sends a configGet with nil key (meaning "get all") to the daemon.
+    ///
+    /// - Parameters:
+    ///   - client: IPC client for daemon communication.
+    ///   - output: Output writer for display.
+    /// - Returns: Exit code (0 = success, non-zero = error).
+    static func list(
+        client: any IPCClientProtocol,
+        output: any CLIOutputWriter
+    ) async -> Int32 {
+        let request = IPCRequest.configGet(key: nil)
+        let response: IPCResponse
+        do {
+            response = try await client.send(request)
+        } catch {
+            output.writeError("Error: could not reach daemon — \(error.localizedDescription)\n")
+            return 2
+        }
+
+        switch response {
+        case .ack:
+            // Daemon acknowledged the list request.
+            // Format a table of known config keys.
+            let defaults = DaemonConfig.defaults
+            let rows = [
+                ("excludedPaths", String(describing: defaults.excludedPaths)),
+                ("indexBatchSize", String(defaults.indexBatchSize)),
+                ("maxResults", String(defaults.maxResults)),
+                ("configVersion", String(defaults.configVersion)),
+            ]
+            for (key, value) in rows {
+                output.write("  \(key)\t\(value)\n")
+            }
+            return 0
+        case .error(let ipcError):
+            output.writeError("Error: \(ipcError)\n")
+            return 3
+        default:
+            output.writeError("Error: unexpected response from daemon\n")
+            return 2
+        }
+    }
+
+    // MARK: - reset
+
+    /// Reset all configuration to defaults.
+    ///
+    /// Sends configSet for each default key via IPC.
+    /// In production, prompts the user for confirmation.
+    /// In tests, pass `confirm: true` to skip the prompt.
+    ///
+    /// - Parameters:
+    ///   - client: IPC client for daemon communication.
+    ///   - output: Output writer for display.
+    ///   - confirm: If `true`, skip the confirmation prompt (for testing).
+    /// - Returns: Exit code (0 = success, non-zero = error).
+    static func reset(
+        client: any IPCClientProtocol,
+        output: any CLIOutputWriter,
+        confirm: Bool = false
+    ) async -> Int32 {
+        if !confirm {
+            output.write("Reset all configuration to defaults? [y/N] ")
+            let input = FileHandle.standardInput.availableData
+            guard let response = String(data: input, encoding: .utf8)?
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .lowercased(),
+                  response == "y" || response == "yes" else {
+                output.write("Cancelled.\n")
+                return 0
+            }
+        }
+
+        let defaults = DaemonConfig.defaults
+        let resetEntries: [(key: String, value: String)] = [
+            ("excludedPaths", (try? JSONEncoder().encode(defaults.excludedPaths))
+                .flatMap { String(data: $0, encoding: .utf8) } ?? "[]"),
+            ("indexBatchSize", String(defaults.indexBatchSize)),
+            ("maxResults", String(defaults.maxResults)),
+            ("configVersion", String(defaults.configVersion)),
+        ]
+
+        for entry in resetEntries {
+            let request = IPCRequest.configSet(key: entry.key, value: entry.value)
+            let response: IPCResponse
+            do {
+                response = try await client.send(request)
+            } catch {
+                output.writeError("Error: could not reach daemon — \(error.localizedDescription)\n")
+                return 2
+            }
+
+            if case .error(let ipcError) = response {
+                output.writeError("Error setting \(entry.key): \(ipcError)\n")
+                return 3
+            }
+        }
+
+        output.write("Configuration reset to defaults.\n")
+        return 0
+    }
+}

@@ -70,8 +70,10 @@ enum TerminalFormatter {
             result += text[currentIndex..<range.lowerBound]
 
             // Append highlighted match (use original casing from `text`)
+            // Selective reset: 22 = bold off, 39 = default foreground color.
+            // Avoids [0m which resets ALL attributes (would clobber surrounding styles).
             let originalMatch = text[range]
-            result += "\u{1B}[1m\u{1B}[\(colorCode)m\(originalMatch)\u{1B}[0m"
+            result += "\u{1B}[1m\u{1B}[\(colorCode)m\(originalMatch)\u{1B}[22m\u{1B}[39m"
 
             currentIndex = range.upperBound
         }
@@ -120,6 +122,14 @@ enum TerminalFormatter {
         }
         return "\(bytes) B"
     }
+
+    /// Shared date formatter for consistent output across all results.
+    private static let sharedDateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .short
+        f.timeStyle = .none
+        return f
+    }()
 
     // MARK: - Private Formatters
 
@@ -170,10 +180,7 @@ enum TerminalFormatter {
         let displayPath = shortenPath(record.path)
         let sizeStr = formatFileSize(record.size)
 
-        let dateFormatter = DateFormatter()
-        dateFormatter.dateStyle = .short
-        dateFormatter.timeStyle = .none
-        let dateStr = dateFormatter.string(from: record.modifiedAt)
+        let dateStr = sharedDateFormatter.string(from: record.modifiedAt)
 
         // Verbose extras
         var extras = ""

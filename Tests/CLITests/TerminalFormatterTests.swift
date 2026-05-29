@@ -93,9 +93,10 @@ struct TerminalFormatterTests {
             in: "hello world",
             query: "world"
         )
-        // Should contain bold reset sequence
+        // Should contain bold-on and selective reset (bold-off + default-fg)
         #expect(highlighted.contains("\u{1B}[1m"))
-        #expect(highlighted.contains("\u{1B}[0m"))
+        #expect(highlighted.contains("\u{1B}[22m"))
+        #expect(highlighted.contains("\u{1B}[39m"))
         #expect(highlighted.contains("world"))
     }
 
@@ -218,5 +219,44 @@ struct TerminalFormatterTests {
 
         // Score "0.95" should not appear in the output
         #expect(!output.contains("0.95"))
+    }
+
+    // MARK: - 13. Selective reset does not use blanket [0m
+
+    @Test("highlightMatches uses selective reset [22m [39m, not blanket [0m")
+    func testSelectiveReset() {
+        let highlighted = TerminalFormatter.highlightMatches(
+            in: "report",
+            query: "port"
+        )
+        // Should NOT contain the blanket reset [0m
+        #expect(!highlighted.contains("\u{1B}[0m"))
+        // Should contain selective resets
+        #expect(highlighted.contains("\u{1B}[22m"))
+        #expect(highlighted.contains("\u{1B}[39m"))
+    }
+
+    // MARK: - 14. Empty text returns empty string
+
+    @Test("highlightMatches on empty text returns empty string")
+    func testHighlightEmptyText() {
+        let highlighted = TerminalFormatter.highlightMatches(
+            in: "",
+            query: "test"
+        )
+        #expect(highlighted == "")
+    }
+
+    // MARK: - 15. Highlight at string boundaries
+
+    @Test("highlightMatches works at start and end of string")
+    func testHighlightAtBoundaries() {
+        // Match at start
+        let atStart = TerminalFormatter.highlightMatches(in: "abc def", query: "abc")
+        #expect(atStart.hasPrefix("\u{1B}[1m"))
+
+        // Match at end
+        let atEnd = TerminalFormatter.highlightMatches(in: "abc def", query: "def")
+        #expect(atEnd.hasSuffix("\u{1B}[39m"))
     }
 }
