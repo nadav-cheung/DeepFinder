@@ -443,11 +443,12 @@ struct FileRecord: Codable, Sendable {
     let `extension`: String?
 }
 
-// 用于排序的辅助数据，不入库
+// 用于排序的辅助数据，存储在 SQLite side table
 struct UsageStats {
     let openCount: Int
     let lastOpenedAt: Date?
 }
+// UsageStats 随 FileRecord 一起持久化到 SQLite（独立 side table，按 fileRecordID 关联）
 ```
 
 所有文件名入库前做 **NFC 统一化**（`name.precomposedStringWithCanonicalMapping`），查询时同样统一化。
@@ -466,7 +467,7 @@ struct UsageStats {
 
 - 文件名 ≤64 字符：建 **全子串映射**（所有子串直接指向 FileRecord.ID），查询 O(1) 零计算
 - 文件名 >64 字符：退化为 trigram + 交集验证（长文件名极少见）
-- M4+ 统一内存架构，1M 文件的全子串映射约占 1-2GB，可接受
+- M4+ 统一内存架构，1M 文件的全子串映射约占 2-4GB（取决于子串去重策略），可接受。需实际 benchmark 验证
 
 **FullSubstringMap 工作原理：**
 
@@ -510,7 +511,7 @@ PinyinIndex 单独一个 Trie，存储拼音 token → FileRecord.ID 映射。
 - **外置磁盘/网络卷**：全部索引。卷卸载时从索引移除，重新挂载时增量更新
 - `TaskGroup` 按卷并行扫描
 - 边扫边建索引：扫描过程中即可搜索，不等全部完成
-- 全量扫描使用 `DispatchQueue.global(qos: .userInitiated)` 高优先级（速度第一）
+- 全量扫描使用 `TaskGroup` 配合 `.userInitiated` 优先级（与项目 Swift Concurrency 模型一致）
 
 ### 2.4 FSEvents 增量更新
 
@@ -563,7 +564,7 @@ final class MockEventStream: FileSystemEventStream { ... }
 **持久化策略 — SQLite 混合方案：**
 
 - SQLite 存储 `FileRecord[]`（简单表：id, name, path, metadata 列）
-- 不持久化索引结构（Trie / FullSubstringMap / TrigramIndex / PinyinIndex）→ 启动时从 FileRecord[] 重建（M4 上 ~1-2s）
+- 不持久化索引结构（Trie / FullSubstringMap / TrigramIndex / PinyinIndex）→ 启动时从 FileRecord[] 重建。英文文件名场景 M4 上 ~1-2s；大量中文文件名场景 PinyinIndex 重建需额外 CFStringTokenizer 处理，预估 ~3-5s
 - 增量持久化：内存缓冲变更，每 5 秒或每 100 条变更批量写入（避免 FSEvents 高频回调导致 I/O 抖动）
 - WAL 模式：读写不互斥
 - 索引损坏恢复：加载时校验（行数 + checksum），失败则删除重建 + 进度 UI
@@ -589,6 +590,9 @@ protocol SearchProvider: Sendable {
     func search(query: SearchQuery) -> SearchStream
 
     /// 取消进行中的查询
+    /// 用于 Provider 内部资源清理（如取消网络请求、关闭文件句柄）。
+    /// 与 Task cooperative cancellation 互补：Task.cancel() 停止消费 AsyncSequence，
+    /// cancel(queryID:) 停止 Provider 内部生产。
     func cancel(queryID: String)
 
     /// Provider 初始化/预热
@@ -775,6 +779,10 @@ App Launch
 | 分发 | GitHub Releases + Homebrew Cask |
 | 公证 | Apple Developer Program 签名 + `xcrun notarytool submit` |
 | 快捷键 | 优先 RegisterEventHotKey（不注册全局事件监听） |
+| AI API Key | 用户自有 API Key 存储在 macOS Keychain（不存明文，不上传） |
+| AI 网络传输 | 所有云端请求强制 HTTPS/TLS 1.3 |
+| AI 元数据脱敏 | 发送到云端的路径默认脱敏（/Users/xxx/ → ~/），可在设置中关闭 |
+| AI 默认关闭 | 所有 AI 功能默认关闭，用户主动开启才生效 |
 
 ---
 
@@ -818,6 +826,15 @@ everything-search/
 │   │   └── IndexPersistence.swift          // SQLite WAL
 │   ├── Hotkey/
 │   │   └── GlobalHotkey.swift
+│   ├── AI/                      # v3.0 新增
+│   │   ├── AIModelProvider.swift
+│   │   ├── AIContext.swift
+│   │   ├── AICapability.swift
+│   │   ├── DeepSeekProvider.swift
+│   │   ├── QwenProvider.swift
+│   │   ├── LocalVisionProvider.swift
+│   │   ├── LocalSpeechProvider.swift
+│   │   └── AISearchCoordinator.swift
 │   └── Utils/
 │       ├── FileIconCache.swift
 │       └── PathUtils.swift
@@ -867,13 +884,15 @@ everything-search/
 
 ---
 
-## 9. 实现顺序
+## 9. 实现顺序（v0.1 — v1.0 开发阶段）
 
-| Phase | 内容 | 依赖 |
-|-------|------|------|
-| 1 | FileRecord → Trie → FullSubstringMap → TrigramIndex → PinyinIndex → InMemoryIndex (actor) → Fixtures + Tests | 无 |
-| 2 | FileSystemEventStream protocol → FileScanner → FSEventWatcher → IndexPersistence → IndexRecovery | Phase 1 |
-| 3 | SearchProvider 协议 → SearchCoordinator → Performance benchmarks | Phase 2 |
-| 4 | SearchPanelView → SearchBarView → ResultsListView → IntelligenceGlow → FileIconCache | Phase 3 |
-| 5 | GlobalHotkey → StatusBar → AppDelegate → Settings | Phase 4 |
-| 6 | QuickLook → 右键菜单 → 拖拽 → UI tests → 打磨 | Phase 5 |
+对应 CLAUDE.md 版本路线图中 v0.1-v0.5 + v1.0。v1.1 以后见 CLAUDE.md。
+
+| Phase | 对应版本 | 内容 | 依赖 |
+|-------|---------|------|------|
+| 1 | v0.1 | FileRecord → Trie → FullSubstringMap → TrigramIndex → PinyinIndex → InMemoryIndex (actor) → Fixtures + Tests | 无 |
+| 2 | v0.2 | FileSystemEventStream protocol → FileScanner → FSEventWatcher → IndexPersistence → IndexRecovery | Phase 1 |
+| 3 | v0.3 | SearchProvider 协议 → SearchCoordinator → Performance benchmarks | Phase 2 |
+| 4 | v0.4 | SearchPanelView → SearchBarView → ResultsListView → IntelligenceGlow → FileIconCache | Phase 3 |
+| 5 | v0.5 | GlobalHotkey → StatusBar → AppDelegate → Settings | Phase 4 |
+| 6 | v1.0 | QuickLook → 右键菜单 → 拖拽 → UI tests → 打磨 | Phase 5 |
