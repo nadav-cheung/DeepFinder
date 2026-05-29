@@ -42,6 +42,12 @@ enum Product {
     /// SQLite 数据库
     static let databasePath = "~/.deep-finder/index.db"
 
+    // MARK: - 版本
+
+    /// Current version. Updated manually on each release.
+    /// Kept in sync with the VERSION file at repo root.
+    static let version = "0.5.0-dev"
+
     // MARK: - 组织
 
     static let organization = "nadav.com.cn"
