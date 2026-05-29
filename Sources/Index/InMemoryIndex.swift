@@ -180,4 +180,10 @@ actor InMemoryIndex {
         let all = search(query: query)
         return Array(all.prefix(limit))
     }
+
+    /// Return all indexed records. Useful for operations that need the full
+    /// dataset (e.g. autocomplete with empty prefix).
+    func allRecords() -> [FileRecord] {
+        Array(records.values)
+    }
 }
