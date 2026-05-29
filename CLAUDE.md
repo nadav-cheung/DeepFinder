@@ -4,48 +4,49 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Everything Search — a macOS file search app rivaling Windows Everything. Menu bar app (LSUIElement=true), no Dock icon, invoked via global hotkey (⌥Space). Apple Silicon M4+ only, arm64, minimum macOS 26 (Tahoe). **Speed is the #1 priority — memory and CPU are not constraints.**
+DeepFinder — a macOS file search app rivaling Windows Everything. **v1.0 = CLI-first** (daemon + interactive REPL + single-shot), v2.0 adds GUI. Apple Silicon M4+ only, arm64, minimum macOS 26 (Tahoe). **Speed is the #1 priority — memory and CPU are not constraints.**
 
 **Organization**: nadav.com.cn
 
-**Status**: `v0.1.0` in progress. Project scaffolded (Package.swift, Sources/, Tests/). FileRecord data model implemented with tests. Full architecture spec at `docs/superpowers/specs/2026-05-26-everything-search-design.md`.
+**Status**: `v0.1.0` in progress. FileRecord ✅ (5 tests passing). Remaining: Trie, FullSubstringMap, TrigramIndex, PinyinIndex, InMemoryIndex. Spec: `docs/superpowers/specs/`.
 
-Zero external dependencies — pure Swift + Apple frameworks only (SwiftUI, Foundation, CoreServices, Carbon, SQLite3).
+Zero external dependencies — pure Swift + Apple frameworks only (Foundation, CoreServices, Carbon, SQLite3). CLI via Darwin.readline + ANSI escape codes.
 
 ## Build & Test
 
 Requires **swift-tools-version ≥ 6.2** (needed for `.macOS(.v26)` platform specifier).
 
 ```bash
-swift build                              # Build
+swift build                              # Build all targets
 swift test                               # Run all tests
 swift test --filter TrieTests            # Run single test suite
-swift run                                # Run the app
+swift run deepfinder "query"             # CLI single-shot (after v0.5)
+swift run deepfinder                     # CLI interactive REPL (after v0.6)
 ```
 
 ## Version Roadmap
 
-渐进式开发，每个版本独立可用。详细功能清单见 `docs/superpowers/specs/2026-05-26-everything-search-design.md` §功能路线图。
+渐进式开发，每个版本独立可用。详细功能清单见 `docs/superpowers/specs/2026-05-26-deep-finder-design.md` §功能路线图。
 
 | Version | Milestone | Key Features |
 |---------|-----------|-------------|
 | `v0.1.0` | Index core | FileRecord, Trie, FullSubstringMap, TrigramIndex, PinyinIndex, InMemoryIndex |
 | `v0.2.0` | File system | FSEventStream, FileScanner, FSEventWatcher, IndexPersistence |
-| `v0.3.0` | Search | SearchProvider protocol, SearchCoordinator, benchmarks |
-| `v0.4.0` | UI | SearchPanel, ResultsList, IntelligenceGlow, FileIconCache |
-| `v0.5.0` | Integration | GlobalHotkey, StatusBar, AppDelegate, Settings |
-| **`v1.0`** | **核心搜索** | 完整可用：文件名搜索 + FSEvents + 热键 + UI |
+| `v0.3.0` | Search | SearchProvider protocol, SearchCoordinator (plain actor), benchmarks |
+| `v0.4.0` | Daemon + IPC | DaemonMain, IPCServer (Unix socket + JSON), PID 管理, LaunchAgent |
+| `v0.5.0` | CLI single-shot | 参数解析, TerminalFormatter (ANSI), --json/--0/--sort/--limit |
+| `v0.6.0` | Interactive REPL | readline 循环, :help/:stats/:open/:reveal, 历史持久化 |
+| `v0.7.0` | Daemon 管理 | daemon start/stop/restart/install, config get/set |
+| **`v1.0`** | **CLI Release** | 完整可用 CLI：daemon + REPL + single-shot + Homebrew formula + man page + shell completions |
 | `v1.1` | 高级语法 | 布尔/通配符/正则/路径限定/修饰符/搜索历史 |
-| `v1.2` | 元数据过滤 | size/date/ext/type 过滤, 高级搜索面板 |
-| `v1.3` | 搜索体验 | 书签/自定义过滤器/排序/Quick Look/右键菜单 |
+| `v1.2` | 元数据过滤 | size/date/ext/type 过滤 |
+| `v1.3` | 搜索体验 | 书签/自定义过滤器/排序/搜索建议 |
 | `v1.4` | 内容搜索 | content: 函数, 编码支持, 行号定位 |
 | `v1.5` | 重复查找 | dupe/sizedupe/hashdupe/empty/childcount |
-| `v2.0` | 扩展索引 | 外置卷/网络卷/离线文件列表/Spotlight 元数据/索引日志 |
+| **`v2.0`** | **GUI + 扩展索引** | NSPanel + Liquid Glass + Apple Intelligence glow + 全局热键 (⌃⌘K) + 外置卷/网络卷 |
 | `v2.1` | 媒体元数据 | 图片尺寸/音频标签/视频信息/PDF 元数据 |
-| `v2.2` | 服务集成 | HTTP 搜索/CLI/URL Scheme/Shortcuts/AppleScript |
+| `v2.2` | 服务集成 | HTTP 搜索/URL Scheme/Shortcuts/AppleScript |
 | `v3.0` | AI 语义 | 语义搜索/智能建议/内容理解/智能分类 |
-
-**Current**: `v0.1.0` in progress — FileRecord ✅, remaining: Trie, FullSubstringMap, TrigramIndex, PinyinIndex, InMemoryIndex
 
 **Workflow**: Each version develops on its `dev/vX.Y` branch. When deliverables pass all tests and review, merge to `main` and tag `vX.Y.Z`. Next version branches from `main`.
 
@@ -53,40 +54,128 @@ swift run                                # Run the app
 
 ## Development Workflow
 
-**Spec-first**: All changes start in `docs/superpowers/specs/` before touching code. When a requirement changes:
+### Spec-first
+
+All changes start in `docs/superpowers/specs/` before touching code. When a requirement changes:
 1. Update the relevant spec file in `docs/superpowers/specs/`
 2. Review the spec change for consistency with the rest of the spec
 3. Then implement the code change to match the updated spec
 
 Never modify code to introduce behavior that isn't reflected in the spec, and never leave a spec out of sync with the implementation.
 
-**Code review process**: Every code review finding must have concrete, factual evidence (file path, line number, actual behavior). Each finding goes through a second-round confirmation before entering the fix list. No speculation without evidence.
+### Test-first (TDD)
+
+**Write tests before implementation.** For every new component:
+
+1. **Write failing test** — 定义期望行为（接口、边界条件、错误路径）
+2. **Implement minimum code** — 让测试通过
+3. **Refactor** — 保持测试绿色，清理实现
+
+具体要求：
+- 每个新 struct/class/actor/enum 必须有对应的测试文件
+- 测试命名描述行为：`testInsertIncreasesCount`，不写 `testTrie1`
+- 测试覆盖：正常路径 + 边界条件 + 错误路径
+- 性能敏感组件（Trie、FullSubstringMap 等）必须包含 `measure` block 基准测试
+- 测试先行不是可选项 — 没有 failing test 不写实现代码
+
+### Feature → Review Cycle
+
+**每完成一个小功能，立即代码检视。** 不积累大量未检视代码。
+
+小功能定义：一个可独立测试的最小交付单元，如：
+- 一个 struct/class 的完整实现 + 测试
+- 一个协议的实现
+- 一个模块的子功能
+
+流程：
+```
+spec 更新 → 写 failing test → 实现 → 测试绿色 → 代码检视 → 修复检视问题 → 提交
+```
+
+检视触发时机：
+- 新文件创建后
+- 现有文件行为变更后
+- 一个 REQ item 实现完成后
+- 绝不在版本结束时才统一检视
+
+### Code Review — 两轮会审制
+
+一轮（发现问题）：全员会审，按角色分配检视视角（architect/algo-dev/macos-dev/cli-dev/qa-dev/researcher）。每个 finding 必须有具体证据（文件路径、行号、实际行为）。不限流的成员直接完成，限流的由 lead 补上该视角。产出：问题清单（严重/重要/补充）。
+
+二轮（验证问题）：对每个 finding 用网络搜索交叉验证，确认事实正确性。标注每个 finding 为 confirmed（确认修复）/ refuted（推翻）/ already_fixed（已修复）/ deferred（延期）。产出：确认修复清单。
+
+三轮（修复+验证）：按优先级执行修复，修复后运行测试验证。No speculation without evidence.
+
+**批量检视**（如版本级 spec 变更）用 workflow 多 agent 并行。日常小功能检视用单个 `code-reviewer` agent 即可。
+
+## Agent Resilience
+
+When subagents (Agent tool, Workflow agents) encounter API rate limits (HTTP 429), throttling errors, or transient failures:
+- **Auto-retry with backoff**: Pause 10 seconds, then retry. Do not surface the error to the user unless 3 consecutive retries fail.
+- **Graceful degradation**: If a specific agent or tool is rate-limited, continue with the remaining agents/tools that are still available. Report what was skipped.
+- **Never halt on transient errors**: Rate limits are temporary. Do not treat them as task failures. Log the delay and continue.
 
 ## Gotchas
 
-- **Accessibility permission**: Global hotkey (RegisterEventHotKey / CGEventTap) requires Accessibility in System Settings → Privacy & Security. First launch guides user through this.
 - **Full Disk Access**: FSEvents can't monitor all directories without Full Disk Access. Without it, ~/Documents, ~/Desktop, ~/Downloads silently skipped.
-- **LSUIElement app**: No Dock icon — debug via Xcode attach-to-process or CLI.
-- **Not sandboxable**: Needs Full Disk Access + Accessibility. Cannot go on Mac App Store. Distributed via GitHub Releases + Homebrew Cask.
+- **Not sandboxable**: Needs Full Disk Access. Cannot go on Mac App Store. Distributed via GitHub Releases + Homebrew formula.
+- **Daemon lifecycle**: CLI auto-starts daemon on first query. LaunchAgent optional for auto-start on login. Daemon crash = CLI reconnects after restart.
+- **Socket cleanup**: If daemon crashes without cleanup, stale socket file at `~/.deep-finder/ipc.sock` must be removed before restart. PID file check handles this.
+- **v2.0 GUI notes**: LSUIElement menu bar app, global hotkey (⌃⌘K) requires Accessibility permission, no Dock icon — debug via Xcode attach-to-process.
+
+## Directory Structure
+
+```
+Sources/
+  DeepFinderIndex/            # Shared library: index + search + filesystem + persist
+    Index/                    # FileRecord, Trie, FullSubstringMap, TrigramIndex, PinyinIndex, InMemoryIndex
+    Search/                   # SearchProvider, SearchCoordinator, SearchQuery, SearchResult
+    FS/                       # FileSystemEventStream, FileScanner, FSEventWatcher, IndexingEngine
+    Persist/                  # IndexPersistence (SQLite WAL), ConfigStore
+  DeepFinderDaemon/           # Executable: long-running background process (v0.4+)
+    DaemonMain.swift, IPCServer.swift, IPCProtocol.swift
+  DeepFinderCLI/              # Executable: user-facing CLI tool (v0.5+)
+    CLIMain.swift, SingleShot.swift, REPL.swift, TerminalFormatter.swift, IPCClient.swift
+Tests/
+  IndexTests/                 # FileRecordTests.swift (5 tests passing)
+docs/
+  superpowers/specs/          # requirements.md, architecture design doc
+Package.swift                 # DeepFinderIndex (lib) + DeepFinderDaemon (exe) + DeepFinderCLI (exe), macOS .v26
+VERSION                       # Current: 0.1.0-dev
+```
 
 ## Architecture
 
-**Data flow:** Hotkey/MenuBar → SearchPanel (NSPanel) → SearchCoordinator (no debounce for in-memory) → SearchProvider (AsyncSequence) → InMemoryIndex (actor) → results
+**Data flow (v1.0 CLI):** `deepfinder` CLI → Unix domain socket IPC → Daemon → SearchCoordinator → SearchProvider (AsyncSequence) → InMemoryIndex (actor) → results
+
+**Data flow (v2.0 GUI, same daemon):** Global Hotkey → SearchPanel (NSPanel) → IPC → same Daemon → results
 
 **Dependency direction (one-way, no cycles):**
 ```
-App → UI → Search → Index
-  └→ Hotkey
+CLI/Daemon → Search → Index
+  └→ IPC
+(v2.0: GUI → IPC → Daemon, same daemon binary)
 ```
 
-Index layer has zero UI dependencies and can be tested in isolation.
+Index layer has zero UI/CLI dependencies and can be tested in isolation.
+
+**Package.swift targets:**
+- `DeepFinderIndex` (library) — Index + Search + FS + Persist, shared by daemon and CLI
+- `DeepFinderDaemon` (executable) — daemon process, depends on DeepFinderIndex
+- `DeepFinderCLI` (executable) — user-facing CLI, depends on DeepFinderIndex (shared types only)
+- `DeepFinderIndexTests` / `DaemonTests` / `CLITests`
 
 **Concurrency model:**
 - `InMemoryIndex`: actor — all read/write via actor isolation
 - `IndexingEngine`: actor — coordinates FileScanner + FSEventWatcher
-- `SearchCoordinator`: @MainActor — UI layer
+- `SearchCoordinator`: plain actor (NOT @MainActor) — works in both daemon and future GUI contexts
 
 **Key design decisions:**
+- **Daemon + thin CLI (Everything model)**: Background daemon holds full in-memory index. CLI is a ~1ms thin client connecting via Unix socket. Sub-millisecond query latency because indexing is done once at startup.
+- **IPC protocol**: Unix domain socket at `~/.deep-finder/ipc.sock`, 4-byte length prefix + JSON body. Codable-native. Debuggable via `nc -U`.
+- **CLI modes**: Single-shot (`deepfinder "query"`) and interactive REPL (`deepfinder` with no args). Manual `CommandLine.arguments` parsing (zero external deps).
+- **REPL**: Darwin.readline (libedit) for prompt, history, tab-completion. Commands: :help, :quit, :stats, :config, :daemon, :open N, :reveal N.
+- **Terminal output**: ANSI escape codes, `isatty()` auto-disables colors when piped. --json and --0 for scripting.
 - **SearchProvider protocol**: Returns `AsyncSequence<SearchResult, Never>`. MVP's in-memory index yields all results at once, but interface supports future streaming (AI, content search). `cancel(queryID:)` for cancellation.
 - **InMemoryIndex (actor)**: Speed over memory (M4+ unified memory). Index structures:
   - Trie: O(k) prefix matching, Unicode scalar granularity
@@ -94,15 +183,17 @@ Index layer has zero UI dependencies and can be tested in isolation.
   - TrigramIndex: trigram → posting list for names >64 chars (rare fallback)
   - PinyinIndex: CFStringTokenizer → pinyin tokens in a Trie for Chinese filename search
 - **Unicode**: All filenames NFC-normalized on ingestion (`precomposedStringWithCanonicalMapping`). Queries normalized the same way.
-- **Persistence**: SQLite WAL at `~/.everything-search/index.db` (permissions 600). Stores FileRecord[], rebuilds index structures in memory on startup (<1s on M4). Batch writes every 5s or 100 changes.
+- **Persistence**: SQLite WAL at `~/.deep-finder/index.db` (permissions 600). Stores FileRecord[], rebuilds index structures in memory on startup (<1s on M4). Batch writes every 5s or 100 changes.
 - **FSEvents**: Abstracted behind `FileSystemEventStream` protocol. Production wraps FSEventStreamCreate, tests use MockEventStream.
-- **Index state machine**: stale → verifying → live. UI displays state to user.
+- **Index state machine**: stale → verifying → live. CLI displays state via `:stats` command.
 
-**Apple Intelligence glow**: AngularGradient (teal/violet/coral/amber) rotating ~1.8s, 4 layers, 60fps on M4+. Static border for reduceMotion. Paused when panel hidden.
+**v2.0 GUI additions**: NSPanel + Liquid Glass (`.glassEffect()`), Apple Intelligence glow (AngularGradient teal/violet/coral/amber rotating ~1.8s, 60fps), global hotkey (⌃⌘K via RegisterEventHotKey + CGEventTap fallback). Same daemon serves both CLI and GUI via IPC.
 
-**UI material**: macOS 26 Liquid Glass (`.glassEffect()`) for the search panel and controls. `GlassEffectContainer` for unified rendering. Apple Intelligence glow overlays on top.
+**Search behavior**: Case-insensitive by default (preserves original case for display). NFC normalized. Paginated results (100 per page). No debounce for in-memory queries. External and network volumes indexed (removed on unmount).
 
-**Search behavior**: Case-insensitive by default (preserves original case for display). NFC normalized. Paginated results (100 per page, "load more" button). No debounce for in-memory queries. External and network volumes indexed (removed on unmount).
+**Exit codes**: 0=success, 1=no results, 2=daemon error, 3=query error.
+
+**Daemon lifecycle**: LaunchAgent (launchd plist in ~/Library/LaunchAgents/). Auto-started by CLI if not running. PID file at `~/.deep-finder/daemon.pid`. SIGTERM handler: flush SQLite + save FSEvents cursor + remove socket + exit.
 
 ## Team
 
@@ -112,10 +203,11 @@ Index layer has zero UI dependencies and can be tested in isolation.
 |------|-----------|------|----------|
 | **架构师** | `architect` | 技术决策、spec 维护、代码检视、版本规划、二轮确认 | 全局 |
 | **算法工程师** | `algo-dev` | 数据结构实现、搜索语法解析、性能优化、基准测试 | Index (Trie/FullSubstringMap/TrigramIndex/PinyinIndex), Search 语法 |
-| **macOS 工程师** | `macos-dev` | FSEvents、SQLite WAL、Carbon 热键、NSPanel、权限模型、打包分发 | IndexingEngine, IndexPersistence, GlobalHotkey, AppDelegate |
-| **UI 工程师** | `ui-dev` | SwiftUI 动画、Liquid Glass、无障碍、键盘交互、Quick Look | SearchPanel, IntelligenceGlow, ResultRowView, Settings |
+| **macOS 工程师** | `macos-dev` | FSEvents、SQLite WAL、LaunchAgent、权限模型、打包分发、Unix socket IPC | IndexingEngine, IndexPersistence, DaemonMain, IPCServer |
+| **CLI 工程师** | `cli-dev` | CLI 参数解析、REPL 交互、终端格式化、ANSI 颜色、readline | DeepFinderCLI: CLIMain, REPL, TerminalFormatter, IPCClient |
+| **UI 工程师** | `ui-dev` | SwiftUI 动画、Liquid Glass、无障碍、键盘交互、Quick Look (v2.0) | SearchPanel, IntelligenceGlow, ResultRowView, Settings |
 | **AI 工程师** | `ai-dev` | CoreML、Vision、LLM API、向量索引、RAG pipeline、隐私边界 | AI/, v3.0-v3.1 |
-| **测试工程师** | `qa-dev` | 单元测试、性能基准、边界条件、无障碍测试、回归测试 | Fixtures, *Tests |
+| **测试工程师** | `qa-dev` | 单元测试、性能基准、边界条件、集成测试、回归测试 | Fixtures, *Tests, DaemonTests, CLITests |
 | **信息顾问** | `researcher` | 查询网络最新信息、验证技术事实、调研竞品和最佳实践。**所有成员有问题都可以找他帮忙** | 全局支持 |
 
 ### 使用方式
@@ -123,17 +215,20 @@ Index layer has zero UI dependencies and can be tested in isolation.
 开发任务时，按模块分配给对应角色的 subagent：
 
 ```
-# 实现索引结构
-Agent("实现 Trie 前缀索引", subagent_type="general-purpose", name="algo-dev")
+# TDD 流程示例：实现 Trie
+1. 写 failing test → TrieTests.swift
+2. 实现 Trie.swift → 测试绿色
+3. 代码检视（小功能完成后立即触发）
+Agent("检视 Trie 实现：正确性、边界条件、Unicode 处理", subagent_type="code-reviewer", name="architect")
 
 # 实现 FSEvents 监听
 Agent("实现 FSEventWatcher", subagent_type="general-purpose", name="macos-dev")
 
-# 代码检视
-Agent("检视 Trie 实现的正确性", subagent_type="code-reviewer", name="architect")
+# 实现 CLI REPL
+Agent("实现 REPL 交互循环", subagent_type="general-purpose", name="cli-dev")
 ```
 
-当前阶段（v0.1）主要激活 **algo-dev**、**architect** 和 **researcher**。
+当前阶段（v0.1）主要激活 **algo-dev**、**architect** 和 **researcher**。v0.4 起加入 **macos-dev**（daemon），v0.5 起加入 **cli-dev**。
 
 ### 信息顾问使用场景
 
@@ -146,4 +241,4 @@ Agent("检视 Trie 实现的正确性", subagent_type="code-reviewer", name="arc
 
 ## Reference
 
-Full architecture spec: `docs/superpowers/specs/2026-05-26-everything-search-design.md`
+Full architecture spec: `docs/superpowers/specs/2026-05-26-deep-finder-design.md`

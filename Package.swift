@@ -2,19 +2,19 @@
 import PackageDescription
 
 let package = Package(
-    name: "everything-search",
+    name: "deep-finder",
     platforms: [.macOS(.v26)],
     products: [
-        .library(name: "EverythingSearch", targets: ["EverythingSearch"]),
+        .library(name: "DeepFinder", targets: ["DeepFinder"]),
     ],
     targets: [
         .target(
-            name: "EverythingSearch",
+            name: "DeepFinder",
             path: "Sources"
         ),
         .testTarget(
-            name: "EverythingSearchTests",
-            dependencies: ["EverythingSearch"],
+            name: "DeepFinderTests",
+            dependencies: ["DeepFinder"],
             path: "Tests"
         ),
     ]

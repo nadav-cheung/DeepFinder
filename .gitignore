@@ -24,7 +24,10 @@ Package.resolved
 .Trashes
 
 # App specific
-.everything-search/
+.deep-finder/
+
+# Claude Code local overrides
+.claude.local.md
 
 # IDE
 .idea/

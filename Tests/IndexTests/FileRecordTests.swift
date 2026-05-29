@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import EverythingSearch
+@testable import DeepFinder
 
 @Suite("FileRecord")
 struct FileRecordTests {
