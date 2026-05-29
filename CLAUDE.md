@@ -8,7 +8,7 @@ Everything Search — a macOS file search app rivaling Windows Everything. Menu 
 
 **Organization**: nadav.com.cn
 
-**Status**: Pre-implementation. The codebase currently contains design specs only — no `Package.swift` or source code exists yet. The full architecture spec is at `docs/superpowers/specs/2026-05-26-everything-search-design.md`.
+**Status**: `v0.1.0` in progress. Project scaffolded (Package.swift, Sources/, Tests/). FileRecord data model implemented with tests. Full architecture spec at `docs/superpowers/specs/2026-05-26-everything-search-design.md`.
 
 Zero external dependencies — pure Swift + Apple frameworks only (SwiftUI, Foundation, CoreServices, Carbon, SQLite3).
 
@@ -23,27 +23,6 @@ swift test --filter TrieTests            # Run single test suite
 swift run                                # Run the app
 ```
 
-## Planned Source Layout
-
-```
-Sources/
-├── App/           # AppDelegate, StatusBarController
-├── UI/            # SearchPanel/, Glow/, Settings/
-├── Search/        # SearchCoordinator, SearchProvider protocol, SearchQuery, SearchResult
-├── Index/         # InMemoryIndex (actor), IndexingEngine (actor), FileScanner, FSEventWatcher,
-│                  # FileSystemEventStream (protocol), Trie, FullSubstringMap, TrigramIndex,
-│                  # PinyinIndex, FileRecord, IndexPersistence (SQLite)
-├── Hotkey/        # GlobalHotkey
-└── Utils/         # FileIconCache, PathUtils
-
-Tests/
-├── IndexTests/    # Unit + performance tests for all index structures
-├── SearchTests/   # Coordinator and provider contract tests
-├── UITests/       # SearchPanel UI tests
-├── HotkeyTests/   # Global hotkey tests
-└── Fixtures/      # Shared test data generators
-```
-
 ## Version Roadmap
 
 | Version | Milestone | Deliverables | Branch |
@@ -55,7 +34,7 @@ Tests/
 | `v0.5.0` | Integration | GlobalHotkey, StatusBar, AppDelegate, Settings | `dev/v0.5` |
 | `v1.0.0` | Release | QuickLook, context menus, drag-and-drop, UI tests, polish | `dev/v1.0` |
 
-**Current**: pre-`v0.1.0` (no source code yet)
+**Current**: `v0.1.0` in progress — FileRecord ✅, remaining: Trie, FullSubstringMap, TrigramIndex, PinyinIndex, InMemoryIndex
 
 **Workflow**: Each version develops on its `dev/vX.Y` branch. When deliverables pass all tests and review, merge to `main` and tag `vX.Y.Z`. Next version branches from `main`.
 
@@ -69,6 +48,8 @@ Tests/
 3. Then implement the code change to match the updated spec
 
 Never modify code to introduce behavior that isn't reflected in the spec, and never leave a spec out of sync with the implementation.
+
+**Code review process**: Every code review finding must have concrete, factual evidence (file path, line number, actual behavior). Each finding goes through a second-round confirmation before entering the fix list. No speculation without evidence.
 
 ## Gotchas
 
