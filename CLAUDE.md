@@ -8,7 +8,9 @@ DeepFinder — a macOS file search app rivaling Windows Everything. **v1.0 = CLI
 
 **Organization**: nadav.com.cn
 
-**Status**: `v0.1.0` in progress. FileRecord ✅ (5 tests passing). Remaining: Trie, FullSubstringMap, TrigramIndex, PinyinIndex, InMemoryIndex. Spec: `docs/superpowers/specs/`.
+**产品名配置**：`PRODUCT.toml` 是产品名的唯一来源。代码中通过 `Product` enum（`Sources/Index/ProductConfig.swift`）引用。改产品名只改 `PRODUCT.toml` + `ProductConfig.swift`，不散落到其他文件。文档中用显示名 "DeepFinder" 即可。
+
+**Status**: `v0.1.0` ✅ **完成** — FileRecord, Trie, FullSubstringMap, TrigramIndex, PinyinIndex, InMemoryIndex (76 tests passing). Next: v0.2 File system. Spec: `docs/superpowers/specs/`.
 
 Zero external dependencies — pure Swift + Apple frameworks only (Foundation, CoreServices, Carbon, SQLite3). CLI via Darwin.readline + ANSI escape codes.
 
@@ -139,7 +141,7 @@ Sources/
 Tests/
   IndexTests/                 # FileRecordTests.swift (5 tests passing)
 docs/
-  superpowers/specs/          # requirements.md, architecture design doc
+  superpowers/specs/          # requirements.md (index → reqs/), architecture design doc
 Package.swift                 # DeepFinderIndex (lib) + DeepFinderDaemon (exe) + DeepFinderCLI (exe), macOS .v26
 VERSION                       # Current: 0.1.0-dev
 ```

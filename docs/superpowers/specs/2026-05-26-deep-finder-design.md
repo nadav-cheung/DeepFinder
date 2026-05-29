@@ -988,7 +988,25 @@ deep-finder/
 │       └── PerformanceFixtures.swift
 ├── docs/
 │   └── superpowers/specs/
-│       ├── requirements.md
+│       ├── requirements.md          # index file → reqs/
+│       ├── reqs/                    # per-module requirement files
+│       │   ├── 00-overview.md
+│       │   ├── v0.1-index-core.md
+│       │   ├── v0.2-file-system.md
+│       │   ├── v0.3-search.md
+│       │   ├── v0.4-daemon-ipc.md
+│       │   ├── v0.5-cli-singleshot.md
+│       │   ├── v0.6-repl.md
+│       │   ├── v0.7-daemon-mgmt.md
+│       │   ├── v1.0-cli-release.md
+│       │   ├── v1.1-advanced-syntax.md
+│       │   ├── v1.2-metadata-filter.md
+│       │   ├── v1.3-search-exp.md
+│       │   ├── v1.4-content-search.md
+│       │   ├── v1.5-duplicate.md
+│       │   ├── v2.0-gui.md
+│       │   ├── v3.0-ai.md
+│       │   └── v3.1-rag.md
 │       └── 2026-05-26-deep-finder-design.md
 ├── VERSION
 └── README.md
