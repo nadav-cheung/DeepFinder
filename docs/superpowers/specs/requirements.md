@@ -3,7 +3,7 @@
 需求 ID 格式：`REQ-{版本}-{序号}`，如 `REQ-1.0-01`。
 优先级：P0 必须 / P1 重要 / P2 增强 / P3 未来。
 状态：📋 规划中 / 🔨 开发中 / ✅ 已完成 / ❌ 已取消。
-执行方式：🖥️ 本地 / ☁️ 云端 / 🖥️☁️ 混合（本地为主，云端辅助）。
+执行方式：🖥️ 本地 / ☁️ 云端 / 🖥️☁️ 混合。
 
 详细架构设计见 `2026-05-26-everything-search-design.md`。
 
@@ -11,211 +11,533 @@
 
 ## v0.1 — 索引核心
 
-| ID | 需求 | 优先级 | 状态 | 执行 | 说明 |
-|----|------|--------|------|------|------|
-| REQ-0.1-01 | FileRecord 数据模型 | P0 | ✅ | 🖥️ | 核心数据结构：id, name, originalName, path, parentPath, isDirectory, size, createdAt, modifiedAt, extension。Codable + Sendable |
-| REQ-0.1-02 | Trie 前缀索引 | P0 | 📋 | 🖥️ | Unicode scalar 字典树，O(k) 前缀匹配，支持即时补全 |
-| REQ-0.1-03 | FullSubstringMap | P0 | 📋 | 🖥️ | 文件名 ≤64 字符的全子串 → FileRecord.ID 映射，O(1) 查询。速度换内存 |
-| REQ-0.1-04 | TrigramIndex | P0 | 📋 | 🖥️ | 文件名 >64 字符的 trigram → posting list，交集 + 验证 |
-| REQ-0.1-05 | PinyinIndex | P0 | 📋 | 🖥️ | CFStringTokenizer → 拼音 token → Trie。支持全拼和首字母缩写 |
-| REQ-0.1-06 | InMemoryIndex (actor) | P0 | 📋 | 🖥️ | 组合 Trie + FullSubstringMap + TrigramIndex + PinyinIndex。actor 隔离，快照读 API |
-| REQ-0.1-07 | 测试固件 | P0 | 📋 | 🖥️ | FileRecordGenerator, EdgeCaseFixtures, PerformanceFixtures |
+### REQ-0.1-01 FileRecord 数据模型 ✅ 🖥️ P0
+
+**用户场景**：所有搜索功能的基础——用户不会直接感知 FileRecord，但它的设计决定了搜索速度和结果准确性。
+
+**验收标准**：
+- [x] FileRecord 包含：id(UInt32), name(NFC), originalName, path, parentPath, isDirectory, size, createdAt, modifiedAt, extension(String?)
+- [x] Codable + Sendable，Swift 6 严格并发安全
+- [x] JSON 编解码往返零丢失
+- [x] 5 个单元测试通过
+
+---
+
+### REQ-0.1-02 Trie 前缀索引 📋 🖥️ P0
+
+**用户场景**：用户输入 "rep" → 即时看到 "report.pdf", "reports/", "repository/" 前缀匹配结果。每个按键都有即时反馈。
+
+**操作流程**：
+1. 用户键入 "r" → 显示所有以 r 开头的文件
+2. 继续键入 "rep" → 缩小到 "rep" 前缀
+3. 继续键入 "repo" → 进一步缩小
+
+**验收标准**：
+- [ ] Unicode scalar 粒度，支持中文/日文/emoji 文件名
+- [ ] 插入 100 万条记录 < 3s
+- [ ] 前缀查询 p99 < 2ms（100 万记录）
+- [ ] 支持中文文件名前缀匹配（"季" → "季度报告.pdf"）
+- [ ] 边界：空字符串返回空，超长前缀返回空或精确匹配
+
+---
+
+### REQ-0.1-03 FullSubstringMap 📋 🖥️ P0
+
+**用户场景**：用户输入 "port" → 瞬间看到 "report.pdf", "passport.jpg", "airport_map.png"——任何包含 "port" 的文件，不限位置。这是对标 Everything 的核心体验：**打字即出结果，零延迟**。
+
+**操作流程**：
+1. 用户输入任意子串（不限前缀）
+2. 立即看到所有包含该子串的文件
+3. 结果按相关性排序
+
+**验收标准**：
+- [ ] 文件名 ≤64 字符：所有子串预建映射，查询 O(1)
+- [ ] 查询 p99 < 1ms（100 万记录，1 万次随机查询）
+- [ ] 大小写不敏感（存储 lowercased，查询 lowercased）
+- [ ] 返回结果包含精确文件名（originalName 保留原始大小写）
+- [ ] 边界：重复子串不重复返回（"aaa" 在 "baaab" 中多个位置，但文件只返回一次）
+- [ ] 边界：空字符串返回空结果
+
+---
+
+### REQ-0.1-04 TrigramIndex 📋 🖥️ P0
+
+**用户场景**：极少数超长文件名（>64 字符）的兜底匹配。用户不应感知到阈值差异——搜索体验和短文件名一致。
+
+**验收标准**：
+- [ ] 文件名 >64 字符：trigram → posting list，交集 + 精确验证
+- [ ] 查询结果与 FullSubstringMap 的语义一致（用户无感知差异）
+- [ ] 与 FullSubstringMap 协同：同一查询同时覆盖两类文件名
+
+---
+
+### REQ-0.1-05 PinyinIndex 📋 🖥️ P0
+
+**用户场景**：中文用户的强需求——用户输入 "baogao" 或 "bg" → 看到所有中文文件名含 "报告" 的文件。中文用户可以用拼音快速找到中文文件名。
+
+**操作流程**：
+1. 用户输入 "baogao" → 全拼匹配 → "季度报告.pdf", "年度报告.docx"
+2. 用户输入 "bg" → 首字母缩写匹配 → 同样的结果
+3. 混合输入 "jdbg" → "季度报告.pdf"（首字母逐字匹配）
+
+**验收标准**：
+- [ ] CFStringTokenizer 提取拼音 token → 独立 Trie
+- [ ] 支持全拼（"baogao"）和首字母缩写（"bg"）
+- [ ] 中文/英文混合文件名正确处理（"Q3报告.pdf" → "Q3baogao"）
+- [ ] 拼音查询 p99 < 15ms（100 万记录）
+- [ ] 边界：纯英文文件名不产生拼音 token（避免误匹配）
+
+---
+
+### REQ-0.1-06 InMemoryIndex (actor) 📋 🖥️ P0
+
+**用户场景**：用户无感知，但这是所有搜索功能的入口。用户只需知道：搜索即时出结果，索引在后台实时更新。
+
+**验收标准**：
+- [ ] 组合 Trie + FullSubstringMap + TrigramIndex + PinyinIndex
+- [ ] actor 隔离：所有读写通过 actor isolation
+- [ ] 快照读 API：`snapshot() -> IndexSnapshot`（不可变，供 SearchCoordinator 安全消费）
+- [ ] 插入/删除操作不影响正在进行的查询（快照隔离）
+- [ ] 100 万 FileRecord 索引构建 < 10s
+- [ ] 内存 < 2GB（100 万记录）
+
+---
+
+### REQ-0.1-07 测试固件 📋 🖥️ P0
+
+**用户场景**：无直接用户感知，但保证质量。用户最终受益于可靠的搜索结果。
+
+**验收标准**：
+- [ ] FileRecordGenerator：可配置数量的随机 FileRecord 生成器
+- [ ] EdgeCaseFixtures：空文件名、超长文件名、emoji、NFD/NFC 混合、特殊字符
+- [ ] PerformanceFixtures：10k / 100k / 1M 规模的测试数据集
+
+---
 
 ## v0.2 — 文件系统
 
-| ID | 需求 | 优先级 | 状态 | 执行 | 说明 |
-|----|------|--------|------|------|------|
-| REQ-0.2-01 | FileSystemEventStream 协议 | P0 | 📋 | 🖥️ | 抽象层：start/stop/isRunning。生产用 FSEventStreamCreate，测试用 MockEventStream |
-| REQ-0.2-02 | FileScanner 全量扫描 | P0 | 📋 | 🖥️ | FileManager.enumerator 遍历所有卷，TaskGroup 按卷并行，边扫边建索引 |
-| REQ-0.2-03 | FSEventWatcher | P0 | 📋 | 🖥️ | 文件创建/删除/重命名/修改 → 增量更新索引。启动衔接：stale → FSEvents → 验证 → live |
-| REQ-0.2-04 | IndexPersistence | P0 | 📋 | 🖥️ | SQLite WAL 持久化 FileRecord[]，权限 600，批量写入（5s 或 100 条） |
-| REQ-0.2-05 | 索引恢复 | P1 | 📋 | 🖥️ | 加载时校验（行数 + checksum），失败删除重建 + 进度 UI |
+### REQ-0.2-01 FileSystemEventStream 协议 📋 🖥️ P0
+
+**用户场景**：用户创建/删除/重命名文件后，搜索结果立即反映变化——不需要手动刷新或等待。
+
+**验收标准**：
+- [ ] 协议：start(paths:handler:), stop(), isRunning
+- [ ] 生产实现 FSEventStreamImpl：包装 FSEventStreamCreate
+- [ ] 测试实现 MockEventStream：可编程注入事件
+- [ ] 事件类型：创建、删除、重命名、修改
+- [ ] 延迟目标：文件变更后 ≤2s 反映在搜索结果中
+
+---
+
+### REQ-0.2-02 FileScanner 全量扫描 📋 🖥️ P0
+
+**用户场景**：首次启动或索引损坏后，扫描全部文件。用户看到进度条，但扫描过程中已可搜索（边扫边建索引）。用户不想等扫描完成才能开始用。
+
+**操作流程**：
+1. 首次启动 → 显示 "正在索引... 已扫描 12,345 / ~500,000 文件"
+2. 扫描过程中用户输入搜索 → 已扫描的文件立即可搜索
+3. 扫描完成 → 索引状态变为 live
+
+**验收标准**：
+- [ ] FileManager.enumerator 遍历所有卷
+- [ ] TaskGroup 按卷并行扫描（外置卷并行不阻塞主卷）
+- [ ] 边扫边建索引：扫描 N 条后立即可搜索
+- [ ] 跳过：/System, /Library, .Trash, .git, node_modules, .Spotlight-V100（可配置）
+- [ ] 隐私排除：~/Library/Caches, ~/Library/Cookies, ~/Library/Keychains
+- [ ] 只索引当前用户 home + 系统共享目录
+- [ ] 50 万文件扫描 < 30s（M4 SSD）
+
+---
+
+### REQ-0.2-03 FSEventWatcher 📋 🖥️ P0
+
+**用户场景**：后台持续运行，用户无感知。当用户在 Finder 中新建文件后切回 Everything Search，新文件已在结果中。
+
+**验收标准**：
+- [ ] 文件创建 → 插入索引；删除 → 移除；重命名 → 删除旧+插入新；修改 → 更新元数据
+- [ ] 启动衔接：加载持久化索引 → stale → 启动 FSEvents → 补齐 cursor 差距 → verifying → live
+- [ ] cursor 失效时触发全量重建（不卡 UI）
+- [ ] 索引状态机 UI 反映：stale="结果可能不完整" / verifying="验证中..." / live=无提示
+
+---
+
+### REQ-0.2-04 IndexPersistence 📋 🖥️ P0
+
+**用户场景**：用户退出 app 再打开，搜索即时可用——不需要重新扫描。启动速度 < 1 秒。
+
+**验收标准**：
+- [ ] SQLite WAL 模式，路径 ~/.everything-search/index.db，权限 600
+- [ ] 持久化 FileRecord[]（不含索引结构，启动重建）
+- [ ] 增量写入：每 5 秒或每 100 条变更批量写入（避免 I/O 抖动）
+- [ ] 启动加载 100 万条 < 1s，索引重建 < 2s
+- [ ] 退出时 flush 全部未写入变更 + 保存 FSEvents cursor
+
+---
+
+### REQ-0.2-05 索引恢复 📋 🖥️ P1
+
+**用户场景**：异常断电或磁盘错误导致索引损坏。用户看到 "索引需要修复" → 自动修复 → 恢复搜索。
+
+**操作流程**：
+1. 启动时加载 SQLite → 校验（行数 + checksum）
+2. 校验通过 → 正常启动
+3. 校验失败 → 显示 "索引损坏，正在重建..." → 全量扫描
+4. 重建完成 → 正常使用
+
+**验收标准**：
+- [ ] 加载时校验 SQLite 完整性
+- [ ] 失败时自动触发全量重建（无需用户手动操作）
+- [ ] 重建期间显示进度 UI
+- [ ] 重建完成后自动进入 live 状态
+
+---
 
 ## v0.3 — 搜索
 
-| ID | 需求 | 优先级 | 状态 | 执行 | 说明 |
-|----|------|--------|------|------|------|
-| REQ-0.3-01 | SearchProvider 协议 | P0 | 📋 | 🖥️ | AsyncSequence<SearchResult, Never>，cancel(queryID:)，prepare() |
-| REQ-0.3-02 | SearchQuery / SearchResult | P0 | 📋 | 🖥️ | SearchQuery: NFC + lowercased。SearchResult: record + score + matchType。MatchType: exact/prefix/substring/pinyin |
-| REQ-0.3-03 | SearchCoordinator (@MainActor) | P0 | 📋 | 🖥️ | 分发查询 → 消费 AsyncSequence → 合并排序 → 渲染。内存查询无防抖 |
-| REQ-0.3-04 | 排序策略 | P1 | 📋 | 🖥️ | MatchType 权重 > 文件名长度 > 使用频率 > 修改时间 > 路径深度 |
-| REQ-0.3-05 | 性能基准测试 | P0 | 📋 | 🖥️ | XCTMetric + measure，100k/1M 文件，p99 延迟目标见 spec §8 |
+### REQ-0.3-01 SearchProvider 协议 📋 🖥️ P0
+
+**用户场景**：无直接感知。但协议设计决定了未来添加新搜索能力（内容搜索、AI 搜索）时，用户无需学习新界面。
+
+**验收标准**：
+- [ ] `search(query:) -> AsyncSequence<SearchResult, Never>`
+- [ ] `cancel(queryID:)` 取消进行中查询
+- [ ] `prepare()` 预热
+- [ ] MVP：FileIndexProvider 一次 yield 全部结果
+- [ ] 接口兼容未来流式 Provider（AI、内容搜索）
+
+---
+
+### REQ-0.3-02 SearchQuery / SearchResult 📋 🖥️ P0
+
+**用户场景**：用户输入 "Report"（大写 R）→ 结果包含 "report.pdf", "REPORT_FINAL.docx"。大小写不敏感但结果保留原始大小写显示。
+
+**验收标准**：
+- [ ] SearchQuery：NFC 统一化 + lowercased
+- [ ] SearchResult：record + provider + score(0.0-1.0) + matchType
+- [ ] MatchType：exact > prefix > pinyin > substring
+- [ ] 大小写不敏感查询，originalName 保留原始大小写用于显示
+
+---
+
+### REQ-0.3-03 SearchCoordinator (@MainActor) 📋 🖥️ P0
+
+**用户场景**：用户每按一个键都立即看到更新后的结果——无防抖、无延迟。体验就像在本地数据库直查。
+
+**验收标准**：
+- [ ] 每次按键直接查询（内存索引无防抖）
+- [ ] 遍历 ready Providers → 消费 AsyncSequence → 合并结果 → 排序 → 渲染
+- [ ] 旧查询在新查询发起时自动取消
+- [ ] 结果去重（同一文件可能被多个 Provider 返回）
+- [ ] 主线程不卡顿：搜索在后台执行，主线程只做渲染
+
+---
+
+### REQ-0.3-04 排序策略 📋 🖥️ P1
+
+**用户场景**：用户搜 "report" → 最上面是精确匹配 "report.pdf"，然后是前缀匹配 "report_v2.pdf"，然后是子串匹配 "quarterly_report.xlsx"。**用户最想找的文件排在最前面**。
+
+**验收标准**：
+- [ ] 排序权重：MatchType(最高) > 文件名长度(短优先) > 使用频率(高优先) > 修改时间(新优先) > 路径深度(浅优先)
+- [ ] 相同 matchType 时，短文件名优先（"report.pdf" 排在 "annual_report_summary.pdf" 前面）
+- [ ] 使用频率：MVP 可不实现，但 FileRecord schema 预留字段
+
+---
+
+### REQ-0.3-05 性能基准测试 📋 🖥️ P0
+
+**用户场景**：用户无感知，但保证每次发布不引入性能退化。
+
+**验收标准**：
+- [ ] XCTMetric + measure blocks 编码为自动化测试
+- [ ] 100k 文件索引构建 < 3s
+- [ ] 1M 文件索引构建 < 10s
+- [ ] 前缀查询 p99 < 2ms（1M 记录）
+- [ ] 子串查询 p99 < 1ms（1M 记录）
+- [ ] 启动加载 1M 文件 < 1s
+
+---
 
 ## v0.4 — UI
 
-| ID | 需求 | 优先级 | 状态 | 执行 | 说明 |
-|----|------|--------|------|------|------|
-| REQ-0.4-01 | SearchPanelView (NSPanel) | P0 | 📋 | 🖥️ | Liquid Glass 材质，屏幕顶部居中，点击外部/Esc 关闭 |
-| REQ-0.4-02 | SearchBarView | P0 | 📋 | 🖥️ | 图标 + TextField + 清除按钮，.glassEffect() Liquid Glass |
-| REQ-0.4-03 | ResultsListView | P0 | 📋 | 🖥️ | LazyVStack 虚拟化，分页 100 条，"还有 N 个结果" 按钮 |
-| REQ-0.4-04 | ResultRowView | P0 | 📋 | 🖥️ | 文件图标 + 文件名（高亮匹配）+ 路径 + 大小/日期 |
-| REQ-0.4-05 | IntelligenceGlow | P1 | 📋 | 🖥️ | AngularGradient 4 层旋转光晕，~1.8s 周期，reduceMotion 降级 |
-| REQ-0.4-06 | FileIconCache | P1 | 📋 | 🖥️ | NSCache 按扩展名缓存 16x16 图标 |
+### REQ-0.4-01 SearchPanelView (NSPanel) 📋 🖥️ P0
+
+**用户场景**：按 ⌥Space → 一个 Spotlight 风格的搜索面板从屏幕顶部滑出，半透明毛玻璃效果，光晕边框。**第一印象决定用户是否继续用**。
+
+**操作流程**：
+1. ⌥Space → 面板在当前屏幕顶部居中出现
+2. 搜索框自动获得焦点
+3. 点击面板外任意位置 / Esc → 面板消失
+4. 再次 ⌥Space → 面板重新出现，上次的搜索文本保留
+
+**验收标准**：
+- [ ] NSPanel 浮动窗口，`.floating` 层级
+- [ ] Liquid Glass 材质：`.glassEffect(.regular, in: .rect(cornerRadius: 24))`
+- [ ] GlassEffectContainer 统一渲染
+- [ ] 当前活跃屏幕居中（非主屏幕）
+- [ ] 点击外部 / Esc 自动关闭
+- [ ] 关闭后再打开，保留上次搜索文本和光标位置
+- [ ] 无标题栏，无 Dock 图标
+- [ ] reduceMotion 降级：无动画，直接显示/隐藏
+
+---
+
+### REQ-0.4-02 SearchBarView 📋 🖥️ P0
+
+**用户场景**：用户看到搜索框 → 直接打字 → 结果即时出现。无需点击搜索按钮，无需按 Enter。
+
+**操作流程**：
+1. 面板打开 → 搜索框聚焦，光标闪烁
+2. 输入文字 → 下方即时显示结果
+3. 点击 ✕ 清除按钮 → 清空搜索框，清空结果
+4. 长文字 → 搜索框可水平滚动
+
+**验收标准**：
+- [ ] 左侧搜索图标 + NSTextField + 右侧清除按钮
+- [ ] Liquid Glass 材质：`.glassEffect()`
+- [ ] 输入即时触发搜索（无防抖）
+- [ ] 清除按钮仅在有文字时显示
+- [ ] Placeholder：灰显 "搜索文件..."
+- [ ] VoiceOver：Accessibility label "搜索文件"
+
+---
+
+### REQ-0.4-03 ResultsListView 📋 🖥️ P0
+
+**用户场景**：用户输入 "report" → 下方立即出现匹配文件列表，滚动流畅，即使有上千条结果也不卡。
+
+**操作流程**：
+1. 输入查询 → 结果列表即时更新
+2. ↑↓ 键选择结果，选中项高亮
+3. Enter 打开选中文件
+4. 滚动到底部 → "还有 234 个结果" 按钮 → 点击加载下一批
+
+**验收标准**：
+- [ ] LazyVStack 虚拟化渲染，1000+ 结果滚动 60fps
+- [ ] 分页：默认 100 条，底部 "还有 N 个结果" 按钮
+- [ ] ↑↓ 键盘导航，Enter 打开，Space 预览
+- [ ] 选中项视觉高亮（Liquid Glass 效果）
+- [ ] 无结果时显示友好提示："未找到匹配文件"
+- [ ] 索引构建中显示进度："正在索引... x / y 文件"
+
+---
+
+### REQ-0.4-04 ResultRowView 📋 🖥️ P0
+
+**用户场景**：用户一眼看到文件图标、文件名（匹配部分高亮）、路径、大小和日期。**无需打开文件就能判断是不是要找的文件**。
+
+**验收标准**：
+- [ ] 左侧：文件类型图标（FileIconCache 缓存 16x16）
+- [ ] 中间上：文件名，匹配部分用系统强调色高亮，保留原始大小写
+- [ ] 中间下：路径（相对 ~ 缩短显示），如 `~/Documents/Projects/`
+- [ ] 右侧：文件大小 + 修改日期，灰显
+- [ ] 目录行：文件夹图标 + 文件名 + 子项数量
+- [ ] VoiceOver：读出 "文件名，路径，大小"
+
+---
+
+### REQ-0.4-05 IntelligenceGlow 📋 🖥️ P1
+
+**用户场景**：搜索框获得焦点时，光晕动画让面板看起来有生命力——和 Apple Intelligence 风格一致。用户觉得这是一个精心设计的现代 app。
+
+**验收标准**：
+- [ ] AngularGradient：青蓝 / 紫 / 珊瑚粉 / 暖琥珀
+- [ ] 4 层叠加（不同线宽 + 模糊半径），旋转周期 ~1.8s
+- [ ] 60fps 满帧（M4+ GPU）
+- [ ] reduceMotion：降级为静态渐变边框（不旋转）
+- [ ] 面板隐藏时暂停动画（避免 GPU 空转）
+- [ ] 搜索框聚焦 → 光晕激活；失焦 → 光晕保持但不旋转
+
+---
+
+### REQ-0.4-06 FileIconCache 📋 🖥️ P1
+
+**用户场景**：用户看到每种文件类型有对应的图标——PDF 有 PDF 图标，文件夹有文件夹图标。滚动时图标即时出现不闪烁。
+
+**验收标准**：
+- [ ] NSCache 按扩展名缓存 16x16 图标
+- [ ] 目录使用文件夹图标
+- [ ] 未知类型使用通用文件图标
+- [ ] 缓存命中时 < 0.1ms 返回图标
+- [ ] 内存可控：NSCache 自动淘汰
+
+---
 
 ## v0.5 — 集成
 
-| ID | 需求 | 优先级 | 状态 | 执行 | 说明 |
-|----|------|--------|------|------|------|
-| REQ-0.5-01 | GlobalHotkey (⌥Space) | P0 | 📋 | 🖥️ | RegisterEventHotKey 优先，CGEventTap fallback。冲突检测 + 首次授权引导 |
-| REQ-0.5-02 | StatusBarController | P0 | 📋 | 🖥️ | 菜单栏图标，点击唤起搜索面板 |
-| REQ-0.5-03 | AppDelegate + 启动流程 | P0 | 📋 | 🖥️ | 加载索引 → FSEvents → 验证 → 注册热键 → 就绪 |
-| REQ-0.5-04 | SettingsView | P1 | 📋 | 🖥️ | 索引排除路径、热键配置、开机自启 |
+### REQ-0.5-01 GlobalHotkey (⌥Space) 📋 🖥️ P0
+
+**用户场景**：用户在任何应用中按 ⌥Space → 搜索面板弹出。这是最高频的操作，必须 100% 可靠。
+
+**操作流程**：
+1. 首次启动 → 引导授权 Accessibility（系统弹窗）
+2. 授权后 → ⌥Space 立即可用
+3. 未授权 → 菜单栏图标仍可用，提示授权
+
+**验收标准**：
+- [ ] RegisterEventHotKey (Carbon) 优先，CGEventTap fallback
+- [ ] 默认 ⌥Space，可在 Settings 修改
+- [ ] 热键冲突检测：若被占用，提示用户选择其他热键
+- [ ] 响应延迟 < 100ms（从按下到面板出现）
+- [ ] 首次启动引导授权流程
+
+---
+
+### REQ-0.5-02 StatusBarController 📋 🖥️ P0
+
+**用户场景**：用户看到菜单栏有个搜索图标 → 点击也能打开搜索面板。不需要记住热键也能使用。
+
+**验收标准**：
+- [ ] 菜单栏常驻图标（menu-icon.pdf）
+- [ ] 点击 → 打开搜索面板
+- [ ] 右键菜单：搜索 / 设置 / 退出
+- [ ] 索引状态显示：正常 / 索引中 / 错误
+
+---
+
+### REQ-0.5-03 AppDelegate + 启动流程 📋 🖥️ P0
+
+**用户场景**：用户开机 → Everything Search 自动启动（Login Item）→ 1 秒内就绪。搜索面板随时可用。
+
+**操作流程**：
+1. 系统启动 → app 自动启动（LSUIElement，无 Dock 图标）
+2. 检查 ~/.everything-search/index.db
+3. [存在] 加载 FileRecord → 重建内存索引（<2s）→ stale
+4. [不存在] 全量扫描 → 边扫边建 → 显示进度
+5. 启动 FSEvents → 补齐 cursor → verifying → live
+6. 注册热键 + 菜单栏图标 → 就绪
+
+**验收标准**：
+- [ ] 冷启动到可搜索 < 3s（有索引）/ < 60s（首次全量扫描 50 万文件）
+- [ ] 支持 Login Item 开机自启
+- [ ] 退出时：flush 剩余变更 + 保存 FSEvents cursor
+- [ ] LSUIElement=true，不显示 Dock 图标和 Cmd+Tab
+
+---
+
+### REQ-0.5-04 SettingsView 📋 🖥️ P1
+
+**用户场景**：用户想修改热键、排除某些目录、或关闭开机自启。
+
+**验收标准**：
+- [ ] 索引排除路径（可添加/删除目录）
+- [ ] 热键配置（检测冲突）
+- [ ] 开机自启开关
+- [ ] 索引状态 + 手动重建按钮
+- [ ] 设置持久化到 ~/.everything-search/config.json
 
 ---
 
 ## v1.0 — 核心搜索（首个发布版本）
 
-| ID | 需求 | 优先级 | 状态 | 执行 | 说明 |
-|----|------|--------|------|------|------|
-| REQ-1.0-01 | Quick Look 预览 | P1 | 📋 | 🖥️ | Space 键快速预览选中文件 |
-| REQ-1.0-02 | 右键菜单 | P1 | 📋 | 🖥️ | 在 Finder 中显示 / 复制路径 / 拖拽 / 打开方式 |
-| REQ-1.0-03 | 拖拽支持 | P2 | 📋 | 🖥️ | 拖拽文件到其他应用 |
-| REQ-1.0-04 | UI 测试 | P1 | 📋 | 🖥️ | SearchPanelUITests |
-| REQ-1.0-05 | 模糊纠错 | P1 | 📋 | 🖥️ | 编辑距离算法 + Trie 模糊匹配，输入 "repotr" → 建议 "report" |
-| REQ-1.0-06 | 高亮匹配 | P1 | 📋 | 🖥️ | 结果列表高亮匹配子串，保留原始大小写 |
+### REQ-1.0-01 Quick Look 预览 📋 🖥️ P1
 
-## v1.1 — 高级搜索语法
+**用户场景**：用户选中一个文件 → 按 Space → 文件内容预览窗口弹出，不需要打开文件就能确认是不是要找的。
 
-| ID | 需求 | 优先级 | 状态 | 执行 | 说明 |
-|----|------|--------|------|------|------|
-| REQ-1.1-01 | 布尔运算符 | P0 | 📋 | 🖥️ | 空格=AND, \|=OR, !=NOT。支持分组 `< >` |
-| REQ-1.1-02 | 通配符 | P0 | 📋 | 🖥️ | `*` 任意字符, `?` 单字符 |
-| REQ-1.1-03 | 正则表达式 | P1 | 📋 | 🖥️ | `regex:` 前缀激活正则模式 |
-| REQ-1.1-04 | 路径限定 | P1 | 📋 | 🖥️ | `Documents\ report`, `parent:~/Documents` |
-| REQ-1.1-05 | 搜索修饰符 | P1 | 📋 | 🖥️ | `case:`, `file:`, `folder:`, `ext:`, `path:`, `wfn:` |
-| REQ-1.1-06 | 搜索历史 | P1 | 📋 | 🖥️ | ↑↓ 回溯历史查询，持久化最近 100 条 |
-| REQ-1.1-07 | 搜索语法解析器 | P0 | 📋 | 🖥️ | 解析搜索语法为 AST → 传给 SearchProvider 执行 |
+**操作流程**：
+1. ↑↓ 选择文件
+2. Space → Quick Look 预览窗口
+3. 再按 Space / Esc → 关闭预览
+4. 预览中可继续 ↑↓ 切换文件
 
-## v1.2 — 元数据过滤
+**验收标准**：
+- [ ] 支持 QLPreviewPanel：图片/PDF/文本/视频/音频预览
+- [ ] Space 打开/关闭预览
+- [ ] 预览中 ↑↓ 切换文件，预览内容跟随更新
+- [ ] 不支持的文件类型显示文件名 + 大小 + 日期
 
-| ID | 需求 | 优先级 | 状态 | 执行 | 说明 |
-|----|------|--------|------|------|------|
-| REQ-1.2-01 | 大小过滤 | P0 | 📋 | 🖥️ | `size:>1mb`, `size:100kb..10mb`，支持 kb/mb/gb |
-| REQ-1.2-02 | 日期过滤 | P0 | 📋 | 🖥️ | `dm:today`, `dc:thisweek`, 范围 `dm:2026-01-01..03-31` |
-| REQ-1.2-03 | 扩展名过滤 | P0 | 📋 | 🖥️ | `ext:pdf;doc;xlsx`，分号多扩展名 |
-| REQ-1.2-04 | 类型过滤宏 | P1 | 📋 | 🖥️ | `audio:`, `video:`, `pic:`, `doc:` 预定义文件类型 |
-| REQ-1.2-05 | 文件/文件夹限定 | P1 | 📋 | 🖥️ | `file:`, `folder:` |
-| REQ-1.2-06 | 路径深度 | P2 | 📋 | 🖥️ | `depth:3` |
-| REQ-1.2-07 | 高级搜索面板 | P1 | 📋 | 🖥️ | GUI 表单构建复杂查询，对标 Everything Advanced Search |
-| REQ-1.2-08 | 元数据索引扩展 | P0 | 📋 | 🖥️ | InMemoryIndex 增加按 size/date/ext 的排序索引 |
+---
 
-## v1.3 — 搜索体验
+### REQ-1.0-02 右键菜单 📋 🖥️ P1
 
-| ID | 需求 | 优先级 | 状态 | 执行 | 说明 |
-|----|------|--------|------|------|------|
-| REQ-1.3-01 | 书签 | P1 | 📋 | 🖥️ | 保存搜索+排序+过滤，一键恢复 |
-| REQ-1.3-02 | 自定义过滤器 | P1 | 📋 | 🖥️ | 预定义搜索条件 + 快捷键 + 宏，如 `photos:` → `ext:jpg;png;heic pic:` |
-| REQ-1.3-03 | 结果排序 | P0 | 📋 | 🖥️ | 名称/大小/日期/扩展名/路径，自然排序（natural sort）|
-| REQ-1.3-04 | 排序持久化 | P2 | 📋 | 🖥️ | 记住上次排序方式 |
-| REQ-1.3-05 | 上下文搜索 | P1 | 📋 | 🖥️ | 监听 frontmost app，在 Xcode 中搜索自动聚焦 `.swift` 文件 |
-| REQ-1.3-06 | 预测推荐 | P1 | 📋 | 🖥️ | 统计使用频率+时间模式，周一推荐周一常用的文件 |
-| REQ-1.3-07 | 搜索建议 | P2 | 📋 | 🖥️ | 基于历史和热门文件的自动补全下拉 |
+**用户场景**：用户找到文件后，右键 → "在 Finder 中显示"（打开 Finder 并选中该文件）。
 
-## v1.4 — 内容搜索
+**操作流程**：
+1. 右键点击结果行 → 弹出菜单
+2. 选择 "在 Finder 中显示" → Finder 打开并选中文件
+3. 选择 "复制路径" → 完整路径复制到剪贴板
+4. 选择 "打开" → 用默认应用打开文件
 
-| ID | 需求 | 优先级 | 状态 | 执行 | 说明 |
-|----|------|--------|------|------|------|
-| REQ-1.4-01 | content: 函数 | P0 | 📋 | 🖥️ | `content:keyword` 实时扫描文件内容，结合其他过滤先缩小范围 |
-| REQ-1.4-02 | 编码支持 | P0 | 📋 | 🖥️ | UTF-8, UTF-16, UTF-16BE 自动检测 |
-| REQ-1.4-03 | 文件类型限定 | P1 | 📋 | 🖥️ | `ext:swift;py;md content:TODO` 只搜索特定扩展名 |
-| REQ-1.4-04 | 行号定位 | P2 | 📋 | 🖥️ | 显示匹配行号，点击跳转编辑器（仅文本文件） |
+**验收标准**：
+- [ ] "打开"（默认应用）
+- [ ] "在 Finder 中显示"（Reveal in Finder）
+- [ ] "复制路径"（完整路径到剪贴板）
+- [ ] "获取信息"（Finder Get Info 对话框）
+- [ ] 文件不存在时菜单项灰显 + 提示 "文件已移除"
 
-## v1.5 — 重复文件与高级查找
+---
 
-| ID | 需求 | 优先级 | 状态 | 执行 | 说明 |
-|----|------|--------|------|------|------|
-| REQ-1.5-01 | 按名称查重 | P1 | 📋 | 🖥️ | `dupe:` 相同文件名 |
-| REQ-1.5-02 | 按大小查重 | P1 | 📋 | 🖥️ | `sizedupe:` 相同大小 |
-| REQ-1.5-03 | 按内容哈希查重 | P1 | 📋 | 🖥️ | `hashdupe:` SHA-256，比 Everything 更精确 |
-| REQ-1.5-04 | 空文件夹 | P2 | 📋 | 🖥️ | `empty:` 查找空目录 |
-| REQ-1.5-05 | 文件名长度 | P2 | 📋 | 🖥️ | `len:>100` |
-| REQ-1.5-06 | 子项计数 | P2 | 📋 | 🖥️ | `childcount:0`, `childfilecount:>10` |
+### REQ-1.0-03 拖拽支持 📋 🖥️ P2
 
-## v2.0 — 扩展索引
+**用户场景**：用户想把文件拖到邮件附件、聊天窗口或 Finder 文件夹。
 
-| ID | 需求 | 优先级 | 状态 | 执行 | 说明 |
-|----|------|--------|------|------|------|
-| REQ-2.0-01 | 外置卷索引 | P1 | 📋 | 🖥️ | USB/Thunderbolt 自动索引，卸载保留，重新挂载增量更新 |
-| REQ-2.0-02 | 网络卷索引 | P2 | 📋 | 🖥️ | SMB/AFP/NFS 共享目录索引 |
-| REQ-2.0-03 | 离线文件列表 | P2 | 📋 | 🖥️ | 对标 File Lists — 光盘/归档媒体的离线索引 |
-| REQ-2.0-04 | Spotlight 元数据集成 | P1 | 📋 | 🖥️ | mdls 提取尺寸、时长、标签等元数据 |
-| REQ-2.0-05 | 索引日志 | P2 | 📋 | 🖥️ | 记录文件变更历史，对标 Index Journal |
-| REQ-2.0-06 | 排除规则 | P1 | 📋 | 🖥️ | 可配置的排除/包含路径和 glob 模式 |
-| REQ-2.0-07 | 项目识别 | P1 | 📋 | 🖥️ | 检测 .git/.xcodeproj/package.json，自动识别项目边界，项目内聚合搜索 |
-| REQ-2.0-08 | 自动标签 | P1 | 📋 | 🖥️☁️ | 云端 LLM 基于文件名/路径推断标签，本地 CoreML 分类兜底 |
-| REQ-2.0-09 | 代码理解 | P2 | 📋 | 🖥️ | AST 解析代码文件，索引函数名/类名/变量名 |
-| REQ-2.0-10 | 智能清理建议 | P2 | 📋 | 🖥️ | "Downloads 有 200 个文件 30 天未动" — 本地统计分析 |
+**验收标准**：
+- [ ] 从结果行拖拽文件到其他应用 → 系统标准拖拽行为
+- [ ] 拖拽时显示文件名 badge
+- [ ] 支持 NSDraggingSource 协议
 
-## v2.1 — 媒体元数据
+---
 
-| ID | 需求 | 优先级 | 状态 | 执行 | 说明 |
-|----|------|--------|------|------|------|
-| REQ-2.1-01 | 图片尺寸搜索 | P1 | 📋 | 🖥️ | `width:>2560`, `dimensions:800x600..1920x1080`，EXIF |
-| REQ-2.1-02 | 图片方向 | P2 | 📋 | 🖥️ | `orientation:landscape` |
-| REQ-2.1-03 | 音频标签搜索 | P1 | 📋 | 🖥️ | `artist:周杰伦`, `album:范特西`, `genre:pop` |
-| REQ-2.1-04 | 视频信息搜索 | P2 | 📋 | 🖥️ | `duration:>300`, `codec:h264` |
-| REQ-2.1-05 | PDF 元数据搜索 | P2 | 📋 | 🖥️ | `pdf-author:xxx`, `pdf-pages:>50` |
-| REQ-2.1-06 | AI 摘要气泡 | P1 | 📋 | 🖥️☁️ | 悬停文件显示 AI 生成的一句话摘要，首次生成后缓存本地 |
-| REQ-2.1-07 | 内容摘要索引 | P1 | 📋 | 🖥️ | 首次索引文件时本地 CoreML 生成摘要，存入 SQLite 供搜索匹配 |
+### REQ-1.0-04 UI 测试 📋 🖥️ P1
 
-## v2.2 — 服务与集成
+**验收标准**：
+- [ ] SearchPanelUITests：打开/关闭/搜索/选择/打开文件
+- [ ] 热键触发面板
+- [ ] 搜索结果显示正确
+- [ ] 键盘导航完整覆盖
 
-| ID | 需求 | 优先级 | 状态 | 执行 | 说明 |
-|----|------|--------|------|------|------|
-| REQ-2.2-01 | HTTP 搜索服务 | P2 | 📋 | 🖥️ | 本地 Web 界面，浏览器搜索文件 |
-| REQ-2.2-02 | 命令行工具 | P1 | 📋 | 🖥️ | `es search "keyword"` — 终端搜索，输出 JSON/纯文本 |
-| REQ-2.2-03 | URL Scheme | P1 | 📋 | 🖥️ | `everything://search?q=keyword` — 其他 app 调起 |
-| REQ-2.2-04 | Shortcuts 集成 | P2 | 📋 | 🖥️ | Apple Shortcuts 动作 |
-| REQ-2.2-05 | AppleScript | P2 | 📋 | 🖥️ | 脚本化搜索和结果获取 |
-| REQ-2.2-06 | Share Extension | P3 | 📋 | 🖥️ | 从其他 app 搜索文件 |
+---
 
-## v3.0 — AI 辅助搜索
+### REQ-1.0-05 模糊纠错 📋 🖥️ P1
 
-**核心约束：全部文件不离开本地。只有元数据和用户查询文本可以发送到云端。**
+**用户场景**：用户打字快，输入 "repotr" → 搜索框下方显示 "您是否要搜索: report？" → 点击或 Enter 执行纠正后的搜索。
 
-| ID | 需求 | 优先级 | 状态 | 执行 | 说明 |
-|----|------|--------|------|------|------|
-| REQ-3.0-01 | AIModelProvider 协议 | P0 | 📋 | 🖥️ | AI 模型统一接口：complete(), translateToSearchSyntax()。详见 spec §v3.0 |
-| REQ-3.0-02 | Privacy Boundary | P0 | 📋 | 🖥️ | 隐私边界：FileMetadataSummary 只含 name/path/size/date/ext/localTags。路径默认脱敏 |
-| REQ-3.0-03 | DeepSeek 接入 | P1 | 📋 | ☁️ | DeepSeek API 实现 AIModelProvider |
-| REQ-3.0-04 | 千问接入 | P1 | 📋 | ☁️ | Qwen API 实现 AIModelProvider |
-| REQ-3.0-05 | 自然语言搜索 | P0 | 📋 | 🖥️☁️ | "找上周改过的大文件" → LLM 翻译 → `dm:lastweek size:>10mb` |
-| REQ-3.0-06 | 结果摘要 | P1 | 📋 | 🖥️☁️ | 基于元数据生成搜索结果摘要和分类 |
-| REQ-3.0-07 | 搜索建议气泡 | P1 | 📋 | 🖥️☁️ | UI 层 AI 建议气泡，异步请求，不阻塞主搜索 |
-| REQ-3.0-08 | 语义分组 | P1 | 📋 | 🖥️☁️ | 大量结果自动分组：设计稿/合同/报告/代码/其他 |
-| REQ-3.0-09 | 匹配解释 | P2 | 📋 | 🖥️ | 搜索结果旁显示 "匹配原因：文件名含 report，上周修改" |
-| REQ-3.0-10 | LocalVisionProvider | P1 | 📋 | 🖥️ | Vision + CoreML 本地图片分析 → 生成标签 → 存入索引。零外传 |
-| REQ-3.0-11 | 以图搜图 | P1 | 📋 | 🖥️ | 本地图片特征提取 + 向量索引，截图/拖图搜索相似文件。零外传 |
-| REQ-3.0-12 | LocalSpeechProvider | P2 | 📋 | 🖥️ | Speech 框架本地语音识别，文本送云端理解意图 |
-| REQ-3.0-13 | 跨语言搜索 | P1 | 📋 | 🖥️☁️ | 中文搜 "设计稿" 也能命中 "mockup_v2.fig" |
-| REQ-3.0-14 | 自然语言操作 | P2 | 📋 | 🖥️☁️ | "把 Downloads 里的截图移到相册" → LLM 生成操作指令 → 用户确认 → 本地执行 |
-| REQ-3.0-15 | 用户隐私控制面板 | P0 | 📋 | 🖥️ | Settings > AI：模型选择/元数据发送开关/路径脱敏/API Key/数据预览 |
-| REQ-3.0-16 | 剪贴板搜索 | P2 | 📋 | 🖥️ | 复制文字 → 自动搜索本地包含相似内容的文件 |
+**操作流程**：
+1. 用户输入 "repotr" → 无精确匹配
+2. 搜索框下方出现建议条："您是否要搜索: report"
+3. 用户按 Tab 或点击建议 → 搜索 "report"
+4. 或用户忽略建议 → 继续输入
 
-## v3.1 — 本地 RAG（检索增强生成）
+**验收标准**：
+- [ ] 编辑距离 ≤2 的前缀匹配纠错
+- [ ] 建议只在实际无结果或有更优匹配时出现
+- [ ] 建议不阻塞当前搜索（用户仍能看到原始查询结果）
+- [ ] 纠错延迟 < 10ms（本地算法，无网络）
+- [ ] 中文输入：支持拼音纠错（"baogoa" → "baogao"）
 
-**全部本地执行，零外传。**
+---
 
-| ID | 需求 | 优先级 | 状态 | 执行 | 说明 |
-|----|------|--------|------|------|------|
-| REQ-3.1-01 | 文件内容分块 | P0 | 📋 | 🖥️ | 512 tokens/chunk，overlap 64。支持 txt/md/pdf/docx/代码文件 |
-| REQ-3.1-02 | 本地 Embedding 引擎 | P0 | 📋 | 🖥️ | all-MiniLM-L6-v2 CoreML 量化版，~30MB，M4 GPU ~1ms/chunk |
-| REQ-3.1-03 | 向量索引存储 | P0 | 📋 | 🖥️ | SQLite vec 扩展或 hnswlib，向量 + chunk 元数据 |
-| REQ-3.1-04 | 增量 Embedding 更新 | P1 | 📋 | 🖥️ | FSEvents → 只重新 embedding 变更文件 |
-| REQ-3.1-05 | 语义检索 | P0 | 📋 | 🖥️ | 查询 → embedding → cosine similarity Top-K → 返回最相关 chunk |
-| REQ-3.1-06 | 本地小模型生成 | P1 | 📋 | 🖥️ | Llama 3.2 1B/3B CoreML 量化版，M4+ 24GB 可流畅运行 |
-| REQ-3.1-07 | RAG 问答 | P1 | 📋 | 🖥️ | 用户问 "去年收入增长多少" → 检索相关 chunk → 本地 LLM 回答 + 引用文件路径 |
+### REQ-1.0-06 高亮匹配 📋 🖥️ P1
 
-## macOS 特有增强
+**用户场景**：用户搜 "port" → 结果中 "re**port**.pdf", "air**port**_map.png" 的 "port" 部分用强调色高亮。**用户一眼看到为什么这个文件出现在结果中**。
 
-| ID | 需求 | 优先级 | 状态 | 执行 | 版本 | 说明 |
-|----|------|--------|------|------|------|------|
-| REQ-MAC-01 | Finder 标签搜索 | P1 | 📋 | 🖥️ | v2.0 | 搜索 macOS Finder Tags（红/橙/黄/绿/蓝/紫/灰）|
-| REQ-MAC-02 | Finder 评论搜索 | P2 | 📋 | 🖥️ | v2.0 | 搜索 Spotlight Comments |
-| REQ-MAC-03 | iCloud 同步状态 | P2 | 📋 | 🖥️ | v2.0 | 区分本地/云端/仅云端文件 |
-| REQ-MAC-04 | APFS 快照搜索 | P2 | 📋 | 🖥️ | v2.0 | Time Machine 快照中搜索历史版本 |
-| REQ-MAC-05 | 桌面 Widgets | P3 | 📋 | 🖥️ | v2.2 | 桌面/通知中心小组件显示搜索/最近文件 |
-| REQ-MAC-06 | Live Activity | P3 | 📋 | 🖥️ | v2.2 | 索引进度 Live Activity（锁屏/通知中心）|
+**验收标准**：
+- [ ] 匹配子串用系统强调色高亮
+- [ ] 保留文件名原始大小写（搜索 "PORT" → "re**port**.pdf"）
+- [ ] 多处匹配全部高亮（"port" 在 "airport_transport_report.pdf" 中 3 处高亮）
+- [ ] 拼音匹配高亮中文字符（搜索 "bg" → "**报告**.pdf" 高亮 "报告"）
+
+---
+
+## v1.1 ~ v3.1 — 详细需求（待补充）
+
+后续版本需求详情按上述模板逐步补充，每个需求包含：
+- **用户场景**：什么人在什么情况下用
+- **操作流程**：步骤化描述
+- **验收标准**：可测试的完成条件
+
+| 版本 | 需求数 | 详细度 |
+|------|--------|--------|
+| v1.1 — 高级搜索语法 | 7 | 待补充 |
+| v1.2 — 元数据过滤 | 8 | 待补充 |
+| v1.3 — 搜索体验 | 7 | 待补充 |
+| v1.4 — 内容搜索 | 4 | 待补充 |
+| v1.5 — 重复查找 | 6 | 待补充 |
+| v2.0 — 扩展索引 | 10 | 待补充 |
+| v2.1 — 媒体元数据 | 7 | 待补充 |
+| v2.2 — 服务集成 | 6 | 待补充 |
+| v3.0 — AI 辅助搜索 | 16 | 待补充 |
+| v3.1 — 本地 RAG | 7 | 待补充 |
+| macOS 增强 | 6 | 待补充 |
 
 ---
 
@@ -248,4 +570,5 @@
 
 | 日期 | 版本 | 变更 |
 |------|------|------|
-| 2026-05-29 | v1.0 | 初始需求列表，基于 Everything 全功能调研 + AI 辅助设计 + RAG 方案，共 107 项需求 |
+| 2026-05-29 | v1.0 | 初始需求列表，107 项 |
+| 2026-05-29 | v1.1 | v0.1-v1.0 需求补充用户场景、操作流程、验收标准。改用结构化需求卡格式 |
