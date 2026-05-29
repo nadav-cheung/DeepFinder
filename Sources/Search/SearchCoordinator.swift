@@ -37,9 +37,10 @@ actor SearchCoordinator {
     /// - Cancels the previous in-flight query on all providers.
     /// - Dispatches to all providers concurrently.
     /// - Deduplicates by `FileRecord.id` (keeps highest-priority match).
+    /// - Applies `FilterPipeline` to remove non-matching results.
     /// - Sorts by relevance.
     /// - Returns results capped at `resultLimit`.
-    func search(query rawQuery: String) async -> [SearchResult] {
+    func search(query rawQuery: String, filters: [SearchFilter] = []) async -> [SearchResult] {
         // Empty query shortcut
         guard !rawQuery.isEmpty else { return [] }
         guard !providers.isEmpty else { return [] }
@@ -85,8 +86,12 @@ actor SearchCoordinator {
         // Deduplicate by FileRecord.id: keep highest-priority match
         let deduplicated = deduplicate(allResults)
 
+        // Apply filters (AND semantics: all filters must match)
+        let pipeline = FilterPipeline(filters: filters)
+        let filtered = pipeline.apply(to: deduplicated)
+
         // Sort by relevance
-        let sorted = SearchSorter.sort(deduplicated, by: .relevance)
+        let sorted = SearchSorter.sort(filtered, by: .relevance)
 
         // Cap at resultLimit
         return Array(sorted.prefix(resultLimit))
