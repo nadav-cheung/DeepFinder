@@ -6,7 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Everything Search — a macOS file search app rivaling Windows Everything. Menu bar app (LSUIElement=true), no Dock icon, invoked via global hotkey (⌥Space). Apple Silicon M4+ only, arm64, minimum macOS 26 (Tahoe). **Speed is the #1 priority — memory and CPU are not constraints.**
 
+**Organization**: nadav.com.cn
+
+**Status**: Pre-implementation. The codebase currently contains design specs only — no `Package.swift` or source code exists yet. The full architecture spec is at `docs/superpowers/specs/2026-05-26-everything-search-design.md`.
+
+Zero external dependencies — pure Swift + Apple frameworks only (SwiftUI, Foundation, CoreServices, Carbon, SQLite3).
+
 ## Build & Test
+
+Requires **swift-tools-version ≥ 6.2** (needed for `.macOS(.v26)` platform specifier).
 
 ```bash
 swift build                              # Build
@@ -14,6 +22,53 @@ swift test                               # Run all tests
 swift test --filter TrieTests            # Run single test suite
 swift run                                # Run the app
 ```
+
+## Planned Source Layout
+
+```
+Sources/
+├── App/           # AppDelegate, StatusBarController
+├── UI/            # SearchPanel/, Glow/, Settings/
+├── Search/        # SearchCoordinator, SearchProvider protocol, SearchQuery, SearchResult
+├── Index/         # InMemoryIndex (actor), IndexingEngine (actor), FileScanner, FSEventWatcher,
+│                  # FileSystemEventStream (protocol), Trie, FullSubstringMap, TrigramIndex,
+│                  # PinyinIndex, FileRecord, IndexPersistence (SQLite)
+├── Hotkey/        # GlobalHotkey
+└── Utils/         # FileIconCache, PathUtils
+
+Tests/
+├── IndexTests/    # Unit + performance tests for all index structures
+├── SearchTests/   # Coordinator and provider contract tests
+├── UITests/       # SearchPanel UI tests
+├── HotkeyTests/   # Global hotkey tests
+└── Fixtures/      # Shared test data generators
+```
+
+## Version Roadmap
+
+| Version | Milestone | Deliverables | Branch |
+|---------|-----------|-------------|--------|
+| `v0.1.0` | Index core | FileRecord, Trie, FullSubstringMap, TrigramIndex, PinyinIndex, InMemoryIndex, fixtures, tests | `dev/v0.1` |
+| `v0.2.0` | File system | FileSystemEventStream protocol, FileScanner, FSEventWatcher, IndexPersistence, index recovery | `dev/v0.2` |
+| `v0.3.0` | Search | SearchProvider protocol, SearchCoordinator, performance benchmarks | `dev/v0.3` |
+| `v0.4.0` | UI | SearchPanel, SearchBar, ResultsList, IntelligenceGlow, FileIconCache | `dev/v0.4` |
+| `v0.5.0` | Integration | GlobalHotkey, StatusBar, AppDelegate, Settings | `dev/v0.5` |
+| `v1.0.0` | Release | QuickLook, context menus, drag-and-drop, UI tests, polish | `dev/v1.0` |
+
+**Current**: pre-`v0.1.0` (no source code yet)
+
+**Workflow**: Each version develops on its `dev/vX.Y` branch. When deliverables pass all tests and review, merge to `main` and tag `vX.Y.Z`. Next version branches from `main`.
+
+**Version file**: `VERSION` at repo root — single line, e.g. `0.1.0-dev`. Bump on milestone completion.
+
+## Development Workflow
+
+**Spec-first**: All changes start in `docs/superpowers/specs/` before touching code. When a requirement changes:
+1. Update the relevant spec file in `docs/superpowers/specs/`
+2. Review the spec change for consistency with the rest of the spec
+3. Then implement the code change to match the updated spec
+
+Never modify code to introduce behavior that isn't reflected in the spec, and never leave a spec out of sync with the implementation.
 
 ## Gotchas
 
