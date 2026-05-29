@@ -116,6 +116,7 @@ Index layer has zero UI dependencies and can be tested in isolation.
 | **UI 工程师** | `ui-dev` | SwiftUI 动画、Liquid Glass、无障碍、键盘交互、Quick Look | SearchPanel, IntelligenceGlow, ResultRowView, Settings |
 | **AI 工程师** | `ai-dev` | CoreML、Vision、LLM API、向量索引、RAG pipeline、隐私边界 | AI/, v3.0-v3.1 |
 | **测试工程师** | `qa-dev` | 单元测试、性能基准、边界条件、无障碍测试、回归测试 | Fixtures, *Tests |
+| **信息顾问** | `researcher` | 查询网络最新信息、验证技术事实、调研竞品和最佳实践。**所有成员有问题都可以找他帮忙** | 全局支持 |
 
 ### 使用方式
 
@@ -132,7 +133,16 @@ Agent("实现 FSEventWatcher", subagent_type="general-purpose", name="macos-dev"
 Agent("检视 Trie 实现的正确性", subagent_type="code-reviewer", name="architect")
 ```
 
-当前阶段（v0.1）主要激活 **algo-dev** 和 **architect**。
+当前阶段（v0.1）主要激活 **algo-dev**、**architect** 和 **researcher**。
+
+### 信息顾问使用场景
+
+其他成员遇到以下情况时，激活 researcher 查询最新信息：
+- API 是否已废弃（如 NSScreen.main 状态确认）
+- 最佳实践和性能数据（如 Swift Dict 内存开销）
+- 新框架用法（如 macOS 26 Liquid Glass API 细节）
+- 竞品功能对比（如 Everything 1.5 新功能）
+- 安全漏洞和修复方案（如 SQLite WAL 已知问题）
 
 ## Reference
 
