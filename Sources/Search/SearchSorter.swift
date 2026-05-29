@@ -8,6 +8,7 @@ enum SortCriterion: Sendable {
     case name
     case date
     case size
+    case natural
 }
 
 // MARK: - SearchSorter
@@ -26,7 +27,52 @@ struct SearchSorter: Sendable {
             results.sorted { $0.record.modifiedAt > $1.record.modifiedAt }
         case .size:
             results.sorted { $0.record.size > $1.record.size }
+        case .natural:
+            results.sorted { naturalCompare($0.record.name, $1.record.name) }
         }
+    }
+
+    /// Natural (human-friendly) string comparison.
+    /// Splits strings into numeric and non-numeric segments; compares numeric
+    /// segments by integer value, non-numeric segments lexicographically.
+    /// Both inputs are NFC-normalized before comparison.
+    ///
+    /// Returns `true` when `a` should appear before `b`.
+    static func naturalCompare(_ a: String, _ b: String) -> Bool {
+        let aNorm = a.precomposedStringWithCanonicalMapping
+        let bNorm = b.precomposedStringWithCanonicalMapping
+
+        var aIdx = aNorm.startIndex
+        var bIdx = bNorm.startIndex
+        let aEnd = aNorm.endIndex
+        let bEnd = bNorm.endIndex
+
+        while aIdx < aEnd && bIdx < bEnd {
+            let aChar = aNorm[aIdx]
+            let bChar = bNorm[bIdx]
+            let aIsDigit = aChar.isNumber
+            let bIsDigit = bChar.isNumber
+
+            if aIsDigit && bIsDigit {
+                // Both numeric: extract full digit runs and compare as integers
+                let aNum = extractNumber(aNorm, from: &aIdx)
+                let bNum = extractNumber(bNorm, from: &bIdx)
+                if aNum != bNum {
+                    return aNum < bNum
+                }
+                // Equal numbers — continue to next segment
+            } else {
+                // At least one non-digit: compare characters lexicographically
+                if aChar != bChar {
+                    return aChar < bChar
+                }
+                aNorm.formIndex(after: &aIdx)
+                bNorm.formIndex(after: &bIdx)
+            }
+        }
+
+        // All compared segments are equal — shorter string comes first
+        return aIdx == aEnd && bIdx < bEnd
     }
 
     /// Count the number of path components (separators + 1 for non-empty paths).
@@ -66,5 +112,16 @@ struct SearchSorter: Sendable {
         }
         // 5. Stable tiebreak by ID
         return a.record.id < b.record.id
+    }
+
+    /// Extract a contiguous run of decimal digits starting at `idx`,
+    /// parse it as an integer, and advance `idx` past the digits.
+    private static func extractNumber(_ s: String, from idx: inout String.Index) -> UInt64 {
+        var value: UInt64 = 0
+        while idx < s.endIndex, s[idx].isNumber {
+            value = value &* 10 &+ UInt64(s[idx].wholeNumberValue!)
+            s.formIndex(after: &idx)
+        }
+        return value
     }
 }
