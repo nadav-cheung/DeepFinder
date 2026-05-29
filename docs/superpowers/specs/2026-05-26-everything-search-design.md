@@ -142,16 +142,150 @@
 | AppleScript | 脚本化搜索和结果获取 |
 | Share Extension | 从其他 app 搜索文件 |
 
-### v3.0 — AI 语义搜索
+### v3.0 — AI 辅助搜索
 
-超越 Everything 的下一代功能。
+超越 Everything 的下一代功能。接入 DeepSeek、千问等在线文本模型和视觉模型辅助搜索。
 
-| 功能 | 说明 |
-|------|------|
-| 语义搜索 | 自然语言查询 → 向量嵌入 → 相似文件 |
-| 智能建议 | 基于使用习惯的搜索推荐 |
-| 内容理解 | AI 读取文件内容并生成摘要/标签 |
-| 智能分类 | 自动文件分类（工作/个人/项目/媒体） |
+**核心约束：全部文件不离开本地。**
+
+#### 隐私边界
+
+| 数据类型 | 本地 | 允许外传 | 说明 |
+|----------|------|----------|------|
+| 文件内容 | ✅ | ✗ | 任何格式的文件二进制数据，永不外传 |
+| 文件缩略图 | ✅ | ✗ | 图片像素数据，永不外传 |
+| 文件名/路径 | ✅ | ✓ | 元数据可发送到云端辅助理解 |
+| 文件大小/日期/扩展名 | ✅ | ✓ | 元数据可发送到云端辅助理解 |
+| 用户搜索文本 | ✅ | ✓ | 查询文本发送到云端理解意图 |
+| 本地生成的标签 | ✅ | ✓ | CoreML/Vision 生成的文本标签 |
+| 路径中的用户名 | 脱敏 | ✓ | `/Users/nadav/` → `~/`（默认开启脱敏）|
+
+#### AI 能力分工
+
+| 能力 | 本地（CoreML / Vision） | 云端（DeepSeek / Qwen） |
+|------|------------------------|------------------------|
+| 图片理解 | ✅ Vision 框架生成描述文本 + 场景/物体标签 | ✗ 图片不外传 |
+| 文件标签 | ✅ 本地 CoreML 分类（文档/代码/媒体推断） | ✅ 根据文件名/路径元数据推断语义标签 |
+| 自然语言 → 搜索语法 | ✗ 需要 LLM 能力 | ✅ "找上周改过的大文件" → `dm:lastweek size:>10mb` |
+| 结果摘要 | ✗ | ✅ 基于元数据（文件名/大小/日期）生成摘要 |
+| 搜索建议 | ✗ | ✅ 基于结果元数据生成优化建议 |
+| 语音搜索 | ✅ 本地 Speech 框架语音识别 | ✅ 文本送云端理解意图 |
+
+#### AIProvider 协议设计
+
+```swift
+/// AI 能力定义
+enum AICapability: Sendable {
+    case textToSearch       // 自然语言 → 搜索语法
+    case resultSummary      // 结果摘要 & 分类
+    case querySuggestion    // 搜索建议
+    case intentAnalysis     // 意图理解
+    case localVision        // 本地图片理解（CoreML）
+    case localSpeech        // 本地语音识别（Speech）
+}
+
+/// 隐私安全的元数据摘要 — 唯一允许外传的数据结构
+struct FileMetadataSummary: Sendable {
+    let name: String
+    let path: String           // 脱敏后：/Users/xxx → ~/
+    let size: Int64
+    let modifiedAt: Date
+    let `extension`: String?
+    let localTags: [String]?   // CoreML/Vision 生成的标签
+    // ✗ 无文件内容, ✗ 无缩略图, ✗ 无二进制数据
+}
+
+/// AI 上下文 — 发送给云端模型的全部信息
+struct AIContext: Sendable {
+    let query: String
+    let resultMetadata: [FileMetadataSummary]
+    let indexStats: IndexStats
+}
+
+/// AI 模型提供者协议
+protocol AIModelProvider: Sendable {
+    var name: String { get }
+    var capabilities: Set<AICapability> { get }
+
+    /// 流式返回 AI 响应
+    func complete(
+        prompt: String,
+        context: AIContext
+    ) -> AsyncThrowingStream<String, Error>
+
+    /// 自然语言翻译为搜索语法
+    func translateToSearchSyntax(
+        naturalLanguage: String
+    ) async throws -> String
+}
+
+// 云端实现
+final class DeepSeekProvider: AIModelProvider { ... }
+final class QwenProvider: AIModelProvider { ... }
+
+// 本地实现（Vision + CoreML，零外传）
+final class LocalVisionProvider: AIModelProvider { ... }
+final class LocalSpeechProvider: AIModelProvider { ... }
+```
+
+#### 典型数据流
+
+**场景 1：自然语言搜索**
+```
+用户: "找上周修改的超过100MB的视频文件"
+  ├─ [云端] DeepSeek 翻译 → "ext:mp4;mov;mkv dm:lastweek size:>100mb"
+  ├─ [本地] SearchCoordinator 执行搜索语法
+  ├─ [本地] 结果元数据脱敏 → 发送到云端
+  ├─ [云端] 可选：Qwen 生成结果摘要
+  └─ [本地] UI 渲染
+```
+
+**场景 2：以图搜文件（全程零外传）**
+```
+用户: 想找类似某张照片的文件
+  ├─ [本地] Vision 框架分析图片 → 标签 ["sunset", "beach", "ocean"]
+  ├─ [本地] 标签存入 PinyinIndex/Trie
+  ├─ [本地] 用标签搜索本地索引
+  └─ [本地] 结果显示
+```
+
+**场景 3：搜索建议**
+```
+用户输入: "report"
+  ├─ [本地] 即时文件名搜索 → 显示结果
+  ├─ [云端] 异步：发送结果元数据 ["report_Q1.pdf", "report_Q2.xlsx"]
+  │         DeepSeek 返回: "您可能在找季度报告，试试 ext:xlsx dm:thisyear"
+  └─ [本地] UI 显示 AI 建议气泡
+```
+
+#### 用户隐私控制
+
+```
+Settings > AI 搜索
+  ├── [开关] 启用 AI 辅助搜索（默认关闭）
+  ├── [下拉] 文本模型: DeepSeek / Qwen / 关闭
+  ├── [下拉] 视觉分析: 本地 CoreML / 关闭
+  ├── [开关] 发送文件元数据到云端（默认关闭，需手动开启）
+  ├── [开关] 路径脱敏（默认开启：/Users/nadav → ~/）
+  ├── [开关] 本地图片标签生成（CoreML，默认开启）
+  ├── [API Key] 用户自有 API Key（不存储到云端）
+  └── [预览] "查看即将发送的数据" — 展示实际外传数据样例
+```
+
+#### 项目结构扩展
+
+```
+Sources/
+├── AI/                          # v3.0 新增
+│   ├── AIModelProvider.swift    # 协议定义
+│   ├── AIContext.swift          # AIContext + FileMetadataSummary
+│   ├── AICapability.swift       # 能力枚举
+│   ├── DeepSeekProvider.swift   # DeepSeek API 实现
+│   ├── QwenProvider.swift       # 千问 API 实现
+│   ├── LocalVisionProvider.swift # Vision + CoreML 本地图片分析
+│   ├── LocalSpeechProvider.swift # Speech 框架本地语音识别
+│   └── AISearchCoordinator.swift # AI 搜索协调（翻译→执行→摘要）
+```
 
 ### macOS 特有增强
 
@@ -182,6 +316,7 @@ Windows Everything 不具备，利用 macOS 平台能力：
 │              SearchPanel (SwiftUI)               │
 │    ┌─ Apple Intelligence Glow Border ─┐         │
 │    │  SearchBar → ResultsList          │         │
+│    │  AI Suggestion Bubble (v3.0)      │         │
 │    └───────────────────────────────────┘         │
 └──────────────────────┬──────────────────────────┘
                        │ query string
@@ -189,17 +324,26 @@ Windows Everything 不具备，利用 macOS 平台能力：
 │              SearchCoordinator                    │
 │  - 分发查询给 SearchProvider                      │
 │  - 合并 & 排序结果                                │
-└──────────────────────┬──────────────────────────┘
-                       │
-         ┌─────────────┼─────────────┐
-         │             │             │
-┌────────▼───┐  ┌──────▼──────┐  ┌──▼───────────┐
-│ FileIndex  │  │  Spotlight  │  │  AI Provider  │
-│  Provider  │  │   Provider  │  │   (future)    │
-│ (自建索引)  │  │  (mdfind)   │  │              │
-└─────┬──────┘  └─────────────┘  └──────────────┘
-      │
-┌─────▼──────────────────────────────────────────┐
+└──────┬───────────────┬───────────────┬──────────┘
+       │               │               │
+┌──────▼──────┐  ┌─────▼───────┐  ┌────▼──────────────┐
+│ FileIndex   │  │  Spotlight  │  │  AISearchCoord     │
+│  Provider   │  │   Provider  │  │  (v3.0)            │
+│ (自建索引)   │  │  (mdfind)   │  │  ┌──────────────┐  │
+└──────┬──────┘  └─────────────┘  │  │ Local Engine │  │
+       │                          │  │ CoreML/Vision│  │
+       │                          │  └──────┬───────┘  │
+       │                          │  ┌──────▼───────┐  │
+       │                          │  │Cloud Models  │  │
+       │                          │  │DeepSeek/Qwen │  │
+       │                          │  └──────────────┘  │
+       │                          └───────────────────┘
+       │                                   │
+       │            只发送元数据，不发送文件内容  │
+       │                          ┌────────▼──────────┐
+       │                          │  Privacy Boundary  │
+       │                          └───────────────────┘
+┌──────▼──────────────────────────────────────────┐
 │              IndexingEngine (actor)              │
 │  ┌──────────────┐  ┌────────────────────────┐  │
 │  │  FileScanner │  │ FileSystemEventStream  │  │
@@ -225,10 +369,12 @@ Windows Everything 不具备，利用 macOS 平台能力：
 
 | 模块 | 职责 |
 |------|------|
-| SearchPanel | SwiftUI 浮动窗口，Spotlight 风格 UI + Apple Intelligence 光晕 |
+| SearchPanel | SwiftUI 浮动窗口，Spotlight 风格 UI + Apple Intelligence 光晕 + AI 建议气泡 |
 | SearchCoordinator | 查询分发、流式结果合并排序 |
 | SearchProvider (协议) | 统一搜索接口，返回 AsyncSequence |
 | FileIndexProvider | MVP 唯一的 Provider，调用自建索引 |
+| AISearchCoordinator | v3.0 — AI 辅助搜索协调，管理本地/云端 AIProvider |
+| AIModelProvider (协议) | v3.0 — AI 模型统一接口（DeepSeek/Qwen/本地 CoreML） |
 | IndexingEngine (actor) | 文件扫描 + FSEvents 监听 → 维护内存索引 |
 | InMemoryIndex (actor) | Trie + FullSubstringMap + TrigramIndex + PinyinIndex，纯内存 |
 | IndexPersistence | SQLite WAL 存储 FileRecord[]，内存重建索引 |
