@@ -27,6 +27,8 @@
 | [v1.4-content-search.md](v1.4-content-search.md) | v1.4 | 待补充 | 内容搜索 |
 | [v1.5-duplicate.md](v1.5-duplicate.md) | v1.5 | 待补充 | 重复查找 |
 | [v2.0-gui.md](v2.0-gui.md) | v2.0 | REQ-2.0-01 ~ 13 | GUI + 扩展索引：SearchPanel, SearchBar, ResultsList, GlobalHotkey, Settings |
+| [v2.1-media-metadata.md](v2.1-media-metadata.md) | v2.1 | REQ-2.1-01 ~ 07 | 媒体元数据：图片/音频/视频/PDF |
+| [v2.2-service-integration.md](v2.2-service-integration.md) | v2.2 | REQ-2.2-01 ~ 05 | 服务集成：HTTP/URL Scheme/Shortcuts/AppleScript |
 | [v3.0-ai.md](v3.0-ai.md) | v3.0 | REQ-3.0-01 ~ 16 | AI 辅助搜索 |
 | [v3.1-rag.md](v3.1-rag.md) | v3.1 | REQ-3.1-01 ~ 07 | 本地 RAG |
 
