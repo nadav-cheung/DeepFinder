@@ -15,6 +15,29 @@ struct KeyCombination: Sendable, Equatable {
     let modifiers: UInt32
 }
 
+// MARK: - HotkeyRegistrationError
+
+/// Errors that can occur during global hotkey registration.
+enum HotkeyRegistrationError: Error, Sendable, CustomStringConvertible {
+    /// Another application has already registered this key combination.
+    case conflict(keyCombination: KeyCombination)
+    /// Registration failed after exhausting all retries.
+    case registrationFailed(keyCombination: KeyCombination, attempts: Int)
+    /// Registration failed for an unknown reason.
+    case unknown(status: OSStatus)
+
+    var description: String {
+        switch self {
+        case .conflict(let combo):
+            return "Hotkey conflict: another app has registered the same key combination (keyCode: \(combo.keyCode), modifiers: \(combo.modifiers))"
+        case .registrationFailed(let combo, let attempts):
+            return "Hotkey registration failed after \(attempts) attempts for key combination (keyCode: \(combo.keyCode), modifiers: \(combo.modifiers))"
+        case .unknown(let status):
+            return "Hotkey registration failed with OSStatus \(status)"
+        }
+    }
+}
+
 // MARK: - GlobalHotkey
 
 /// Registers a system-wide keyboard shortcut that fires even when the app is not frontmost.
@@ -40,9 +63,22 @@ final class GlobalHotkey: @unchecked Sendable {
         modifiers: UInt32(cmdKey | controlKey)
     )
 
+    /// Carbon error code returned when another app has already registered the same hotkey.
+    ///
+    /// `RegisterEventHotKey` returns `eventHotKeyExistsErr` (-9878) when the key combination
+    /// is already claimed by another process.
+    static let carbonHotKeyConflictError: OSStatus = -9878
+
+    /// Maximum number of retry attempts when registration fails.
+    static let maxRetryAttempts = 3
+
+    /// Exponential backoff base delay in seconds for retries.
+    /// Attempt 1: 1s, Attempt 2: 2s, Attempt 3: 4s.
+    static let retryBaseDelay: UInt64 = 1_000_000_000 // 1 second in nanoseconds
+
     // MARK: - State
 
-    private let lock = NSLock()
+    private nonisolated(unsafe) let lock = NSLock()
 
     /// The key combination to register.
     let keyCombination: KeyCombination
@@ -52,6 +88,12 @@ final class GlobalHotkey: @unchecked Sendable {
 
     /// The user-provided handler to invoke when the hotkey fires.
     private var handler: (() -> Void)?
+
+    /// Number of retry attempts made during the most recent registration.
+    private(set) var retryCount: Int = 0
+
+    /// The last registration error, if any.
+    private(set) var lastError: HotkeyRegistrationError?
 
     // Carbon state
     private var hotKeyRef: EventHotKeyRef?
@@ -73,6 +115,19 @@ final class GlobalHotkey: @unchecked Sendable {
 
     /// One-time installed Carbon event handler reference. Lives for the instance lifetime.
     private var carbonHandlerRef: EventHandlerRef?
+
+    // MARK: - Conflict Detection
+
+    /// Detects whether the given Carbon registration status indicates a hotkey conflict.
+    ///
+    /// A conflict occurs when another application has already registered the same key
+    /// combination. Carbon returns `eventHotKeyExistsErr` (-9878) in this case.
+    ///
+    /// - Parameter status: The `OSStatus` returned by `RegisterEventHotKey`.
+    /// - Returns: `true` if the status indicates a conflict.
+    static func detectConflict(status: OSStatus) -> Bool {
+        return status == carbonHotKeyConflictError
+    }
 
     // MARK: - Init
 
@@ -101,6 +156,8 @@ final class GlobalHotkey: @unchecked Sendable {
         }
 
         self.handler = handler
+        retryCount = 0
+        lastError = nil
 
         // Attempt Carbon RegisterEventHotKey first.
         if registerCarbon() {
@@ -114,6 +171,94 @@ final class GlobalHotkey: @unchecked Sendable {
 
         self.handler = nil
         return false
+    }
+
+    // MARK: - Register with Retry
+
+    /// Register the global hotkey with exponential backoff retry.
+    ///
+    /// If registration fails (non-conflict), retries up to `maxRetryAttempts` times
+    /// with exponential backoff: 1s, 2s, 4s. Conflict errors are not retried because
+    /// the key combination is held by another process.
+    ///
+    /// - Parameter handler: Closure to invoke when the hotkey is pressed.
+    /// - Returns: `.success` if registered, or a `HotkeyRegistrationError` describing the failure.
+    func registerWithRetry(handler: @escaping @Sendable () -> Void) async -> Result<Void, HotkeyRegistrationError> {
+        setUpForRegistration(handler: handler)
+
+        for attempt in 0...Self.maxRetryAttempts {
+            let (success, carbonStatus) = attemptCarbonRegistration()
+
+            if success {
+                return .success(())
+            }
+
+            // Check for conflict -- don't retry.
+            if Self.detectConflict(status: carbonStatus) {
+                let error = HotkeyRegistrationError.conflict(keyCombination: keyCombination)
+                recordError(error)
+                return .failure(error)
+            }
+
+            // If we have more retries left, wait with exponential backoff.
+            if attempt < Self.maxRetryAttempts {
+                setRetryCount(attempt + 1)
+                let delayNs = Self.retryBaseDelay * UInt64(1 << attempt)
+                try? await Task.sleep(nanoseconds: delayNs)
+            }
+        }
+
+        let error = HotkeyRegistrationError.registrationFailed(
+            keyCombination: keyCombination,
+            attempts: Self.maxRetryAttempts + 1
+        )
+        recordErrorAndClearHandler(error)
+        return .failure(error)
+    }
+
+    // MARK: - Synchronous Lock Helpers (bridging async/sync boundary)
+
+    /// Prepares state for a new registration attempt. Called from async context.
+    private func setUpForRegistration(handler: @escaping @Sendable () -> Void) {
+        lock.lock()
+        if isRegistered {
+            unregisterLocked()
+        }
+        self.handler = handler
+        retryCount = 0
+        lastError = nil
+        lock.unlock()
+    }
+
+    /// Attempts Carbon registration and returns (success, lastStatus). Called from async context.
+    private func attemptCarbonRegistration() -> (Bool, OSStatus) {
+        lock.lock()
+        let success = registerCarbonInternal()
+        let status = lastCarbonStatus
+        lock.unlock()
+        return (success, status)
+    }
+
+    /// Records an error in lastError. Called from async context.
+    private func recordError(_ error: HotkeyRegistrationError) {
+        lock.lock()
+        lastError = error
+        lock.unlock()
+    }
+
+    /// Records an error and clears the handler. Called from async context.
+    private func recordErrorAndClearHandler(_ error: HotkeyRegistrationError) {
+        lock.lock()
+        lastError = error
+        handler = nil
+        lock.unlock()
+    }
+
+    /// Updates retryCount. Called from async context.
+    private func setRetryCount(_ count: Int) {
+        lock.lock()
+        retryCount = count
+        lock.unlock()
     }
 
     // MARK: - Unregister
@@ -142,7 +287,18 @@ final class GlobalHotkey: @unchecked Sendable {
 
     // MARK: - Private: Carbon Backend
 
+    /// The OSStatus from the most recent `RegisterEventHotKey` call.
+    /// Used for conflict detection and error reporting.
+    private var lastCarbonStatus: OSStatus = noErr
+
     private func registerCarbon() -> Bool {
+        // Delegate to internal method; caller holds the lock.
+        return registerCarbonInternal()
+    }
+
+    /// Internal Carbon registration that also captures the status code.
+    /// Caller must hold `lock`.
+    private func registerCarbonInternal() -> Bool {
         var hotKeyID = EventHotKeyID()
         hotKeyID.signature = fourCharCode("DfHk") // DeepFinder Hotkey
         hotKeyID.id = keyCombination.keyCode
@@ -160,7 +316,14 @@ final class GlobalHotkey: @unchecked Sendable {
             &hotKeyRef
         )
 
+        lastCarbonStatus = status
+
         guard status == noErr, let ref = hotKeyRef else {
+            if Self.detectConflict(status: status) {
+                lastError = .conflict(keyCombination: keyCombination)
+            } else if status != noErr {
+                lastError = .unknown(status: status)
+            }
             return false
         }
 

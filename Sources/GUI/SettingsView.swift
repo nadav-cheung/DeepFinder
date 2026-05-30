@@ -1,4 +1,36 @@
 import SwiftUI
+import ServiceManagement
+
+// MARK: - LaunchAtLoginProvider
+
+/// Protocol abstracting launch-at-login for testability.
+///
+/// In production, ``SystemLaunchAtLoginProvider`` wraps `SMAppService`.
+/// In tests, a mock stores the enabled state in memory.
+protocol LaunchAtLoginProvider: Sendable {
+    func isEnabled() async -> Bool
+    func setEnabled(_ enabled: Bool) async -> Bool
+}
+
+/// Production implementation using `SMAppService` (macOS 13+).
+struct SystemLaunchAtLoginProvider: LaunchAtLoginProvider {
+    func isEnabled() async -> Bool {
+        SMAppService.mainApp.status == .enabled
+    }
+
+    func setEnabled(_ enabled: Bool) async -> Bool {
+        do {
+            if enabled {
+                try await SMAppService.mainApp.register()
+            } else {
+                try await SMAppService.mainApp.unregister()
+            }
+            return true
+        } catch {
+            return false
+        }
+    }
+}
 
 // MARK: - SettingsConfigProvider
 
@@ -145,16 +177,30 @@ final class SettingsViewModel {
     /// The current global hotkey display string.
     var hotkeyDisplay: String = "⌃⌘K"
 
+    // MARK: - Auto-Launch State
+
+    /// Whether auto-launch at login is enabled.
+    var autoLaunchEnabled: Bool = false
+
+    /// Alert message shown when auto-launch registration fails.
+    var autoLaunchError: String?
+
     // MARK: - Dependencies
 
     private let configProvider: any SettingsConfigProvider
     private let aiProvider: (any SettingsAIProvider)?
+    private let launchProvider: any LaunchAtLoginProvider
 
     // MARK: - Init
 
-    init(configProvider: any SettingsConfigProvider, aiProvider: (any SettingsAIProvider)? = nil) {
+    init(
+        configProvider: any SettingsConfigProvider,
+        aiProvider: (any SettingsAIProvider)? = nil,
+        launchProvider: any LaunchAtLoginProvider = SystemLaunchAtLoginProvider()
+    ) {
         self.configProvider = configProvider
         self.aiProvider = aiProvider
+        self.launchProvider = launchProvider
         self.version = Product.version
     }
 
@@ -180,6 +226,11 @@ final class SettingsViewModel {
         aiSendMetadata = await aiProvider.sendMetadata()
         aiPathAnonymization = await aiProvider.pathAnonymization()
         aiLocalVision = await aiProvider.localVision()
+    }
+
+    /// Load auto-launch state from the launch provider.
+    func loadAutoLaunchConfig() async {
+        autoLaunchEnabled = await launchProvider.isEnabled()
     }
 
     // MARK: - Path Mutations
@@ -255,6 +306,19 @@ final class SettingsViewModel {
     func resetHotkeyDisplay() {
         hotkeyDisplay = "⌃⌘K"
     }
+
+    // MARK: - Auto-Launch
+
+    /// Toggle auto-launch at login. Returns false and sets `autoLaunchError` on failure.
+    func setAutoLaunch(_ enabled: Bool) async {
+        autoLaunchError = nil
+        let success = await launchProvider.setEnabled(enabled)
+        if success {
+            autoLaunchEnabled = enabled
+        } else {
+            autoLaunchError = "Failed to \(enabled ? "enable" : "disable") login item. Check System Settings > Login Items."
+        }
+    }
 }
 
 // MARK: - SettingsView
@@ -298,6 +362,7 @@ struct SettingsView: View {
             await viewModel.loadConfig()
             await viewModel.loadIndexStats()
             await viewModel.loadAIConfig()
+            await viewModel.loadAutoLaunchConfig()
         }
     }
 
@@ -319,6 +384,24 @@ struct SettingsView: View {
                     Button("Reset to Default") {
                         viewModel.resetHotkeyDisplay()
                     }
+                }
+            }
+
+            Section("Auto-Launch") {
+                HStack {
+                    Toggle("Launch at Login", isOn: Binding(
+                        get: { viewModel.autoLaunchEnabled },
+                        set: { newValue in Task { await viewModel.setAutoLaunch(newValue) } }
+                    ))
+                    Spacer()
+                    Text(viewModel.autoLaunchEnabled ? "Enabled" : "Disabled")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                }
+                if let error = viewModel.autoLaunchError {
+                    Text(error)
+                        .font(.caption)
+                        .foregroundStyle(.red)
                 }
             }
 

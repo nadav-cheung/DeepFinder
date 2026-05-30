@@ -64,15 +64,31 @@ final class SettingsTests: XCTestCase {
         func dataPreview() async -> String { AIConfig.dataPreview() }
     }
 
+    /// Mock launch-at-login provider that stores state in memory.
+    private final class MockLaunchAtLoginProvider: LaunchAtLoginProvider, @unchecked Sendable {
+        var enabled: Bool = false
+        var shouldFail: Bool = false
+
+        func isEnabled() async -> Bool { enabled }
+
+        func setEnabled(_ enabled: Bool) async -> Bool {
+            guard !shouldFail else { return false }
+            self.enabled = enabled
+            return true
+        }
+    }
+
     /// Create a SettingsViewModel with mock providers on the main actor.
     @MainActor
     private func makeViewModel(
         provider: MockConfigProvider? = nil,
-        aiProvider: MockAIProvider? = nil
+        aiProvider: MockAIProvider? = nil,
+        launchProvider: (any LaunchAtLoginProvider)? = nil
     ) -> SettingsViewModel {
         let mock = provider ?? MockConfigProvider()
         let ai = aiProvider ?? MockAIProvider()
-        return SettingsViewModel(configProvider: mock, aiProvider: ai)
+        let launch = launchProvider ?? MockLaunchAtLoginProvider()
+        return SettingsViewModel(configProvider: mock, aiProvider: ai, launchProvider: launch)
     }
 
     // MARK: - 1. Settings view renders tabs
@@ -226,7 +242,7 @@ final class SettingsTests: XCTestCase {
 
     @MainActor
     func testAIConfigDefaultsWhenNoProvider() async {
-        let vm = SettingsViewModel(configProvider: MockConfigProvider(), aiProvider: nil)
+        let vm = SettingsViewModel(configProvider: MockConfigProvider(), aiProvider: nil, launchProvider: MockLaunchAtLoginProvider())
         await vm.loadAIConfig()
 
         XCTAssertFalse(vm.aiEnabled)
@@ -341,7 +357,7 @@ final class SettingsTests: XCTestCase {
 
     @MainActor
     func testAIDataPreviewFallbackWithoutProvider() async {
-        let vm = SettingsViewModel(configProvider: MockConfigProvider(), aiProvider: nil)
+        let vm = SettingsViewModel(configProvider: MockConfigProvider(), aiProvider: nil, launchProvider: MockLaunchAtLoginProvider())
 
         await vm.loadAIPreview()
         XCTAssertFalse(vm.aiPreviewData.isEmpty)
@@ -407,5 +423,78 @@ final class SettingsTests: XCTestCase {
         XCTAssertTrue(aiProvider.sendMetadata)
         XCTAssertFalse(aiProvider.pathAnonymization)
         XCTAssertFalse(aiProvider.localVision)
+    }
+
+    // MARK: - 23. Auto-launch loads from provider
+
+    @MainActor
+    func testAutoLaunchLoadsFromProvider() async {
+        let launchProvider = MockLaunchAtLoginProvider()
+        launchProvider.enabled = true
+        let vm = makeViewModel(launchProvider: launchProvider)
+
+        XCTAssertFalse(vm.autoLaunchEnabled)
+        await vm.loadAutoLaunchConfig()
+        XCTAssertTrue(vm.autoLaunchEnabled)
+    }
+
+    // MARK: - 24. Auto-launch toggle enables
+
+    @MainActor
+    func testAutoLaunchToggleEnables() async {
+        let launchProvider = MockLaunchAtLoginProvider()
+        let vm = makeViewModel(launchProvider: launchProvider)
+
+        XCTAssertFalse(vm.autoLaunchEnabled)
+        await vm.setAutoLaunch(true)
+        XCTAssertTrue(vm.autoLaunchEnabled)
+        XCTAssertTrue(launchProvider.enabled)
+    }
+
+    // MARK: - 25. Auto-launch toggle disables
+
+    @MainActor
+    func testAutoLaunchToggleDisables() async {
+        let launchProvider = MockLaunchAtLoginProvider()
+        launchProvider.enabled = true
+        let vm = makeViewModel(launchProvider: launchProvider)
+        await vm.loadAutoLaunchConfig()
+
+        XCTAssertTrue(vm.autoLaunchEnabled)
+        await vm.setAutoLaunch(false)
+        XCTAssertFalse(vm.autoLaunchEnabled)
+        XCTAssertFalse(launchProvider.enabled)
+    }
+
+    // MARK: - 26. Auto-launch failure sets error
+
+    @MainActor
+    func testAutoLaunchFailureSetsError() async {
+        let launchProvider = MockLaunchAtLoginProvider()
+        launchProvider.shouldFail = true
+        let vm = makeViewModel(launchProvider: launchProvider)
+
+        XCTAssertNil(vm.autoLaunchError)
+        await vm.setAutoLaunch(true)
+        XCTAssertFalse(vm.autoLaunchEnabled)
+        XCTAssertNotNil(vm.autoLaunchError)
+        XCTAssertTrue(vm.autoLaunchError!.contains("Failed"))
+    }
+
+    // MARK: - 27. Auto-launch error clears on retry
+
+    @MainActor
+    func testAutoLaunchErrorClearsOnRetry() async {
+        let launchProvider = MockLaunchAtLoginProvider()
+        launchProvider.shouldFail = true
+        let vm = makeViewModel(launchProvider: launchProvider)
+
+        await vm.setAutoLaunch(true)
+        XCTAssertNotNil(vm.autoLaunchError)
+
+        launchProvider.shouldFail = false
+        await vm.setAutoLaunch(true)
+        XCTAssertTrue(vm.autoLaunchEnabled)
+        XCTAssertNil(vm.autoLaunchError)
     }
 }
