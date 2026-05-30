@@ -237,6 +237,31 @@ actor IndexPersistence {
         sqlite3_step(stmt)
     }
 
+    /// Delete all records whose path starts with the given prefix.
+    ///
+    /// Used when a volume is unmounted to remove all indexed files on that volume.
+    /// Handles both the exact volume path and paths under it (with trailing slash).
+    ///
+    /// - Parameter pathPrefix: The mount point path of the volume (e.g. "/Volumes/USB Drive").
+    /// - Returns: The number of deleted records.
+    @discardableResult
+    func deleteRecordsByPathPrefix(_ pathPrefix: String) -> Int {
+        let sql = "DELETE FROM file_records WHERE path = ? OR path LIKE ?"
+
+        var stmt: OpaquePointer?
+        guard prepare(sql, &stmt) == SQLITE_OK, let stmt else { return 0 }
+        defer { sqlite3_finalize(stmt) }
+
+        // Bind 1: exact path match (the volume root itself)
+        sqlite3_bind_text(stmt, 1, pathPrefix, -1, SQLTransient)
+        // Bind 2: prefix match with trailing slash (pathPrefix/%)
+        let likePrefix = pathPrefix.hasSuffix("/") ? pathPrefix + "%" : pathPrefix + "/%"
+        sqlite3_bind_text(stmt, 2, likePrefix, -1, SQLTransient)
+
+        sqlite3_step(stmt)
+        return Int(sqlite3_changes(db))
+    }
+
     // MARK: - Event Cursor
 
     /// Persist the last FSEvent stream cursor for resumption.

@@ -11,6 +11,11 @@ struct DaemonConfig: Codable, Sendable, Equatable {
     /// Paths excluded from indexing.
     var excludedPaths: [String]
 
+    /// Volume mount paths excluded from indexing (e.g. "/Volumes/Time Machine").
+    /// Local volumes are always indexed. External and network volumes are indexed
+    /// by default unless listed here.
+    var excludedVolumes: [String]
+
     /// Number of records to batch-write to SQLite at once.
     var indexBatchSize: Int
 
@@ -22,6 +27,7 @@ struct DaemonConfig: Codable, Sendable, Equatable {
 
     static let defaults = DaemonConfig(
         excludedPaths: ["/System", "/Library"],
+        excludedVolumes: [],
         indexBatchSize: 100,
         maxResults: 1000,
         configVersion: 1
@@ -79,6 +85,8 @@ actor ConfigStore {
         switch key {
         case "excludedPaths":
             return (try? JSONEncoder().encode(config.excludedPaths)).flatMap { String(data: $0, encoding: .utf8) }
+        case "excludedVolumes":
+            return (try? JSONEncoder().encode(config.excludedVolumes)).flatMap { String(data: $0, encoding: .utf8) }
         case "indexBatchSize":
             return String(config.indexBatchSize)
         case "maxResults":
@@ -102,6 +110,12 @@ actor ConfigStore {
                 throw ConfigStoreError.invalidValue(key: key, reason: "Expected a JSON array of strings")
             }
             config.excludedPaths = paths
+        case "excludedVolumes":
+            guard let data = value.data(using: .utf8),
+                  let volumes = try? JSONDecoder().decode([String].self, from: data) else {
+                throw ConfigStoreError.invalidValue(key: key, reason: "Expected a JSON array of strings")
+            }
+            config.excludedVolumes = volumes
         case "indexBatchSize":
             guard let v = Int(value), v > 0 else {
                 throw ConfigStoreError.invalidValue(key: key, reason: "Expected a positive integer")
