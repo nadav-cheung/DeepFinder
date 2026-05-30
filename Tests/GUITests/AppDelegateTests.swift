@@ -3,79 +3,42 @@ import Foundation
 import AppKit
 @testable import DeepFinder
 
+// MARK: - Shared Test Mocks (file-level for cross-struct access)
+
+/// Mock daemon spawner that records whether spawn was called.
+final class MockDaemonSpawnerForTests: DaemonSpawner, @unchecked Sendable {
+    var ensureCalled = false
+    var shouldThrow = false
+
+    func ensureDaemonRunning() async throws {
+        ensureCalled = true
+        if shouldThrow {
+            throw IPCClientError.daemonSpawnFailed("test error")
+        }
+    }
+}
+
+/// Minimal mock IPC client for SearchViewModel injection in tests.
+final class MockIPCClientForTests: IPCClientProtocol, @unchecked Sendable {
+    func send(_ request: IPCRequest) async throws -> IPCResponse {
+        .ack
+    }
+}
+
+// MARK: - DeepFinderAppDelegate Tests
+
 @Suite("DeepFinderAppDelegate")
 struct AppDelegateTests {
-
-    // MARK: - Mocks
-
-    /// Mock daemon spawner that records whether spawn was called.
-    fileprivate final class MockDaemonSpawner: DaemonSpawner, @unchecked Sendable {
-        var ensureCalled = false
-        var shouldThrow = false
-
-        func ensureDaemonRunning() async throws {
-            ensureCalled = true
-            if shouldThrow {
-                throw IPCClientError.daemonSpawnFailed("test error")
-            }
-        }
-    }
-
-    /// Mock status bar controller that records actions.
-    @MainActor
-    fileprivate final class MockStatusBarController: StatusBarControllerActions, @unchecked Sendable {
-        var toggleCalled = false
-        var showCalled = false
-        var hideCalled = false
-        var settingsCalled = false
-        var quitCalled = false
-
-        func toggleSearchPanel() { toggleCalled = true }
-        func showSearchPanel() { showCalled = true }
-        func hideSearchPanel() { hideCalled = true }
-        func openSettings() { settingsCalled = true }
-        func quitApp() { quitCalled = true }
-    }
-
-    /// Tracks panel operations.
-    @MainActor
-    fileprivate final class MockPanelTracker: @unchecked Sendable {
-        var showCalled = false
-        var hideCalled = false
-        var toggleCalled = false
-    }
-
-    /// Mock search panel hosting controller.
-    @MainActor
-    fileprivate final class MockSearchPanelController: @unchecked Sendable {
-        private let tracker: MockPanelTracker
-
-        init(tracker: MockPanelTracker) {
-            self.tracker = tracker
-        }
-
-        func show() { tracker.showCalled = true }
-        func hide() { tracker.hideCalled = true }
-        func toggle() { tracker.toggleCalled = true }
-    }
 
     // MARK: - Test Configuration Factory
 
     /// Create a test configuration with all mocks injected.
     @MainActor
     private func makeTestConfiguration(
-        spawner: MockDaemonSpawner? = nil,
+        spawner: MockDaemonSpawnerForTests? = nil,
         autoSpawn: Bool = false
-    ) -> (DeepFinderAppConfiguration, MockDaemonSpawner, MockPanelTracker, MockStatusBarController) {
-        let mockSpawner = spawner ?? MockDaemonSpawner()
-        let panelTracker = MockPanelTracker()
-        let mockStatusBar = MockStatusBarController()
-
-        // We use a real StatusBarController but track its actions through callbacks.
-        var recordedToggle = false
-        var recordedShow = false
-        var recordedHide = false
-        var recordedSettings = false
+    ) -> (DeepFinderAppConfiguration, MockDaemonSpawnerForTests) {
+        let mockSpawner = spawner ?? MockDaemonSpawnerForTests()
 
         let config = DeepFinderAppConfiguration(
             daemonSpawnerFactory: { mockSpawner },
@@ -89,10 +52,7 @@ struct AppDelegateTests {
                 )
             },
             searchPanelFactory: {
-                // Return a MockSearchPanelController as a SearchPanelHostingController.
-                // We need to use the real type since that's what the factory returns.
-                // Instead, create a real SearchPanelHostingController with a mock view model.
-                let mockIPC = MockIPCClient()
+                let mockIPC = MockIPCClientForTests()
                 let viewModel = SearchViewModel(ipcClient: mockIPC)
                 return SearchPanelHostingController(viewModel: viewModel)
             },
@@ -107,14 +67,7 @@ struct AppDelegateTests {
             autoSpawnDaemon: autoSpawn
         )
 
-        return (config, mockSpawner, panelTracker, mockStatusBar)
-    }
-
-    /// Minimal mock IPC client for SearchViewModel injection.
-    fileprivate final class MockIPCClient: IPCClientProtocol, @unchecked Sendable {
-        func send(_ request: IPCRequest) async throws -> IPCResponse {
-            .ack
-        }
+        return (config, mockSpawner)
     }
 
     // MARK: - 1. applicationDidFinishLaunching sets accessory policy
@@ -122,7 +75,7 @@ struct AppDelegateTests {
     @Test("applicationDidFinishLaunching sets activation policy to accessory")
     @MainActor
     func testLaunchSetsAccessoryPolicy() {
-        let (config, _, _, _) = makeTestConfiguration()
+        let (config, _) = makeTestConfiguration()
         let delegate = DeepFinderAppDelegate(configuration: config)
 
         delegate.applicationDidFinishLaunching(Notification(name: .init("test")))
@@ -135,7 +88,7 @@ struct AppDelegateTests {
     @Test("Status bar controller is created after launch")
     @MainActor
     func testStatusBarControllerCreated() {
-        let (config, _, _, _) = makeTestConfiguration()
+        let (config, _) = makeTestConfiguration()
         let delegate = DeepFinderAppDelegate(configuration: config)
 
         delegate.applicationDidFinishLaunching(Notification(name: .init("test")))
@@ -148,14 +101,13 @@ struct AppDelegateTests {
     @Test("Global hotkey is created after launch")
     @MainActor
     func testGlobalHotkeyCreated() {
-        let (config, _, _, _) = makeTestConfiguration()
+        let (config, _) = makeTestConfiguration()
         let delegate = DeepFinderAppDelegate(configuration: config)
 
         delegate.applicationDidFinishLaunching(Notification(name: .init("test")))
 
-        // Note: GlobalHotkey.register may fail in test environments without
+        // GlobalHotkey.register may fail in test environments without
         // Accessibility permissions. The delegate stores nil if registration fails.
-        // We verify the property is accessible and doesn't crash.
         _ = delegate.globalHotkey
     }
 
@@ -164,7 +116,7 @@ struct AppDelegateTests {
     @Test("Search panel controller is created after launch")
     @MainActor
     func testSearchPanelControllerCreated() {
-        let (config, _, _, _) = makeTestConfiguration()
+        let (config, _) = makeTestConfiguration()
         let delegate = DeepFinderAppDelegate(configuration: config)
 
         delegate.applicationDidFinishLaunching(Notification(name: .init("test")))
@@ -177,12 +129,11 @@ struct AppDelegateTests {
     @Test("toggleSearchPanel does not crash after launch")
     @MainActor
     func testToggleSearchPanel() {
-        let (config, _, _, _) = makeTestConfiguration()
+        let (config, _) = makeTestConfiguration()
         let delegate = DeepFinderAppDelegate(configuration: config)
 
         delegate.applicationDidFinishLaunching(Notification(name: .init("test")))
         delegate.toggleSearchPanel()
-        // No crash = pass.
     }
 
     // MARK: - 6. Show search panel action
@@ -190,7 +141,7 @@ struct AppDelegateTests {
     @Test("showSearchPanel does not crash after launch")
     @MainActor
     func testShowSearchPanel() {
-        let (config, _, _, _) = makeTestConfiguration()
+        let (config, _) = makeTestConfiguration()
         let delegate = DeepFinderAppDelegate(configuration: config)
 
         delegate.applicationDidFinishLaunching(Notification(name: .init("test")))
@@ -202,7 +153,7 @@ struct AppDelegateTests {
     @Test("hideSearchPanel does not crash after launch")
     @MainActor
     func testHideSearchPanel() {
-        let (config, _, _, _) = makeTestConfiguration()
+        let (config, _) = makeTestConfiguration()
         let delegate = DeepFinderAppDelegate(configuration: config)
 
         delegate.applicationDidFinishLaunching(Notification(name: .init("test")))
@@ -214,7 +165,7 @@ struct AppDelegateTests {
     @Test("showSettingsWindow creates window on first call")
     @MainActor
     func testShowSettingsWindowCreatesWindow() {
-        let (config, _, _, _) = makeTestConfiguration()
+        let (config, _) = makeTestConfiguration()
         let delegate = DeepFinderAppDelegate(configuration: config)
 
         delegate.applicationDidFinishLaunching(Notification(name: .init("test")))
@@ -231,7 +182,7 @@ struct AppDelegateTests {
     @Test("showSettingsWindow reuses existing window")
     @MainActor
     func testShowSettingsWindowReusesWindow() {
-        let (config, _, _, _) = makeTestConfiguration()
+        let (config, _) = makeTestConfiguration()
         let delegate = DeepFinderAppDelegate(configuration: config)
 
         delegate.applicationDidFinishLaunching(Notification(name: .init("test")))
@@ -248,7 +199,7 @@ struct AppDelegateTests {
     @Test("applicationWillTerminate cleans up components")
     @MainActor
     func testTerminateCleansUp() {
-        let (config, _, _, _) = makeTestConfiguration()
+        let (config, _) = makeTestConfiguration()
         let delegate = DeepFinderAppDelegate(configuration: config)
 
         delegate.applicationDidFinishLaunching(Notification(name: .init("test")))
@@ -267,13 +218,12 @@ struct AppDelegateTests {
     @Test("Daemon auto-spawn is called when enabled")
     @MainActor
     func testDaemonAutoSpawnCalled() async {
-        let mockSpawner = MockDaemonSpawner()
-        let (config, _, _, _) = makeTestConfiguration(spawner: mockSpawner, autoSpawn: true)
+        let mockSpawner = MockDaemonSpawnerForTests()
+        let (config, _) = makeTestConfiguration(spawner: mockSpawner, autoSpawn: true)
         let delegate = DeepFinderAppDelegate(configuration: config)
 
         delegate.applicationDidFinishLaunching(Notification(name: .init("test")))
 
-        // Give the async task a moment to run.
         try? await Task.sleep(nanoseconds: 200_000_000)
 
         #expect(mockSpawner.ensureCalled)
@@ -284,8 +234,8 @@ struct AppDelegateTests {
     @Test("Daemon auto-spawn is skipped when disabled")
     @MainActor
     func testDaemonAutoSpawnSkipped() async {
-        let mockSpawner = MockDaemonSpawner()
-        let (config, _, _, _) = makeTestConfiguration(spawner: mockSpawner, autoSpawn: false)
+        let mockSpawner = MockDaemonSpawnerForTests()
+        let (config, _) = makeTestConfiguration(spawner: mockSpawner, autoSpawn: false)
         let delegate = DeepFinderAppDelegate(configuration: config)
 
         delegate.applicationDidFinishLaunching(Notification(name: .init("test")))
@@ -300,12 +250,11 @@ struct AppDelegateTests {
     @Test("Notification .toggleSearchPanel triggers toggle")
     @MainActor
     func testNotificationToggleSearchPanel() {
-        let (config, _, _, _) = makeTestConfiguration()
+        let (config, _) = makeTestConfiguration()
         let delegate = DeepFinderAppDelegate(configuration: config)
 
         delegate.applicationDidFinishLaunching(Notification(name: .init("test")))
 
-        // Post notification — should not crash.
         NotificationCenter.default.post(name: .toggleSearchPanel, object: nil)
     }
 
@@ -314,7 +263,7 @@ struct AppDelegateTests {
     @Test("Notification .showSettings triggers settings window")
     @MainActor
     func testNotificationShowSettings() {
-        let (config, _, _, _) = makeTestConfiguration()
+        let (config, _) = makeTestConfiguration()
         let delegate = DeepFinderAppDelegate(configuration: config)
 
         delegate.applicationDidFinishLaunching(Notification(name: .init("test")))
@@ -329,10 +278,9 @@ struct AppDelegateTests {
     @Test("Actions before launch do not crash (nil safety)")
     @MainActor
     func testActionsBeforeLaunch() {
-        let (config, _, _, _) = makeTestConfiguration()
+        let (config, _) = makeTestConfiguration()
         let delegate = DeepFinderAppDelegate(configuration: config)
 
-        // These should all be safe no-ops since controllers are nil.
         delegate.toggleSearchPanel()
         delegate.showSearchPanel()
         delegate.hideSearchPanel()
@@ -344,14 +292,12 @@ struct AppDelegateTests {
     @Test("Status bar toggle callback wired to search panel")
     @MainActor
     func testStatusBarToggleCallbackWired() {
-        let (config, _, _, _) = makeTestConfiguration()
+        let (config, _) = makeTestConfiguration()
         let delegate = DeepFinderAppDelegate(configuration: config)
 
         delegate.applicationDidFinishLaunching(Notification(name: .init("test")))
 
-        // Simulate the status bar toggle callback.
         delegate.statusBarController?.toggleSearchPanel()
-        // No crash = pass. The callback is wired through to searchPanelController.
     }
 
     // MARK: - 17. Daemon spawn failure sets error status
@@ -359,14 +305,13 @@ struct AppDelegateTests {
     @Test("Daemon spawn failure sets error index status")
     @MainActor
     func testDaemonSpawnFailureSetsErrorStatus() async {
-        let mockSpawner = MockDaemonSpawner()
+        let mockSpawner = MockDaemonSpawnerForTests()
         mockSpawner.shouldThrow = true
-        let (config, _, _, _) = makeTestConfiguration(spawner: mockSpawner, autoSpawn: true)
+        let (config, _) = makeTestConfiguration(spawner: mockSpawner, autoSpawn: true)
         let delegate = DeepFinderAppDelegate(configuration: config)
 
         delegate.applicationDidFinishLaunching(Notification(name: .init("test")))
 
-        // Give the async task time to complete (including failure).
         try? await Task.sleep(nanoseconds: 300_000_000)
 
         #expect(delegate.statusBarController?.indexStatus == .error)
@@ -380,12 +325,12 @@ struct AppDelegateNotificationTests {
 
     @Test(".toggleSearchPanel has correct name")
     func testToggleSearchPanelName() {
-        #expect(Notification.Name.toggleSearchPanel.rawValue == "com.nadav.deepfinder.toggleSearchPanel")
+        #expect(Notification.Name.toggleSearchPanel == Notification.Name(rawValue: "com.nadav.deepfinder.toggleSearchPanel"))
     }
 
     @Test(".showSettings has correct name")
     func testShowSettingsName() {
-        #expect(Notification.Name.showSettings.rawValue == "com.nadav.deepfinder.showSettings")
+        #expect(Notification.Name.showSettings == Notification.Name(rawValue: "com.nadav.deepfinder.showSettings"))
     }
 
     @Test("Notification names are unique")
@@ -401,8 +346,6 @@ struct DeepFinderAppConfigurationTests {
 
     @Test("Production configuration does not crash on creation")
     func testProductionConfigCreation() {
-        // Production config creation should not crash, even though
-        // it references real types.
         let config = DeepFinderAppConfiguration.production()
         #expect(config.autoSpawnDaemon == true)
     }
@@ -415,12 +358,12 @@ struct DeepFinderAppConfigurationTests {
 
     @Test("Test configuration has autoSpawnDaemon configurable")
     func testAutoSpawnConfigurable() {
-        let mockSpawner = AppDelegateTests.MockDaemonSpawner()
+        let mockSpawner = MockDaemonSpawnerForTests()
         let configOn = DeepFinderAppConfiguration(
             daemonSpawnerFactory: { mockSpawner },
             statusBarControllerFactory: { _, _, _, _, _ in StatusBarController() },
             searchPanelFactory: {
-                let mockIPC = AppDelegateTests.MockIPCClient()
+                let mockIPC = MockIPCClientForTests()
                 let vm = SearchViewModel(ipcClient: mockIPC)
                 return SearchPanelHostingController(viewModel: vm)
             },
@@ -433,7 +376,7 @@ struct DeepFinderAppConfigurationTests {
             daemonSpawnerFactory: { mockSpawner },
             statusBarControllerFactory: { _, _, _, _, _ in StatusBarController() },
             searchPanelFactory: {
-                let mockIPC = AppDelegateTests.MockIPCClient()
+                let mockIPC = MockIPCClientForTests()
                 let vm = SearchViewModel(ipcClient: mockIPC)
                 return SearchPanelHostingController(viewModel: vm)
             },

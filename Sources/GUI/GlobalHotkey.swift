@@ -166,6 +166,7 @@ final class GlobalHotkey: @unchecked Sendable {
 
         // Fallback to CGEventTap.
         if registerCGEventTap() {
+            lastError = nil // Carbon failed but CGEventTap succeeded; clear the error.
             return true
         }
 
