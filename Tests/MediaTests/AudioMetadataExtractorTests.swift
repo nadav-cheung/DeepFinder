@@ -38,4 +38,21 @@ struct AudioMetadataExtractorTests {
         // Either is acceptable — just no crash
         _ = result
     }
+
+    @Test("Extract returns nil for zero-byte file")
+    func zeroByteFile() async throws {
+        let url = URL(fileURLWithPath: "/tmp/deepfinder_test_empty_\(UUID().uuidString).mp3")
+        try Data().write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let result = await extractor.extract(url: url)
+        #expect(result == nil)
+    }
+
+    @Test("Supported extensions exclude non-audio formats")
+    func supportedExtensionsExcludeNonAudio() {
+        let exts = extractor.supportedExtensions
+        #expect(!exts.contains("mp4"))
+        #expect(!exts.contains("jpg"))
+        #expect(!exts.contains("pdf"))
+    }
 }

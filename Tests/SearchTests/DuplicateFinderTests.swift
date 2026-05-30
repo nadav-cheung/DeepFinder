@@ -383,4 +383,53 @@ struct DuplicateFinderTests {
         let hash = FileHasher.sha256(ofFileAtPath: "/nonexistent/path/file.dat")
         #expect(hash == nil)
     }
+
+    @Test("SHA-256 hash of empty file is valid SHA-256")
+    func sha256OfEmptyFile() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let file = dir.appendingPathComponent("empty.dat")
+        try Data().write(to: file)
+
+        let hash = FileHasher.sha256(ofFileAtPath: file.path)
+        #expect(hash != nil)
+        // SHA-256 hex digest is always 64 characters
+        #expect(hash!.count == 64)
+        // Known SHA-256 of empty data
+        #expect(hash == "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855")
+    }
+
+    @Test("SHA-256 hash is consistent across multiple calls")
+    func sha256Consistency() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let file = dir.appendingPathComponent("consistent.dat")
+        try Data("consistency test data".utf8).write(to: file)
+
+        let hash1 = FileHasher.sha256(ofFileAtPath: file.path)
+        let hash2 = FileHasher.sha256(ofFileAtPath: file.path)
+        #expect(hash1 != nil)
+        #expect(hash1 == hash2)
+    }
+
+    @Test("SHA-256 of file with known content matches expected value")
+    func sha256OfKnownContentHello() async throws {
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let file = dir.appendingPathComponent("hello.txt")
+        try Data("hello".utf8).write(to: file)
+
+        // SHA-256 of "hello": 2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824
+        let hash = FileHasher.sha256(ofFileAtPath: file.path)
+        #expect(hash == "2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824")
+    }
 }

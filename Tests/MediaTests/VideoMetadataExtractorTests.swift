@@ -34,4 +34,21 @@ struct VideoMetadataExtractorTests {
         let result = await extractor.extract(url: url)
         _ = result
     }
+
+    @Test("Extract returns nil for zero-byte file")
+    func zeroByteFile() async throws {
+        let url = URL(fileURLWithPath: "/tmp/deepfinder_test_empty_\(UUID().uuidString).mp4")
+        try Data().write(to: url)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let result = await extractor.extract(url: url)
+        #expect(result == nil)
+    }
+
+    @Test("Supported extensions exclude non-video formats")
+    func supportedExtensionsExcludeNonVideo() {
+        let exts = extractor.supportedExtensions
+        #expect(!exts.contains("mp3"))
+        #expect(!exts.contains("jpg"))
+        #expect(!exts.contains("pdf"))
+    }
 }
