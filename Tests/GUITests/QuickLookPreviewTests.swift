@@ -5,13 +5,11 @@ import Foundation
 // MARK: - QuickLookPreview Tests
 
 @Suite("QuickLookPreview")
-@MainActor
 struct QuickLookPreviewTests {
 
     // MARK: - Helpers
 
     /// Create a fake SearchResult for testing.
-    @MainActor
     private func makeResult(
         id: UInt32,
         name: String = "test.txt",
@@ -39,7 +37,6 @@ struct QuickLookPreviewTests {
     }
 
     /// Create an array of N fake results.
-    @MainActor
     private func makeResults(_ count: Int) -> [SearchResult] {
         (0..<UInt32(count)).map { makeResult(id: $0, name: "file\($0).txt") }
     }
@@ -227,10 +224,10 @@ struct QuickLookPreviewTests {
 
     @Test("Common image extensions are previewable")
     func imageExtensionsPreviewable() {
-        let jpg = makeResultNonisolated(id: 0, name: "photo.jpg", ext: "jpg")
-        let png = makeResultNonisolated(id: 1, name: "image.png", ext: "png")
-        let gif = makeResultNonisolated(id: 2, name: "anim.gif", ext: "gif")
-        let heic = makeResultNonisolated(id: 3, name: "photo.heic", ext: "heic")
+        let jpg = makeResult(id: 0, name: "photo.jpg", ext: "jpg")
+        let png = makeResult(id: 1, name: "image.png", ext: "png")
+        let gif = makeResult(id: 2, name: "anim.gif", ext: "gif")
+        let heic = makeResult(id: 3, name: "photo.heic", ext: "heic")
 
         #expect(QuickLookPreviewController.isPreviewable(jpg.record))
         #expect(QuickLookPreviewController.isPreviewable(png.record))
@@ -242,10 +239,10 @@ struct QuickLookPreviewTests {
 
     @Test("Document extensions are previewable")
     func documentExtensionsPreviewable() {
-        let pdf = makeResultNonisolated(id: 0, name: "doc.pdf", ext: "pdf")
-        let txt = makeResultNonisolated(id: 1, name: "readme.txt", ext: "txt")
-        let md = makeResultNonisolated(id: 2, name: "README.md", ext: "md")
-        let html = makeResultNonisolated(id: 3, name: "index.html", ext: "html")
+        let pdf = makeResult(id: 0, name: "doc.pdf", ext: "pdf")
+        let txt = makeResult(id: 1, name: "readme.txt", ext: "txt")
+        let md = makeResult(id: 2, name: "README.md", ext: "md")
+        let html = makeResult(id: 3, name: "index.html", ext: "html")
 
         #expect(QuickLookPreviewController.isPreviewable(pdf.record))
         #expect(QuickLookPreviewController.isPreviewable(txt.record))
@@ -257,10 +254,10 @@ struct QuickLookPreviewTests {
 
     @Test("Audio and video extensions are previewable")
     func mediaExtensionsPreviewable() {
-        let mp3 = makeResultNonisolated(id: 0, name: "song.mp3", ext: "mp3")
-        let wav = makeResultNonisolated(id: 1, name: "audio.wav", ext: "wav")
-        let mp4 = makeResultNonisolated(id: 2, name: "video.mp4", ext: "mp4")
-        let mov = makeResultNonisolated(id: 3, name: "clip.mov", ext: "mov")
+        let mp3 = makeResult(id: 0, name: "song.mp3", ext: "mp3")
+        let wav = makeResult(id: 1, name: "audio.wav", ext: "wav")
+        let mp4 = makeResult(id: 2, name: "video.mp4", ext: "mp4")
+        let mov = makeResult(id: 3, name: "clip.mov", ext: "mov")
 
         #expect(QuickLookPreviewController.isPreviewable(mp3.record))
         #expect(QuickLookPreviewController.isPreviewable(wav.record))
@@ -272,10 +269,10 @@ struct QuickLookPreviewTests {
 
     @Test("Unknown extensions are not previewable")
     func unknownExtensionsNotPreviewable() {
-        let bin = makeResultNonisolated(id: 0, name: "data.bin", ext: "bin")
-        let dat = makeResultNonisolated(id: 1, name: "file.dat", ext: "dat")
-        let dmg = makeResultNonisolated(id: 2, name: "disk.dmg", ext: "dmg")
-        let iso = makeResultNonisolated(id: 3, name: "image.iso", ext: "iso")
+        let bin = makeResult(id: 0, name: "data.bin", ext: "bin")
+        let dat = makeResult(id: 1, name: "file.dat", ext: "dat")
+        let dmg = makeResult(id: 2, name: "disk.dmg", ext: "dmg")
+        let iso = makeResult(id: 3, name: "image.iso", ext: "iso")
 
         #expect(!QuickLookPreviewController.isPreviewable(bin.record))
         #expect(!QuickLookPreviewController.isPreviewable(dat.record))
@@ -287,7 +284,7 @@ struct QuickLookPreviewTests {
 
     @Test("No extension is not previewable")
     func noExtensionNotPreviewable() {
-        let noExt = makeResultNonisolated(id: 0, name: "Makefile", ext: nil)
+        let noExt = makeResult(id: 0, name: "Makefile", ext: nil)
         #expect(!QuickLookPreviewController.isPreviewable(noExt.record))
     }
 
@@ -295,8 +292,8 @@ struct QuickLookPreviewTests {
 
     @Test("Extension check is case-insensitive")
     func extensionCheckCaseInsensitive() {
-        let upper = makeResultNonisolated(id: 0, name: "photo.JPG", ext: "JPG")
-        let mixed = makeResultNonisolated(id: 1, name: "doc.Pdf", ext: "Pdf")
+        let upper = makeResult(id: 0, name: "photo.JPG", ext: "JPG")
+        let mixed = makeResult(id: 1, name: "doc.Pdf", ext: "Pdf")
 
         #expect(QuickLookPreviewController.isPreviewable(upper.record))
         #expect(QuickLookPreviewController.isPreviewable(mixed.record))
@@ -393,33 +390,5 @@ struct QuickLookPreviewTests {
         let newIndex = controller.navigatePreview(results: results2, direction: .down)
         #expect(newIndex == 1)
         #expect(controller.previewIndex == 1)
-    }
-
-    // MARK: - Nonisolated Helper
-
-    /// Nonisolated helper for creating results in tests that only need the record
-    /// for static `isPreviewable` calls (no MainActor required).
-    private nonisolated func makeResultNonisolated(
-        id: UInt32,
-        name: String,
-        ext: String?
-    ) -> SearchResult {
-        SearchResult(
-            record: FileRecord(
-                id: id,
-                name: name,
-                originalName: name,
-                path: "/tmp/\(name)",
-                parentPath: "/tmp",
-                isDirectory: false,
-                size: 1024,
-                createdAt: Date(timeIntervalSince1970: 1_700_000_000),
-                modifiedAt: Date(timeIntervalSince1970: 1_700_000_100),
-                extension: ext
-            ),
-            providerID: "test",
-            score: 1.0,
-            matchType: .substring
-        )
     }
 }
