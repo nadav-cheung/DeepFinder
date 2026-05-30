@@ -55,6 +55,23 @@ struct LocalVisionProviderTests {
         #expect(tags == nil)
     }
 
+    // MARK: - Tags to Metadata (REQ-3.0-10)
+
+    @Test("tagsToMetadata produces metadata with vision_tags field")
+    func testVisionTagsInMetadata() {
+        let tags = ["sunset", "beach", "ocean"]
+        let metadata = LocalVisionProvider.tagsToMetadata(tags)
+
+        #expect(metadata != nil)
+        #expect(metadata?.fields["vision_tags"]?.stringValue == "sunset,beach,ocean")
+    }
+
+    @Test("tagsToMetadata returns nil for empty tags array")
+    func testEmptyTagsNilMetadata() {
+        let metadata = LocalVisionProvider.tagsToMetadata([])
+        #expect(metadata == nil)
+    }
+
     // MARK: - Helpers
 
     private func createTestPNG(width: Int, height: Int) -> URL {

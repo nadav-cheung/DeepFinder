@@ -69,4 +69,19 @@ struct LocalVisionProvider: Sendable {
         // Return the tags (may be empty if nothing met threshold)
         return tags
     }
+
+    /// Converts vision tags into `ExtractedMetadata` for SQLite persistence.
+    ///
+    /// Tags are stored as a comma-separated string under the key "vision_tags".
+    /// Returns `nil` if the tags array is empty, so callers can skip persistence
+    /// when there is nothing to store.
+    ///
+    /// REQ-3.0-10: Vision tags persistence.
+    static func tagsToMetadata(_ tags: [String]) -> ExtractedMetadata? {
+        guard !tags.isEmpty else { return nil }
+        return ExtractedMetadata(
+            fileExtension: "",
+            fields: ["vision_tags": .string(tags.joined(separator: ","))]
+        )
+    }
 }
