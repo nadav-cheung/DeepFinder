@@ -20,9 +20,14 @@ struct ClipboardContent: Sendable, Equatable {
 
 /// Reads text content from the macOS pasteboard for clipboard-based search.
 ///
-/// REQ-3.0-16: Only reads plain text (`.string` type), ignoring images,
+/// **Privacy**: Only reads plain text (`.string` type), ignoring images,
 /// file URLs, and other non-text content. Returns nil for empty strings
-/// or when no text is present.
+/// or when no text is present. No clipboard content is logged or stored
+/// beyond the search session.
+///
+/// **User control**: REQ-3.0-16 requires explicit user action to trigger
+/// the search (no auto-search, no history recording). The truncated preview
+/// is for UI display only.
 enum ClipboardSearch: Sendable {
 
     /// Reads the current text content from the given pasteboard.

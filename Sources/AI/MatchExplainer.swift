@@ -15,7 +15,14 @@ struct MatchExplanation: Sendable, Equatable {
 // MARK: - MatchExplainer
 
 /// Generates local, rule-based explanations for why a search result matched.
-/// No AI required — purely based on MatchType, file name, query text, and active filters.
+///
+/// **No AI required**: Purely based on `MatchType`, file name, query text, and active
+/// filters. Always available regardless of AI provider configuration. Runs in O(1)
+/// per result -- no network calls, no caching needed.
+///
+/// This is intentionally a stateless enum with only static methods, not a struct
+/// with a provider, because match explanation is a local heuristic that doesn't
+/// benefit from AI.
 enum MatchExplainer: Sendable {
 
     /// Produce a human-readable explanation for a search result.

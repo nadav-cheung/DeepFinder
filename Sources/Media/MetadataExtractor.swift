@@ -1,4 +1,29 @@
-// Sources/Media/MetadataExtractor.swift
+/// # Media Module
+///
+/// Extracts, stores, and indexes metadata from media files (images, audio, video, PDFs).
+///
+/// ## Components
+/// - ``MetadataExtractor`` -- protocol for format-specific metadata extractors
+/// - ``MetadataExtractorRegistry`` -- dispatcher that routes files to the correct extractor by extension
+/// - ``ExtractedMetadata`` / ``MetadataValue`` -- polymorphic metadata storage types
+/// - ``MediaMetadataIndex`` -- actor managing in-memory metadata storage
+/// - ``ImageMetadataExtractor`` -- extracts dimensions, DPI, color model via ImageIO/CGImageSource
+/// - ``AudioMetadataExtractor`` -- extracts duration, bitrate, artist, album via AVFoundation
+/// - ``VideoMetadataExtractor`` -- extracts resolution, duration, codec via AVFoundation
+/// - ``PDFMetadataExtractor`` -- extracts page count, title, author via PDFKit
+///
+/// ## Design
+/// Each extractor declares its supported file extensions and produces an ``ExtractedMetadata``
+/// dictionary. The registry builds an extension-to-extractor mapping at init time for O(1)
+/// dispatch. Metadata is persisted to SQLite alongside FileRecords and rebuilt on startup.
+///
+/// ## Filter Integration
+/// Extracted metadata fields are queryable through the search filter pipeline:
+/// ```bash
+/// deepfinder "width:>2560"          # Images wider than 2560px
+/// deepfinder "duration:>300"        # Audio/video longer than 5 minutes
+/// deepfinder "artist:Beatles"       # Audio files by artist
+/// ```
 import Foundation
 
 /// Protocol for media metadata extractors.

@@ -35,7 +35,10 @@ struct CLIOptions: Sendable, Equatable {
 // MARK: - SortOption
 
 /// Sort criteria for search results.
-enum SortOption: String, Sendable, Equatable {
+///
+/// Used by `--sort name|size|date` and mapped to `SortCriterion`
+/// in the search layer.
+enum SortOption: String, Sendable, Equatable, CaseIterable {
     case name
     case size
     case date
@@ -44,9 +47,24 @@ enum SortOption: String, Sendable, Equatable {
 // MARK: - CLIError
 
 /// Errors produced during argument parsing.
-enum CLIError: Error, Sendable, Equatable {
+enum CLIError: Error, Sendable, Equatable, CustomStringConvertible {
+    /// An unrecognized flag was provided (e.g. `--bogus`).
     case unknownFlag(String)
+    /// A flag that requires a value was given without one (e.g. `--limit` at end of args).
     case missingValue(flag: String)
+    /// A flag received an invalid value (e.g. `--limit abc` or `--sort color`).
+    case invalidValue(flag: String, value: String)
+
+    var description: String {
+        switch self {
+        case .unknownFlag(let flag):
+            return "unknown option: \(flag)"
+        case .missingValue(let flag):
+            return "\(flag) requires a value"
+        case .invalidValue(let flag, let value):
+            return "\(flag): invalid value '\(value)'"
+        }
+    }
 }
 
 // MARK: - ArgParser
@@ -89,31 +107,31 @@ struct ArgParser {
                 case "--sort":
                     let value = try nextValue(after: i, in: args, flag: arg)
                     guard let sortOpt = SortOption(rawValue: value) else {
-                        throw CLIError.unknownFlag("--sort \(value)")
+                        throw CLIError.invalidValue(flag: "--sort", value: value)
                     }
                     opts.sort = sortOpt
                     i += 1
 
                 case "--limit":
                     let value = try nextValue(after: i, in: args, flag: arg)
-                    guard let n = Int(value) else {
-                        throw CLIError.missingValue(flag: "--limit")
+                    guard let n = Int(value), n >= 0 else {
+                        throw CLIError.invalidValue(flag: "--limit", value: value)
                     }
                     opts.limit = n
                     i += 1
 
                 case "--offset":
                     let value = try nextValue(after: i, in: args, flag: arg)
-                    guard let n = Int(value) else {
-                        throw CLIError.missingValue(flag: "--offset")
+                    guard let n = Int(value), n >= 0 else {
+                        throw CLIError.invalidValue(flag: "--offset", value: value)
                     }
                     opts.offset = n
                     i += 1
 
                 case "--port":
                     let value = try nextValue(after: i, in: args, flag: arg)
-                    guard let n = Int(value) else {
-                        throw CLIError.missingValue(flag: "--port")
+                    guard let n = Int(value), n > 0, n <= 65535 else {
+                        throw CLIError.invalidValue(flag: "--port", value: value)
                     }
                     opts.port = n
                     i += 1
@@ -161,20 +179,28 @@ struct ArgParser {
 
         OPTIONS
           --json              Output results as JSON
-          --0                 Output results separated by null bytes (\\0)
+          --0                 Output results separated by null bytes (for xargs -0)
           --sort <field>      Sort by: name, size, date
           --limit <n>         Maximum number of results
           --offset <n>        Number of results to skip
           --reverse           Reverse sort order
-          --verbose           Verbose output
-          --serve             Start HTTP search service (no query)
-          --port <n>          Port for --serve mode (default 7654)
+          --verbose           Show match type and relevance score per result
+          --serve             Start HTTP search service (no query needed)
+          --port <n>          Port for --serve mode (default: 7654)
           --help              Show this help text
           --version           Show version
 
         SUBCOMMANDS
-          daemon              Manage the DeepFinder daemon
-          config              Get/set configuration
+          daemon start        Start the background daemon
+          daemon stop         Stop the background daemon
+          daemon restart      Restart the daemon
+          daemon status       Show daemon status (PID, uptime, file count)
+          config get <key>    Get a configuration value
+          config set <key> <val>  Set a configuration value
+          config list         List all configuration values
+          config reset        Reset all configuration to defaults
+          install             Install LaunchAgent for auto-start on login
+          uninstall           Remove LaunchAgent
 
         EXAMPLES
           deepfinder hello.txt              Search for "hello.txt"

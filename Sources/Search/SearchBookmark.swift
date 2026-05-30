@@ -3,10 +3,16 @@ import Foundation
 // MARK: - SearchBookmark
 
 /// A saved search query that a user can recall later.
+///
+/// Equality is based on `id` (UUID), allowing multiple bookmarks with the same name.
 struct SearchBookmark: Codable, Sendable, Equatable {
+    /// Unique identifier for this bookmark.
     let id: UUID
+    /// User-visible display name.
     let name: String
+    /// The saved search query string.
     let query: String
+    /// When this bookmark was created.
     let createdAt: Date
 
     init(
@@ -24,8 +30,11 @@ struct SearchBookmark: Codable, Sendable, Equatable {
 
 // MARK: - BookmarkError
 
+/// Errors thrown by `BookmarkStore` operations.
 enum BookmarkError: Error, Equatable {
+    /// The bookmark store has reached its maximum capacity (100).
     case limitExceeded
+    /// The requested bookmark ID was not found in the store.
     case notFound
 }
 
@@ -38,9 +47,17 @@ actor BookmarkStore {
 
     private static let maxBookmarks = 100
 
+    /// In-memory bookmark list. Persisted to disk when `filePath` is non-nil.
     private var bookmarks: [SearchBookmark] = []
+
+    /// Optional file path for JSON persistence. When nil, operates in-memory only.
     private let filePath: String?
 
+    /// Create a bookmark store.
+    ///
+    /// - Parameter filePath: Path to persist bookmarks as JSON. Pass `nil` for
+    ///   in-memory-only operation (useful for testing). When a path is provided,
+    ///   existing bookmarks are loaded from disk on init.
     init(filePath: String? = nil) {
         self.filePath = filePath
         if let filePath {
@@ -48,6 +65,7 @@ actor BookmarkStore {
         }
     }
 
+    /// Add a bookmark. Throws `BookmarkError.limitExceeded` if the store is full.
     func add(_ bookmark: SearchBookmark) throws {
         guard bookmarks.count < Self.maxBookmarks else {
             throw BookmarkError.limitExceeded
@@ -56,6 +74,7 @@ actor BookmarkStore {
         try save()
     }
 
+    /// Remove a bookmark by ID. Throws `BookmarkError.notFound` if the ID does not exist.
     func remove(id: UUID) throws {
         let before = bookmarks.count
         bookmarks.removeAll { $0.id == id }
@@ -65,10 +84,12 @@ actor BookmarkStore {
         try save()
     }
 
+    /// Return all bookmarks in insertion order.
     func getAll() -> [SearchBookmark] {
         bookmarks
     }
 
+    /// Return bookmarks whose name starts with the given prefix.
     func find(name prefix: String) -> [SearchBookmark] {
         bookmarks.filter { $0.name.hasPrefix(prefix) }
     }
@@ -84,6 +105,10 @@ actor BookmarkStore {
         let data = try JSONEncoder().encode(bookmarks)
         let tmp = filePath + ".tmp"
         try data.write(to: URL(fileURLWithPath: tmp), options: .atomic)
+        // Remove old file before rename (moveItem fails if destination exists)
+        if FileManager.default.fileExists(atPath: filePath) {
+            try FileManager.default.removeItem(atPath: filePath)
+        }
         try FileManager.default.moveItem(atPath: tmp, toPath: filePath)
         try FileManager.default.setAttributes(
             [.posixPermissions: 0o600], ofItemAtPath: filePath

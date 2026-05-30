@@ -3,10 +3,17 @@ import Foundation
 // MARK: - FileTypeGroup
 
 /// Predefined file-type groups with their associated extensions.
+///
+/// Used by the ``SearchFilter/fileType(_:)`` filter case and the `type:` query modifier.
+/// Each group maps to a curated set of common file extensions.
 enum FileTypeGroup: String, Sendable {
+    /// Audio files: mp3, wav, aac, flac, ogg, wma, m4a.
     case audio
+    /// Video files: mp4, mov, avi, mkv, wmv, flv, webm.
     case video
+    /// Image files: jpg, jpeg, png, gif, bmp, svg, webp, tiff, ico.
     case picture
+    /// Document files: pdf, doc, docx, xls, xlsx, ppt, pptx, txt, rtf, odt.
     case document
 
     /// All extensions in this group, lowercased, without leading dots.
@@ -95,7 +102,7 @@ enum SearchFilter: Sendable, Equatable {
         case .isDirectory:
             return record.isDirectory
         case .maxDepth(let depth):
-            return pathDepth(record.path) <= depth
+            return Self.pathDepth(record.path) <= depth
         case .fileType(let group):
             guard let ext = record.extension else { return false }
             return group.extensions.contains(ext.lowercased())
@@ -212,7 +219,8 @@ enum SearchFilter: Sendable, Equatable {
 
     // MARK: - Private Helpers
 
-    private func pathDepth(_ path: String) -> Int {
+    /// Count path components by splitting on "/" and filtering empty segments.
+    private static func pathDepth(_ path: String) -> Int {
         path.components(separatedBy: "/").filter { !$0.isEmpty }.count
     }
 
@@ -224,6 +232,7 @@ enum SearchFilter: Sendable, Equatable {
             ("gb", 1_073_741_824),
             ("mb", 1_048_576),
             ("kb", 1_024),
+            ("b", 1),
         ]
 
         for (suffix, multiplier) in suffixes {

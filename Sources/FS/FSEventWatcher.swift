@@ -23,6 +23,7 @@ enum IndexState: String, Sendable {
 
 // MARK: - Watcher Errors
 
+/// Errors produced by ``FSEventWatcher`` during stream lifecycle management.
 enum FSEventWatcherError: Error, Sendable {
     /// The FSEventStream failed to start.
     case streamStartFailed(reason: String)
@@ -151,6 +152,12 @@ actor FSEventWatcher {
     }
 
     /// Start watching the given paths for file system events.
+    ///
+    /// - Parameters:
+    ///   - paths: Directory paths to monitor for changes.
+    ///   - sinceEventID: The last FSEvent ID to resume from. Pass `0` to start from now.
+    /// - Throws: `FSEventWatcherError.streamStartFailed` if the event stream cannot be created.
+    ///   Note: most start failures are handled internally via retry with backoff rather than thrown.
     func startWatching(paths: [String], sinceEventID: UInt64) throws {
         watchedPaths = paths
         currentEventID = sinceEventID
@@ -252,6 +259,12 @@ actor FSEventWatcher {
     }
 
     /// Calculate exponential backoff delay with jitter.
+    ///
+    /// Formula: `min(initialDelay * 2^(attempt-1), maxDelay)` +/- 20% jitter.
+    /// The result is always at least `initialRetryDelay`.
+    ///
+    /// - Parameter attempt: 1-based retry attempt number.
+    /// - Returns: Delay in seconds before the next retry.
     static func retryDelay(forAttempt attempt: Int) -> TimeInterval {
         let baseDelay = min(
             initialRetryDelay * pow(2.0, Double(attempt - 1)),
@@ -404,6 +417,10 @@ actor FSEventWatcher {
     }
 
     /// Perform a single polling scan cycle.
+    ///
+    /// Placeholder implementation. A full implementation would scan watched paths
+    /// for mtime changes, diff against the in-memory index, and apply updates.
+    /// This is only invoked when FSEvents has failed repeatedly.
     private func performPollingScan() async {
         // Placeholder: full implementation would scan watched paths for mtime changes.
     }

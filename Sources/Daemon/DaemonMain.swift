@@ -1,3 +1,29 @@
+/// # Daemon Module
+///
+/// The background daemon that holds the in-memory index and serves search queries
+/// to CLI and GUI clients over a Unix domain socket.
+///
+/// ## Components
+/// - ``DaemonMain`` -- lifecycle manager: startup sequence, signal handling, shutdown
+/// - ``IPCServer`` -- Unix domain socket server handling client connections
+/// - ``IPCClient`` -- client-side connector for CLI/GUI to communicate with the daemon
+/// - ``IPCProtocol`` -- request/response types and framing helpers
+/// - ``ConfigStore`` -- persistent JSON configuration with atomic writes
+/// - ``LaunchAgent`` -- launchd plist management for auto-start on login
+///
+/// ## Data Flow
+/// ```
+/// CLI / GUI -> IPCClient -> Unix Socket -> IPCServer -> SearchCoordinator -> results
+/// ```
+///
+/// ## Lifecycle
+/// 1. Ensure data directory (`~/.deep-finder`, permissions 700)
+/// 2. Singleton check via PID file
+/// 3. Load SQLite index, rebuild InMemoryIndex
+/// 4. Start IPCServer
+/// 5. Start FSEventWatcher
+/// 6. Register SIGTERM/SIGINT handlers
+/// 7. On shutdown: flush SQLite, save cursor, remove PID + socket
 import Foundation
 
 // MARK: - DaemonState
@@ -20,9 +46,13 @@ enum DaemonState: String, Sendable, Equatable {
 
 // MARK: - DaemonError
 
+/// Errors thrown during daemon lifecycle operations.
 enum DaemonError: Error, CustomStringConvertible, Equatable {
+    /// Another daemon instance is already running with the given PID.
     case alreadyRunning(pid: Int32)
+    /// The data directory could not be created at the given path.
     case dataDirectoryCreationFailed(String)
+    /// The PID file could not be written at the given path.
     case pidWriteFailed(String)
 
     var description: String {

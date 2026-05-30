@@ -25,6 +25,7 @@ struct DaemonConfig: Codable, Sendable, Equatable {
     /// Schema version for forward-compatible migrations.
     var configVersion: Int
 
+    /// Default configuration values used when the config file is missing or corrupted.
     static let defaults = DaemonConfig(
         excludedPaths: ["/System", "/Library"],
         excludedVolumes: [],
@@ -36,6 +37,7 @@ struct DaemonConfig: Codable, Sendable, Equatable {
 
 // MARK: - ConfigStoreError
 
+/// Errors thrown by ``ConfigStore`` during validation.
 enum ConfigStoreError: Error, CustomStringConvertible {
     case invalidValue(key: String, reason: String)
 

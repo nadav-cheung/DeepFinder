@@ -29,6 +29,8 @@ struct FullSubstringMap {
 
     /// Insert all substrings of `name` and associate them with `id`.
     /// Names longer than `maxNameLength` characters are silently skipped.
+    /// Re-inserting the same `id` with a different name does NOT remove the old
+    /// substrings — callers must `remove` first if updating.
     mutating func insert(name: String, id: UInt32) {
         let normalized = name.precomposedStringWithCanonicalMapping
         guard normalized.count <= Self.maxNameLength else { return }
@@ -36,13 +38,18 @@ struct FullSubstringMap {
         let lowered = normalized.lowercased()
         let chars = Array(lowered)
 
+        // Track whether this is a new entry to avoid double-counting
+        let isNew = index[lowered, default: []].insert(id).inserted
+
         for start in 0..<chars.count {
             for end in (start + 1)...chars.count {
                 let substring = String(chars[start..<end])
                 index[substring, default: []].insert(id)
             }
         }
-        _count += 1
+        if isNew {
+            _count += 1
+        }
     }
 
     /// Look up all FileRecord IDs whose filename contains `substring`.

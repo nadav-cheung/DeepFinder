@@ -34,6 +34,8 @@ struct ContentMatch: Sendable, Equatable {
 // MARK: - TextFileExtensions
 
 /// Extensions considered safe to scan as text. Binary files are skipped.
+/// Case-insensitive via `.lowercased()` comparison.
+/// No cases exist — this enum is used only as a namespace for static members.
 enum TextFileExtensions {
     static let whitelist: Set<String> = [
         "txt", "md", "swift", "py", "js", "json", "xml", "yaml", "yml",
@@ -66,7 +68,7 @@ enum ContentScanner: Sendable {
     ///
     /// - Parameters:
     ///   - path: Absolute file path to scan.
-    ///   - query: Text to search for within the file.
+    ///   - query: Text to search for within the file (should be NFC-normalized by caller).
     ///   - options: Scan options (case sensitivity, max line length).
     /// - Returns: Array of `ContentMatch`, one per line containing the query.
     ///   Empty if the file does not exist, is not a text file, or contains no matches.
@@ -193,10 +195,9 @@ enum ContentScanner: Sendable {
         into matches: inout [ContentMatch]
     ) {
         let searchOptions: String.CompareOptions = options.caseSensitive ? .literal : [.literal, .caseInsensitive]
-        let effectiveQuery = options.caseSensitive ? query : query
 
         var searchStart = line.startIndex
-        while let range = line.range(of: effectiveQuery, options: searchOptions, range: searchStart..<line.endIndex) {
+        while let range = line.range(of: query, options: searchOptions, range: searchStart..<line.endIndex) {
             matches.append(ContentMatch(
                 filePath: filePath,
                 lineNumber: lineNumber,

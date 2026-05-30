@@ -33,10 +33,29 @@ struct TrigramIndex {
 
     /// Insert `name` associated with `id`. Extracts all trigrams from the
     /// NFC-normalized, lowercased name and adds `id` to each trigram's posting list.
+    /// Re-inserting an existing `id` updates the stored name and posting lists.
     mutating func insert(name: String, id: UInt32) {
         let normalized = name.precomposedStringWithCanonicalMapping.lowercased()
+
+        // If re-inserting, remove old posting lists first
+        if let oldName = names[id] {
+            let oldScalars = Array(oldName.unicodeScalars)
+            for i in 0..<(oldScalars.count - 2) {
+                let trigram = Self.makeTrigram(scalars: oldScalars, at: i)
+                if var posting = postingLists[trigram] {
+                    posting.remove(id)
+                    if posting.isEmpty {
+                        postingLists.removeValue(forKey: trigram)
+                    } else {
+                        postingLists[trigram] = posting
+                    }
+                }
+            }
+        } else {
+            _count += 1
+        }
+
         names[id] = normalized
-        _count += 1
 
         let scalars = Array(normalized.unicodeScalars)
         for i in 0..<(scalars.count - 2) {

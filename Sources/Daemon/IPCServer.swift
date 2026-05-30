@@ -2,7 +2,9 @@ import Foundation
 
 // MARK: - IPCServerError
 
+/// Errors thrown by ``IPCServer`` during socket operations.
 enum IPCServerError: Error, Sendable, Equatable {
+    /// Failed to create the Unix domain socket.
     case socketCreationFailed(String)
     case bindFailed(String)
     case listenFailed(String)
@@ -23,6 +25,10 @@ enum IPCServerError: Error, Sendable, Equatable {
 ///
 /// The listen socket is set to non-blocking mode so the accept loop can
 /// cooperatively yield via `Task.sleep`, keeping Swift concurrency healthy.
+///
+/// **Platform note**: Unix domain sockets are POSIX-specific. The socket path
+/// length is limited to `sizeof(sockaddr_un.sun_path) - 1` bytes (103 on macOS).
+/// The default path `~/.deep-finder/ipc.sock` is well within this limit.
 ///
 /// Thread-safe via actor isolation.
 actor IPCServer {
@@ -48,6 +54,12 @@ actor IPCServer {
 
     // MARK: - Init
 
+    /// Create an IPC server.
+    ///
+    /// - Parameters:
+    ///   - socketPath: File path for the Unix domain socket (e.g. `~/.deep-finder/ipc.sock`).
+    ///   - coordinator: The search coordinator that processes queries.
+    ///   - statsProvider: Closure that returns current daemon statistics when called.
     init(
         socketPath: String,
         coordinator: SearchCoordinator,
@@ -149,7 +161,14 @@ actor IPCServer {
 
     /// Stop accepting new connections and clean up.
     ///
-    /// Safe to call multiple times (subsequent calls are no-ops).
+    /// Cancels the accept loop and all in-flight client tasks, closes the listen
+    /// socket, and removes the socket file from disk.
+    ///
+    /// - Note: In-flight client connections are cancelled via `Task.cancel()`, which
+    ///   sets the cancellation flag. The actual file descriptor is closed when the
+    ///   client handler's `defer { close(fd) }` fires on the next I/O error or when
+    ///   the blocking `read()`/`write()` syscall returns. Under normal shutdown, the
+    ///   clients will complete their current request before noticing cancellation.
     func stop() {
         guard listenFD >= 0 else { return }
 
@@ -195,7 +214,10 @@ actor IPCServer {
                     try? await Task.sleep(nanoseconds: 1_000_000) // 1ms
                     continue
                 }
-                // Other transient errors — brief pause and retry
+                // Other transient errors (e.g. EMFILE when out of file descriptors).
+                // Brief pause prevents busy-looping; persistent errors will eventually
+                // resolve or the server will be stopped via stop().
+                try? await Task.sleep(nanoseconds: 1_000_000)
                 try? await Task.sleep(nanoseconds: 1_000_000)
                 continue
             }
@@ -312,13 +334,16 @@ actor IPCServer {
     }
 
     /// Write all data to a file descriptor.
+    ///
+    /// Loops until all bytes are written or an error occurs. Handles partial writes
+    /// by advancing the offset and retrying.
     private func writeAll(fd: Int32, data: Data) throws {
         var offset = 0
         while offset < data.count {
             let written = data.withUnsafeBytes { ptr in
                 write(fd, ptr.baseAddress!.advanced(by: offset), data.count - offset)
             }
-            if written < 0 {
+            if written <= 0 {
                 throw IPCServerError.connectionClosed
             }
             offset += written

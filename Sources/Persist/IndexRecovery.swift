@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Recovery Types
 
-/// Action taken during recovery.
+/// Action taken during recovery. Used by callers to decide next steps.
 enum RecoveryAction: Sendable, Equatable {
     case none
     case rebuildFromDB
@@ -10,7 +10,7 @@ enum RecoveryAction: Sendable, Equatable {
     case walCleanup
 }
 
-/// Result of a recovery operation.
+/// Result of a recovery operation, describing what was done and how many records were recovered.
 struct RecoveryResult: Sendable, Equatable {
     let action: RecoveryAction
     let recordsRecovered: Int
@@ -30,6 +30,12 @@ actor IndexRecovery {
     private let scanner: FileScanner
     private let index: InMemoryIndex
 
+    /// Create a recovery manager with access to the persistence layer, scanner, and in-memory index.
+    ///
+    /// - Parameters:
+    ///   - persistence: The SQLite persistence layer to diagnose and repair.
+    ///   - scanner: Used for full filesystem rescans when the database cannot be recovered.
+    ///   - index: The in-memory index to rebuild during full rescans.
     init(persistence: IndexPersistence, scanner: FileScanner, index: InMemoryIndex) {
         self.persistence = persistence
         self.scanner = scanner
@@ -39,6 +45,16 @@ actor IndexRecovery {
     // MARK: - Diagnose
 
     /// Run a full diagnostic and attempt recovery if needed.
+    ///
+    /// Recovery strategy (in order):
+    /// 1. Check database integrity via `PRAGMA integrity_check`.
+    /// 2. If unhealthy, close the connection and delete WAL/SHM files.
+    /// 3. Report that the database should be reopened and reloaded.
+    ///
+    /// - Important: After this method returns with any action other than `.none`,
+    ///   the current ``IndexPersistence`` is closed and unusable. The caller must
+    ///   create a new ``IndexPersistence`` instance and reload records.
+    /// - Returns: A ``RecoveryResult`` describing what was done and the recommended next action.
     func diagnoseAndRecover() async throws -> RecoveryResult {
         // Step 1: Check integrity
         let isHealthy = try await persistence.verifyIntegrity()

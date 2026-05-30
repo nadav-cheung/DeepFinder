@@ -1,3 +1,37 @@
+/// # CLI Module
+///
+/// The user-facing command-line interface for DeepFinder. Parses arguments,
+/// communicates with the daemon over IPC, and formats results for terminal output.
+///
+/// ## Components
+/// - ``CLIMain`` -- top-level entry point: argument parsing, dispatch to REPL or single-shot
+/// - ``ArgParser`` -- command-line argument parser (zero external dependencies)
+/// - ``SingleShot`` -- one-shot query execution and result formatting
+/// - ``REPL`` -- interactive read-eval-print loop using Darwin.readline
+/// - ``REPLCommands`` -- built-in REPL commands (:help, :stats, :open, :reveal, etc.)
+/// - ``REPLHistory`` -- persistent command history across sessions
+/// - ``TerminalFormatter`` -- ANSI-colored terminal output (auto-disables when piped)
+/// - ``IPCClientProtocol`` -- protocol abstraction for IPC communication (testable)
+/// - ``DaemonCommands`` -- daemon lifecycle commands (start, stop, restart, status)
+/// - ``ConfigCommands`` -- runtime configuration get/set via CLI
+/// - ``InstallCommands`` -- LaunchAgent installation and shell completion setup
+/// - ``ServeMode`` -- run daemon in foreground for development/debugging
+/// - ``FuzzyCorrection`` -- suggest similar query terms when no results found
+///
+/// ## Usage
+/// ```bash
+/// deepfinder "query"              # Single-shot search
+/// deepfinder                      # Interactive REPL (v0.6+)
+/// deepfinder --json "query"       # JSON output for scripting
+/// deepfinder --help               # Show help
+/// deepfinder daemon start         # Start background daemon
+/// ```
+///
+/// ## Exit Codes
+/// - 0: success
+/// - 1: no results found
+/// - 2: daemon error
+/// - 3: query error
 import Foundation
 
 // MARK: - CLIExitCode
@@ -66,7 +100,7 @@ struct CLIMain {
 
         // 3. Handle --version
         if options.showVersion {
-            return (CLIOutput(stdout: "\(Product.name) \(Product.version)"), .success)
+            return (CLIOutput(stdout: "\(Product.name) \(Product.version)\n"), .success)
         }
 
         // 4. Handle --serve mode
@@ -110,6 +144,6 @@ struct CLIMain {
             client: client
         )
 
-        return (CLIOutput(stdout: resultOutput), exitCode)
+        return (resultOutput, exitCode)
     }
 }

@@ -40,12 +40,13 @@ struct ServeModeTests {
     func testPortInvalidValue() {
         do {
             _ = try ArgParser.parse(["--port", "abc"])
-            Issue.record("Expected missingValue error")
+            Issue.record("Expected invalidValue error")
         } catch let error as CLIError {
-            if case .missingValue(let flag) = error {
+            if case .invalidValue(let flag, let value) = error {
                 #expect(flag == "--port")
+                #expect(value == "abc")
             } else {
-                Issue.record("Expected missingValue, got \(error)")
+                Issue.record("Expected invalidValue, got \(error)")
             }
         } catch {
             Issue.record("Unexpected error type: \(error)")

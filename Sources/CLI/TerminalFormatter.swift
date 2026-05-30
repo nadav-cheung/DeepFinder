@@ -133,6 +133,9 @@ enum TerminalFormatter {
 
     // MARK: - Private Formatters
 
+    /// Format results as a JSON array of `SearchResult` objects.
+    ///
+    /// Uses sorted keys for deterministic output. Returns `"[]"` on encoding failure.
     private static func formatJSON(_ results: [SearchResult]) -> String {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
@@ -142,11 +145,15 @@ enum TerminalFormatter {
         return String(data: data, encoding: .utf8) ?? "[]"
     }
 
+    /// Format results as NUL-separated file paths for scripting (`xargs -0`).
     private static func formatNUL(_ results: [SearchResult]) -> String {
         let paths = results.map(\.record.path)
         return paths.joined(separator: "\0") + "\0"
     }
 
+    /// Format results as human-readable ANSI-colored lines.
+    ///
+    /// When `isTerminal` is false, strips all ANSI escape codes.
     private static func formatANSI(
         _ results: [SearchResult],
         options: CLIOptions,
@@ -161,6 +168,11 @@ enum TerminalFormatter {
         return lines.joined(separator: "\n")
     }
 
+    /// Format a single search result as one line.
+    ///
+    /// Layout: `filename path size date` with optional verbose metadata.
+    /// When `isTerminal` is true, the filename has query-match highlights
+    /// and the metadata portion is dimmed.
     private static func formatSingleResult(
         _ result: SearchResult,
         query: String,

@@ -34,11 +34,21 @@ protocol SpeechRecognizerProtocol: Sendable {
 
 /// Provides local (on-device) speech recognition using Apple's Speech framework.
 ///
-/// REQ-3.0-12: Completely local execution. Supports Chinese and English.
-/// Real-time streaming of partial results. Auto-stops on silence.
+/// **Privacy**: Completely local execution. Supports Chinese and English.
+/// Audio is processed on-device by Apple's Speech framework; no audio data
+/// or transcriptions leave the device.
 ///
-/// The actor is designed for testability: inject `mockResults` in tests to
-/// bypass the real Speech framework (which requires hardware microphone input).
+/// **Graceful degradation**:
+/// - `startListening()` returns `nil` if speech recognition is unavailable
+///   for the configured locale (e.g., unsupported language, restricted device)
+/// - `transcribe()` returns `nil` if no results are available
+/// - Real-time streaming emits partial results, then a final result when
+///   the utterance is complete
+///
+/// **Testability**: Inject `mockResults` in tests to bypass the real Speech
+/// framework (which requires hardware microphone input).
+///
+/// REQ-3.0-12: Local speech recognition.
 actor LocalSpeechProvider {
 
     /// Whether the provider is currently listening for speech input.

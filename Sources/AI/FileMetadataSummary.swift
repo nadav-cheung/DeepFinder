@@ -2,11 +2,16 @@ import Foundation
 
 /// A privacy-safe summary of file metadata for AI consumption.
 ///
-/// This is the ONLY type that crosses the AI boundary. It contains no file
-/// content, no thumbnails, no binary data -- only metadata needed for
-/// search result summarization and query suggestion.
+/// **Privacy boundary**: This is the ONLY data type that crosses into AI providers
+/// from the search engine. It contains no file content, no thumbnails, no binary
+/// data -- only metadata needed for search result summarization and query suggestion.
 ///
-/// Paths are optionally anonymized (e.g. `/Users/nadav/file.txt` -> `~/file.txt`).
+/// Paths are optionally anonymized via `anonymizePaths` (default `true`):
+/// `/Users/nadav/file.txt` becomes `~/file.txt`. This prevents leaking the
+/// macOS username to cloud AI providers. Controlled by `ai.pathAnonymization` config.
+///
+/// To construct: always use `FileMetadataSummary.from(_:tags:anonymizePaths:)`
+/// which applies the privacy transformation. Do not construct directly with raw paths.
 struct FileMetadataSummary: Sendable, Codable, Equatable {
     /// File name (e.g. "report.pdf")
     let name: String

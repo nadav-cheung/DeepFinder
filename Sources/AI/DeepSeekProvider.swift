@@ -1,11 +1,40 @@
 import Foundation
 
-// MARK: - OpenAICompatibleProvider
+// MARK: - OpenAI-Compatible Protocol Layer
+//
+// DeepSeek and Qwen both expose chat completions APIs that follow the OpenAI format:
+//   POST /chat/completions with { model, messages, stream: true }
+//   SSE response: "data: {"choices":[{"delta":{"content":"..."}}]}"
+//   Termination: "data: [DONE]"
+//
+// Rather than duplicating HTTP + SSE + JSON parsing for each provider, we implement
+// the shared logic once in OpenAICompatibleProvider. Concrete providers (DeepSeek, Qwen)
+// are typealiases that provide factory methods with the correct endpoint URL and model name.
+//
+// To add a new OpenAI-compatible provider:
+//   1. Add a typealias at the bottom of this file
+//   2. Add a static factory method with the provider's endpoint and default model
+//   3. No other changes needed -- SSE parsing, error handling, and streaming are shared.
 
 /// A generic AI model provider for OpenAI-compatible chat completions APIs.
 ///
 /// Shared implementation for providers that use the same SSE streaming format
 /// (DeepSeek, Qwen, and any future OpenAI-compatible endpoint).
+///
+/// **Streaming**: `complete()` returns an `AsyncThrowingStream` that yields content
+/// deltas as they arrive from the SSE stream. Errors (rate limits, network failures)
+/// are propagated as `AIError` through the stream's terminal event. The continuation
+/// is always finished (with value or error) -- no leaked continuations.
+///
+/// **Error handling**:
+/// - HTTP 429 -> `AIError.rateLimited`
+/// - HTTP 4xx/5xx -> `AIError.networkError("HTTP \(statusCode)")`
+/// - Transport errors -> wrapped in `AIError.networkError`
+/// - `AIError` instances propagate unchanged (e.g., from a failing HTTPClient mock)
+///
+/// **Privacy**: Only ``AIContext`` data (metadata, never file contents) is serialized
+/// into requests. The `encodeContext` helper strips file paths to names-only when
+/// constructing the system message. See module-level docs for the full privacy model.
 ///
 /// REQ-3.0-03 (DeepSeek) and REQ-3.0-04 (Qwen) both use this base.
 struct OpenAICompatibleProvider: AIModelProvider, Sendable {
@@ -37,6 +66,18 @@ struct OpenAICompatibleProvider: AIModelProvider, Sendable {
 
     // MARK: - complete()
 
+    /// Stream a chat completion using the OpenAI-compatible SSE protocol.
+    ///
+    /// The continuation is guaranteed to finish (with `.finish()` or `.finish(throwing:)`)
+    /// on every code path -- no leaked continuations. Error paths:
+    /// - HTTP 429 -> `AIError.rateLimited`
+    /// - HTTP 4xx/5xx -> `AIError.networkError`
+    /// - Transport error -> wrapped in `AIError.networkError`
+    /// - `AIError` from HTTPClient -> propagated unchanged
+    ///
+    /// If the consuming `Task` is cancelled, `AsyncThrowingStream` handles
+    /// cancellation by terminating iteration -- the continuation may yield a few
+    /// more chunks before the task's cooperative cancellation takes effect.
     func complete(prompt: String, context: AIContext?) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             Task {
@@ -73,6 +114,11 @@ struct OpenAICompatibleProvider: AIModelProvider, Sendable {
 
     // MARK: - translateToSearchSyntax()
 
+    /// Translate natural language into search syntax using a non-streaming call.
+    ///
+    /// Unlike `complete()`, this collects the full response before returning.
+    /// Throws on HTTP errors and transport failures -- callers should `catch`
+    /// and fall back to returning the input unchanged (see `NLSearchTranslator`).
     func translateToSearchSyntax(naturalLanguage: String) async throws -> String {
         let request = try buildRequest(
             systemPrompt: Self.searchTranslationSystemPrompt,
@@ -136,6 +182,12 @@ struct OpenAICompatibleProvider: AIModelProvider, Sendable {
         return delta["content"] as? String
     }
 
+    /// Serialize AIContext into a system message for the chat completions API.
+    ///
+    /// **Privacy**: Only includes the query string, result count, and up to 20 file
+    /// names. Paths and other metadata from ``FileMetadataSummary`` are intentionally
+    /// excluded from the API payload. Full metadata is available in the ``AIContext``
+    /// but we send only what's needed for the AI to produce useful completions.
     private static func encodeContext(_ context: AIContext) -> String {
         var parts: [String] = []
         parts.append("Query: \(context.query)")
@@ -160,10 +212,28 @@ struct OpenAICompatibleProvider: AIModelProvider, Sendable {
         return result.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    // MARK: - Prompt Engineering
+    //
+    // All prompts in this module follow a consistent pattern:
+    // 1. Role definition ("You are a ...")
+    // 2. Task description
+    // 3. Output format constraint ("Output ONLY X, nothing else")
+    // 4. Language support note ("Support both Chinese and English")
+    //
+    // This pattern is used in: defaultSystemPrompt, searchTranslationSystemPrompt,
+    // ResultSummarizer.summarize(), SearchAdvisor.suggest(), SemanticGrouper.group(),
+    // CrossLanguageSearch.expandQuery().
+    //
+    // When modifying prompts, maintain this structure for consistency across providers.
+
     private static let defaultSystemPrompt = """
         You are an AI assistant helping with file search. Be concise and helpful.
         """
 
+    /// System prompt for the search syntax translation feature.
+    ///
+    /// Instructs the model to output ONLY valid DeepFinder search syntax with no
+    /// markdown formatting. Designed to produce parseable, directly-executable output.
     static let searchTranslationSystemPrompt = """
         You are a search syntax translator for DeepFinder, a macOS file search app.
 

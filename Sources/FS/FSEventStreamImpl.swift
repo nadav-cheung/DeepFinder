@@ -12,6 +12,10 @@ import CoreServices
 /// **Thread safety**: `@unchecked Sendable` because all mutable state is protected
 /// by the serial dispatch queue. The FSEventStream callbacks arrive on this queue,
 /// and public methods are called from the FSEventWatcher actor.
+///
+/// **Platform**: macOS only. FSEvents is not available on iOS, Linux, or Windows.
+/// Requires Full Disk Access to monitor protected directories (~/Documents, ~/Desktop, etc.).
+/// Without FDA, those directories are silently skipped by the system.
 final class FSEventStreamImpl: FileSystemEventStream, @unchecked Sendable {
 
     // MARK: - Configuration

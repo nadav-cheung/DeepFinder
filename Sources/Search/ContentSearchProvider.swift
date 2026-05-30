@@ -25,6 +25,9 @@ actor ContentSearchProvider: SearchProvider {
 
     // MARK: - Init
 
+    /// Create a content search provider backed by the given index.
+    ///
+    /// - Parameter index: The in-memory index to use for enumerating candidate files.
     init(index: InMemoryIndex) {
         self.index = index
     }

@@ -22,8 +22,11 @@ struct SemanticGroup: Sendable, Equatable {
 /// Always includes an "Other" catch-all group for files that don't fit
 /// any named category.
 ///
-/// Returns `nil` when the provider is unavailable or fewer than 20 results
-/// are provided, ensuring graceful degradation.
+/// **Graceful degradation**: Returns `nil` when:
+/// - `provider` is `nil` (AI disabled) -- callers simply skip grouping
+/// - Fewer than 20 results (too few to group meaningfully)
+/// - AI call fails or returns unparseable output
+/// In all cases, the caller continues with a flat result list.
 ///
 /// REQ-3.0-08: Semantic Grouper
 struct SemanticGrouper: Sendable {
@@ -32,6 +35,7 @@ struct SemanticGrouper: Sendable {
     let provider: (any AIModelProvider)?
 
     /// Minimum number of results required to trigger grouping.
+    /// Below this threshold, grouping adds no value and is skipped.
     private static let minimumResults = 20
 
     init(provider: (any AIModelProvider)?) {
@@ -44,9 +48,10 @@ struct SemanticGrouper: Sendable {
     ///   - query: The user's original search query.
     ///   - results: Metadata summaries of the search results.
     ///   - ids: File record IDs corresponding to the results array.
-    /// - Returns: An array of `SemanticGroup`, or `nil` if grouping is not applicable.
+    /// - Returns: An array of `SemanticGroup`, or `nil` if grouping is not applicable
+    ///   (provider nil, too few results, mismatched arrays, or AI call failure).
     func group(query: String, results: [FileMetadataSummary], ids: [UInt32]) async -> [SemanticGroup]? {
-        // No provider or insufficient results
+        // No provider or insufficient results: gracefully return nil
         guard let provider, results.count >= Self.minimumResults else { return nil }
         guard results.count == ids.count else { return nil }
 

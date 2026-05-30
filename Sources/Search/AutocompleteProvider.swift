@@ -16,6 +16,9 @@ actor AutocompleteProvider {
     private static let replCommands: [String] =
         REPLCommand.allCases.map { ":\($0.rawValue)" }
 
+    /// Create an autocomplete provider backed by the given index.
+    ///
+    /// - Parameter index: The in-memory index to query for filename suggestions.
     init(index: InMemoryIndex) {
         self.index = index
     }

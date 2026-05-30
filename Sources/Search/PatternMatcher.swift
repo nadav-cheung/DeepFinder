@@ -4,6 +4,9 @@ import Foundation
 /// Both matchers are case-insensitive and operate on the filename (not the full path).
 struct PatternMatcher: Sendable {
 
+    /// Prevent instantiation — all API is static.
+    private init() {}
+
     /// Match `input` against a glob-style wildcard `pattern`.
     ///
     /// - `*` matches any sequence of characters (including empty).
@@ -13,8 +16,8 @@ struct PatternMatcher: Sendable {
     /// Uses a two-pointer backtracking algorithm with O(m*n) worst case
     /// where m = pattern length, n = input length.
     static func matchWildcard(pattern: String, input: String) -> Bool {
-        let loweredPattern = pattern.lowercased()
-        let loweredInput = input.lowercased()
+        let loweredPattern = pattern.precomposedStringWithCanonicalMapping.lowercased()
+        let loweredInput = input.precomposedStringWithCanonicalMapping.lowercased()
 
         var patternIdx = loweredPattern.startIndex
         var inputIdx = loweredInput.startIndex

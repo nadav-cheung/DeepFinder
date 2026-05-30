@@ -12,8 +12,12 @@ struct DuplicateGroup: Sendable {
 /// empty files/directories, and directory child count.
 actor DuplicateFinder {
 
+    /// The index used for file lookups.
     private let index: InMemoryIndex
 
+    /// Create a duplicate finder backed by the given index.
+    ///
+    /// - Parameter index: The in-memory index to enumerate records from.
     init(index: InMemoryIndex) {
         self.index = index
     }

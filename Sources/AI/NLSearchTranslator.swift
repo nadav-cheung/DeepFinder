@@ -6,8 +6,14 @@ import Foundation
 ///
 /// Uses an `AIModelProvider` (cloud or local) to translate freeform input like
 /// "find PDF files modified last week" into structured search syntax like
-/// `ext:pdf dm:lastweek`. Falls back gracefully when AI is unavailable:
-/// returns the input unchanged so the query is treated as a plain substring search.
+/// `ext:pdf dm:lastweek`.
+///
+/// **Graceful degradation**: When AI is unavailable, returns the input unchanged
+/// so the query is treated as a plain substring search. This happens when:
+/// - `provider` is `nil` (AI not configured)
+/// - The input already contains search syntax (detected via `looksLikeSearchSyntax`)
+/// - The AI call fails or times out
+/// In all cases, the caller receives a valid search string.
 ///
 /// REQ-3.0-05: Natural Language Search
 struct NLSearchTranslator: Sendable {

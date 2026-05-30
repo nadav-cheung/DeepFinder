@@ -1,3 +1,37 @@
+/// # Search Module
+///
+/// The query processing pipeline: parsing, filtering, sorting, and result delivery.
+///
+/// ## Components
+/// - ``SearchCoordinator`` -- actor that orchestrates search across multiple providers
+/// - ``SearchProvider`` -- protocol for search backends (file index, content, AI)
+/// - ``FileIndexProvider`` -- MVP provider wrapping ``InMemoryIndex``
+/// - ``ContentSearchProvider`` -- full-text file content search
+/// - ``SearchQuery`` / ``SearchResult`` / ``MatchType`` -- core search types
+/// - ``QueryTerm`` / ``QueryParser`` -- query AST and recursive descent parser
+/// - ``SearchFilter`` / ``FilterPipeline`` -- size, date, extension, metadata filters
+/// - ``SearchSorter`` -- relevance, name, date, size, natural sort
+/// - ``PatternMatcher`` -- wildcard and regex matching against file names
+/// - ``AutocompleteProvider`` -- prefix-based query suggestions
+/// - ``SearchBookmark`` -- saved searches for quick access
+/// - ``ContentScanner`` -- file content reading and line-level matching
+/// - ``DuplicateFinder`` / ``FileHasher`` -- duplicate file detection
+/// - ``SearchTypes`` -- shared type definitions
+///
+/// ## Query Pipeline
+/// ```
+/// Raw query -> QueryParser -> SearchFilter[] + text
+///          -> SearchCoordinator -> providers (concurrent)
+///          -> deduplicate -> FilterPipeline -> SearchSorter -> results
+/// ```
+///
+/// ## Query Syntax
+/// - Plain text: `deepfinder report`
+/// - Boolean: `report !draft`, `report | memo`
+/// - Wildcards: `*.pdf`, `report_?.txt`
+/// - Regex: `regex:^report_\d{4}`
+/// - Modifiers: `ext:pdf`, `size:>10mb`, `dm:today`, `file:`, `folder:`
+/// - Path qualifier: `Projects\ report` (backslash-space)
 import Foundation
 
 // MARK: - SearchCoordinator
@@ -24,6 +58,11 @@ actor SearchCoordinator {
 
     // MARK: - Init
 
+    /// Create a coordinator with the given providers and result cap.
+    ///
+    /// - Parameters:
+    ///   - providers: Search backends to dispatch queries to.
+    ///   - resultLimit: Maximum number of results returned per query. Default 1000.
     init(providers: [any SearchProvider], resultLimit: Int = 1000) {
         self.providers = providers
         self.resultLimit = resultLimit

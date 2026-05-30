@@ -22,13 +22,22 @@ struct SimilarityResult: Sendable, Equatable {
 
 /// Extracts feature vectors from images and finds visually similar images.
 ///
-/// REQ-3.0-11: Uses VNFeaturePrintObservation (Vision framework) for completely
-/// local feature extraction. Cosine similarity matching against an indexed
-/// candidate set returns the top-K most similar images.
+/// **Privacy**: Uses `VNFeaturePrintObservation` (Vision framework) for completely
+/// local feature extraction. Feature vectors never leave the device. No network calls.
+///
+/// **Graceful degradation**:
+/// - `extractFeatureVector(from:)` returns `nil` if the file doesn't exist,
+///   isn't a valid image, or Vision analysis fails
+/// - `findSimilar()` returns an empty array if no candidates meet the similarity
+///   threshold
+/// - `cosineSimilarity()` returns 0.0 for empty or zero-magnitude vectors
+///
+/// REQ-3.0-11: Image similarity search via on-device embeddings.
 struct ImageSimilaritySearch: Sendable {
 
     /// Minimum similarity score (0-1) for a result to be included.
-    /// Filters out noise from unrelated images.
+    /// Filters out noise from unrelated images. Tuned for Vision feature prints,
+    /// which typically produce scores in [0.0, 1.0] for similar images.
     static let similarityThreshold: Double = 0.1
 
     // MARK: - Feature Extraction

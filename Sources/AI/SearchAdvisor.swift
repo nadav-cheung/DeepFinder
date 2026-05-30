@@ -6,8 +6,13 @@ import Foundation
 ///
 /// Uses an AI model provider to generate at most one suggestion. The suggestion
 /// is always a valid DeepFinder search syntax string that the user can execute
-/// directly. Returns `nil` when the provider is unavailable, ensuring graceful
-/// degradation -- callers simply skip showing the suggestion.
+/// directly.
+///
+/// **Graceful degradation**: Returns `nil` when:
+/// - `provider` is `nil` (AI disabled) -- callers skip showing the suggestion
+/// - AI call fails or times out -- same skip behavior
+/// - AI returns empty/whitespace text -- same skip behavior
+/// Callers should check for `nil` and omit the suggestion UI element.
 ///
 /// REQ-3.0-07: Search Advisor
 struct SearchAdvisor: Sendable {
@@ -24,9 +29,10 @@ struct SearchAdvisor: Sendable {
     /// - Parameters:
     ///   - query: The user's current search query.
     ///   - results: Metadata summaries of the current search results (may be empty).
-    /// - Returns: A suggestion string, or `nil` if unavailable.
+    ///     Only the first 20 file names are included in the AI prompt.
+    /// - Returns: A suggestion string in DeepFinder search syntax, or `nil` if unavailable.
     func suggest(query: String, results: [FileMetadataSummary]) async -> String? {
-        // No provider configured: no suggestion
+        // No provider configured: graceful fallback
         guard let provider else { return nil }
 
         let fileList = results.prefix(20).map(\.name).joined(separator: ", ")

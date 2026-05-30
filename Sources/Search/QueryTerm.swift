@@ -2,15 +2,39 @@ import Foundation
 
 // MARK: - QueryTerm
 
-/// A node in the parsed query AST.
+/// A node in the parsed query abstract syntax tree (AST).
+///
+/// Produced by ``QueryParser/parse(_:)`` from a raw query string. The AST supports
+/// boolean operators, wildcards, regex, modifiers, and path qualifiers.
+///
+/// ## Grammar (informal)
+/// ```
+/// query      -> expr*
+/// expr       -> or_expr (SPACE or_expr)*
+/// or_expr    -> primary ('|' primary)*
+/// primary    -> '!' primary | '(' query ')' | atom
+/// atom       -> modifier | regex_literal | wildcard | path_qualifier | text
+/// ```
+///
+/// Default behavior: space-separated terms are ANDed. `|` produces OR.
+/// `!` prefix negates. Parentheses group sub-expressions.
 indirect enum QueryTerm: Equatable, Sendable {
+    /// Plain text search term (case-insensitive substring match).
     case text(String)
+    /// Logical AND of sub-terms (implicit for space-separated terms).
     case and([QueryTerm])
+    /// Logical OR of sub-terms (explicit `|` operator).
     case or([QueryTerm])
+    /// Logical negation of a sub-term (`!` prefix).
     case not(QueryTerm)
+    /// Glob-style wildcard pattern (supports `*` and `?`).
     case wildcard(String)
+    /// Regular expression pattern (prefixed with `regex:`).
     case regex(String)
+    /// Key-value modifier (e.g. `ext:pdf`, `size:>10mb`, `dm:today`).
     case modifier(key: String, value: String)
+    /// Path qualifier — restricts results to paths containing this component
+    /// (expressed with backslash-space: `Projects\ report`).
     case pathQualifier(String)
 }
 
@@ -37,8 +61,13 @@ struct ParsedQuery: Equatable, Sendable {
 ///
 /// Default behavior: space-separated terms are ANDed. `|` produces OR.
 /// `!` prefix negates. Parentheses group sub-expressions.
+/// No cases exist — this enum is used only as a namespace for static methods.
 enum QueryParser {
 
+    /// Parse a raw query string into a structured `ParsedQuery` AST.
+    ///
+    /// - Parameter input: The raw query string typed by the user.
+    /// - Returns: A `ParsedQuery` with the parsed AST and original query.
     static func parse(_ input: String) -> ParsedQuery {
         let tokens = tokenize(input)
         var parser = _Parser(tokens: tokens)
@@ -237,7 +266,7 @@ private struct _Parser {
         var terms: [QueryTerm] = [parsePrimary()]
 
         while case .or = current {
-            advance() // consume '|'
+            _ = advance() // consume '|'
             terms.append(parsePrimary())
         }
 
@@ -252,11 +281,11 @@ private struct _Parser {
 
         switch token {
         case .not:
-            advance()
+            _ = advance()
             return .not(parsePrimary())
 
         case .lparen:
-            advance() // consume '('
+            _ = advance() // consume '('
             let inner = parseQuery()
             _ = advance() // consume ')'
             switch inner.count {
@@ -266,31 +295,31 @@ private struct _Parser {
             }
 
         case .text(let s):
-            advance()
+            _ = advance()
             return .text(s)
 
         case .wildcard(let s):
-            advance()
+            _ = advance()
             return .wildcard(s)
 
         case .regex(let s):
-            advance()
+            _ = advance()
             return .regex(s)
 
         case .modifier(let k, let v):
-            advance()
+            _ = advance()
             return .modifier(key: k, value: v)
 
         case .pathQualifier(let s):
-            advance()
+            _ = advance()
             return .pathQualifier(s)
 
         case .or:
-            advance()
+            _ = advance()
             return .text("|")
 
         case .rparen:
-            advance()
+            _ = advance()
             return .text(")")
         }
     }

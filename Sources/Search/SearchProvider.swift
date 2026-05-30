@@ -9,8 +9,10 @@ struct SearchResultSequence: AsyncSequence, Sendable {
     typealias Element = SearchResult
     typealias AsyncIterator = Iterator
 
+    /// The complete set of results to iterate over.
     private let elements: [SearchResult]
 
+    /// Create a sequence wrapping a pre-computed array of results.
     init(_ elements: [SearchResult]) {
         self.elements = elements
     }

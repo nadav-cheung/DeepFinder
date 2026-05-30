@@ -1,3 +1,24 @@
+/// # Services Module
+///
+/// External integration layer exposing DeepFinder search through HTTP, URL schemes,
+/// and macOS system services.
+///
+/// ## Components
+/// - ``HTTPSearchService`` -- lightweight HTTP server (localhost only) with JSON API
+/// - ``HTTPRouter`` -- stateless request parser and router for testability
+/// - ``URLSchemeHandler`` -- `deepfinder://` URL scheme registration and handling
+/// - ``SearchScriptCommand`` -- AppleScript command support for automation
+/// - ``SearchIntent`` -- Siri Shortcuts / App Intents integration
+///
+/// ## HTTP API
+/// All endpoints return JSON with CORS headers for browser-based integrations:
+/// - `GET /health` -- health check
+/// - `GET /search?q=...&limit=N&offset=N` -- search with pagination
+/// - `GET /stats` -- index statistics
+///
+/// ## Security
+/// The HTTP server binds to 127.0.0.1 only -- not exposed to the network.
+/// Uses Network.framework `NWListener` with zero external dependencies.
 import Foundation
 import Network
 

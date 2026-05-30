@@ -4,10 +4,15 @@ import Foundation
 
 /// Criterion for sorting search results.
 enum SortCriterion: Sendable {
+    /// Sort by match type priority, then filename length, then recency, then path depth.
     case relevance
+    /// Sort alphabetically by filename using locale-aware comparison.
     case name
+    /// Sort by modification date (newest first).
     case date
+    /// Sort by file size (largest first).
     case size
+    /// Sort using natural (human-friendly) comparison (e.g. "file2" before "file10").
     case natural
 }
 
@@ -15,6 +20,9 @@ enum SortCriterion: Sendable {
 
 /// Stateless sorter for search results. All methods are static; no instance needed.
 struct SearchSorter: Sendable {
+
+    /// Prevent instantiation — all API is static.
+    private init() {}
 
     /// Sort results according to the given criterion.
     static func sort(_ results: [SearchResult], by criterion: SortCriterion) -> [SearchResult] {
@@ -116,6 +124,8 @@ struct SearchSorter: Sendable {
 
     /// Extract a contiguous run of decimal digits starting at `idx`,
     /// parse it as an integer, and advance `idx` past the digits.
+    /// Uses wrapping arithmetic (`&*`, `&+`) to handle pathologically long
+    /// digit runs without trapping — sufficient for comparison purposes.
     private static func extractNumber(_ s: String, from idx: inout String.Index) -> UInt64 {
         var value: UInt64 = 0
         while idx < s.endIndex, s[idx].isNumber {

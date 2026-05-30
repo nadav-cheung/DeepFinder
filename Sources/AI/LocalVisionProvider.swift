@@ -5,11 +5,23 @@ import Vision
 /// Analyzes image files locally using the Vision framework to produce
 /// text labels (scene/object tags) suitable for indexing.
 ///
-/// REQ-3.0-10: Completely local execution, zero network calls.
-/// Uses VNClassifyImageRequest which produces English-only labels.
+/// **Privacy**: Completely local execution, zero network calls. Uses
+/// `VNClassifyImageRequest` which runs on the Neural Engine / GPU.
+/// No image data ever leaves the device.
+///
+/// **Graceful degradation**: Returns `nil` if:
+/// - The file doesn't exist or isn't readable
+/// - Vision framework can't create a handler for the image format
+/// - `VNClassifyImageRequest` fails to perform analysis
+/// - No observations are returned
+/// The caller should treat `nil` as "no tags available" and continue indexing
+/// without Vision-generated tags.
+///
+/// REQ-3.0-10: Local image classification.
 struct LocalVisionProvider: Sendable {
 
     /// File extensions that this provider can analyze.
+    /// Images with other extensions are silently skipped.
     static let supportedExtensions: Set<String> = ["jpg", "jpeg", "png", "heic", "gif"]
 
     /// Minimum confidence threshold (0-1) for a label to be included.

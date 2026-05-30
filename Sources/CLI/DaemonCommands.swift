@@ -143,6 +143,8 @@ struct DaemonCommandRunner: Sendable {
 
     // MARK: - Start
 
+    /// Start the daemon. If already running, reports the PID. Otherwise spawns
+    /// the process and waits for the IPC socket to become available.
     private func doStart(client: any IPCClientProtocol) async -> Int32 {
         // Check if already running
         if let pid = pidReader.readPID(from: pidPath), processSignaler.isProcessAlive(pid) {
@@ -180,6 +182,7 @@ struct DaemonCommandRunner: Sendable {
 
     // MARK: - Stop
 
+    /// Stop the daemon by sending SIGTERM and polling until exit or timeout.
     private func doStop() async -> Int32 {
         guard let pid = pidReader.readPID(from: pidPath) else {
             print("Daemon is not running")
@@ -225,11 +228,11 @@ struct DaemonCommandRunner: Sendable {
 
     // MARK: - Restart
 
+    /// Restart the daemon: stop (if running) then start.
     private func doRestart(client: any IPCClientProtocol) async -> Int32 {
         // Stop if running
-        let stopResult = await doStop()
+        _ = await doStop()
         // stop returns 1 for "not running" which is fine during restart
-        // Only bail on real errors (timeout = stopResult 1 but we proceed anyway)
 
         // Start
         return await doStart(client: client)
@@ -237,6 +240,7 @@ struct DaemonCommandRunner: Sendable {
 
     // MARK: - Status
 
+    /// Print daemon status: PID, uptime, index state, file count, and memory usage.
     private func doStatus(client: any IPCClientProtocol) async -> Int32 {
         guard let pid = pidReader.readPID(from: pidPath) else {
             print("Daemon is not running")
@@ -281,6 +285,7 @@ struct DaemonCommandRunner: Sendable {
 
     // MARK: - Helpers
 
+    /// Remove the Unix domain socket file if it exists.
     private func cleanupSocket() {
         let resolved = Self.expandTilde(socketPath)
         if FileManager.default.fileExists(atPath: resolved) {
@@ -288,6 +293,7 @@ struct DaemonCommandRunner: Sendable {
         }
     }
 
+    /// Format a duration in seconds as a human-readable string (e.g. "2h 30m", "5m 12s", "45s").
     private func formatUptime(_ seconds: Double) -> String {
         if seconds < 60 {
             return "\(Int(seconds))s"
@@ -302,6 +308,7 @@ struct DaemonCommandRunner: Sendable {
         }
     }
 
+    /// Expand `~` in a path to the user's home directory.
     private static func expandTilde(_ path: String) -> String {
         NSString(string: path).expandingTildeInPath
     }

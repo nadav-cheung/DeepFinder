@@ -1,3 +1,28 @@
+/// # Persist Module
+///
+/// Durable storage layer for FileRecords and metadata using SQLite in WAL mode.
+///
+/// ## Components
+/// - ``IndexPersistence`` -- actor-isolated SQLite wrapper for FileRecord CRUD
+/// - ``IndexRecovery`` -- database corruption detection and recovery utilities
+///
+/// ## Design
+/// - Database location: `~/.deep-finder/index.db` (permissions 600)
+/// - Journal mode: WAL (Write-Ahead Logging) for concurrent reads + serialized writes
+/// - Batch writes: explicit transactions for throughput (INSERT OR REPLACE)
+/// - Schema migration: versioned via `PRAGMA user_version` with transactional upgrades
+/// - Metadata: media metadata stored as JSON in a `metadata_json` column (v2 schema)
+/// - Event cursor: FSEventStream resume cursor persisted in a key-value metadata table
+///
+/// ## Startup
+/// On daemon startup, all FileRecords are loaded from SQLite and the in-memory
+/// index structures (Trie, FullSubstringMap, TrigramIndex, PinyinIndex) are rebuilt.
+/// This typically takes < 1 second on M4 hardware.
+///
+/// ## Single-Process Assumption
+/// Only one DeepFinder process should write to the database at a time.
+/// WAL mode supports concurrent reads, but writes are serialized through
+/// the single ``IndexPersistence`` actor instance.
 import Foundation
 import SQLite3
 
@@ -9,6 +34,7 @@ private let SQLTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
 // MARK: - IndexPersistence Errors
 
+/// Errors thrown by ``IndexPersistence`` during SQLite operations.
 enum PersistenceError: Error, CustomStringConvertible {
     case openFailed(String)
     case execFailed(String, Int32)
@@ -48,6 +74,11 @@ enum PersistenceError: Error, CustomStringConvertible {
 /// **Single-process assumption**: Only one DeepFinder process should write to the
 /// database at a time. WAL mode supports concurrent reads, but writes should be
 /// serialized through this single actor instance.
+///
+/// **SQLite configuration**: WAL journal mode with `synchronous=NORMAL` for a balance
+/// of durability and performance. The `-wal` and `-shm` files are co-located with the
+/// main database file. On unclean shutdown, the WAL is replayed automatically by SQLite
+/// on the next open, or manually via ``IndexRecovery.recoverFromWALCorruption()``.
 actor IndexPersistence {
 
     // MARK: - Schema
@@ -84,7 +115,9 @@ actor IndexPersistence {
 
     /// Opaque pointer to the SQLite database connection.
     /// Marked `nonisolated(unsafe)` because all access is serialized through
-    /// this actor, and `deinit` needs to reach it for cleanup.
+    /// this actor, and `deinit` (which is nonisolated) needs to reach it for cleanup.
+    /// This is safe because: (1) actor deinit runs after all isolated methods complete,
+    /// and (2) no other reference to `db` exists outside this actor.
     nonisolated(unsafe) private var db: OpaquePointer?
 
     /// Path to the database file. `nil` for in-memory databases.
@@ -145,6 +178,10 @@ actor IndexPersistence {
     nonisolated var dbPath: String? { _dbPath }
 
     /// Close the database connection. Used by recovery before deleting WAL files.
+    ///
+    /// After calling this method, all subsequent operations on this instance will
+    /// crash (nil pointer dereference on `db`). The caller must create a new
+    /// ``IndexPersistence`` instance to reopen the database.
     func close() {
         guard let db else { return }
         sqlite3_close(db)
@@ -156,6 +193,12 @@ actor IndexPersistence {
     /// Batch upsert FileRecords (INSERT OR REPLACE).
     ///
     /// Uses a prepared statement and explicit transaction for throughput.
+    ///
+    /// - Parameter records: The file records to insert or replace.
+    /// - Note: Errors during the write are silently swallowed. This is intentional:
+    ///   the in-memory index is the source of truth during normal operation, and
+    ///   persistence is a durability best-effort layer. A failed batch write will
+    ///   be naturally repaired on the next daemon restart (full rescan).
     func saveRecords(_ records: [FileRecord]) {
         guard !records.isEmpty else { return }
 
@@ -196,6 +239,9 @@ actor IndexPersistence {
             } else {
                 sqlite3_bind_null(stmt, 11)
             }
+            // sqlite3_step result intentionally ignored: INSERT OR REPLACE can only fail
+            // on serious issues (disk full, corruption). The in-memory index remains
+            // authoritative, and the next daemon restart will repair via full rescan.
             sqlite3_step(stmt)
         }
     }
@@ -229,6 +275,9 @@ actor IndexPersistence {
     }
 
     /// Delete records by their IDs.
+    ///
+    /// - Parameter ids: The record IDs to delete.
+    /// - Note: Silently returns on prepare failure. See ``saveRecords`` for rationale.
     func deleteRecords(_ ids: [UInt32]) {
         guard !ids.isEmpty else { return }
 
@@ -243,6 +292,7 @@ actor IndexPersistence {
         for (i, id) in ids.enumerated() {
             sqlite3_bind_int64(stmt, Int32(i + 1), sqlite3_int64(id))
         }
+        // sqlite3_step result intentionally ignored. See saveRecords for rationale.
         sqlite3_step(stmt)
     }
 
@@ -267,6 +317,7 @@ actor IndexPersistence {
         let likePrefix = pathPrefix.hasSuffix("/") ? pathPrefix + "%" : pathPrefix + "/%"
         sqlite3_bind_text(stmt, 2, likePrefix, -1, SQLTransient)
 
+        // sqlite3_step result intentionally ignored. See saveRecords for rationale.
         sqlite3_step(stmt)
         return Int(sqlite3_changes(db))
     }
@@ -277,6 +328,9 @@ actor IndexPersistence {
     ///
     /// Updates only the `metadata_json` column for the given file IDs.
     /// Uses a prepared statement and explicit transaction for throughput.
+    ///
+    /// - Parameter entries: Array of (fileID, metadata) pairs to update.
+    /// - Note: Silently returns on prepare failure. See ``saveRecords`` for rationale.
     func saveMetadataBatch(_ entries: [(fileID: UInt32, metadata: ExtractedMetadata)]) {
         guard !entries.isEmpty else { return }
 
@@ -298,6 +352,7 @@ actor IndexPersistence {
                 sqlite3_bind_null(stmt, 1)
             }
             sqlite3_bind_int64(stmt, 2, sqlite3_int64(entry.fileID))
+            // sqlite3_step result intentionally ignored. See saveRecords for rationale.
             sqlite3_step(stmt)
         }
     }
@@ -534,6 +589,9 @@ actor IndexPersistence {
     // MARK: - Metadata Key-Value
 
     /// Store a key-value pair in the metadata table.
+    ///
+    /// Silently returns on failure. Metadata values (event cursor, etc.) are non-critical;
+    /// a missed write means the daemon will rescan more aggressively on next startup.
     private func saveMetadata(key: String, value: String) {
         let sql = "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)"
         var stmt: OpaquePointer?

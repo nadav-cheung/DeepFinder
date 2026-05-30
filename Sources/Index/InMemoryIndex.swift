@@ -1,3 +1,33 @@
+/// # Index Module
+///
+/// Core data structures for in-memory file indexing, optimized for sub-millisecond
+/// search on Apple Silicon M4+ with unified memory.
+///
+/// ## Components
+/// - ``FileRecord`` -- immutable record representing a single file or directory
+/// - ``InMemoryIndex`` -- actor-isolated composite index composing all structures below
+/// - ``Trie`` -- generic prefix tree for O(k) prefix lookup on Unicode scalars
+/// - ``FullSubstringMap`` -- precomputed all-substrings map for O(1) lookup (names <= 64 chars)
+/// - ``TrigramIndex`` -- trigram posting lists for long filenames (> 64 chars)
+/// - ``PinyinIndex`` -- Chinese character to pinyin mapping for CJK filename search
+/// - ``ProductConfig`` -- compile-time product name, paths, and version constants
+///
+/// ## Search Strategy
+/// 1. Normalize query (NFC + lowercase)
+/// 2. Query Trie for prefix matches
+/// 3. Query FullSubstringMap for substring matches (names <= 64 chars)
+/// 4. Query TrigramIndex for long-name matches (names > 64 chars)
+/// 5. Query PinyinIndex for Chinese pinyin matches
+/// 6. Merge all result IDs, deduplicate
+/// 7. Look up FileRecords, return sorted by ID
+///
+/// ## Thread Safety
+/// All index structures are value types (structs). ``InMemoryIndex`` is an actor,
+/// so all mutations are serialized through actor isolation. No internal locking needed.
+///
+/// ## Unicode
+/// All filenames are NFC-normalized on ingestion via `precomposedStringWithCanonicalMapping`.
+/// Queries are normalized the same way for consistent matching.
 import Foundation
 
 /// The single entry point for all indexing and searching operations.
@@ -49,9 +79,16 @@ actor InMemoryIndex {
     // MARK: - Insert
 
     /// Insert a pre-built FileRecord into all index structures.
+    /// If a record with the same ID already exists, the old record is removed
+    /// from all sub-indices before the new one is inserted (upsert semantics).
     func insert(_ record: FileRecord) {
         let id = record.id
         let name = record.name
+
+        // If overwriting, remove old entries from sub-indices first
+        if let oldRecord = records[id] {
+            removeFromSubindices(oldRecord)
+        }
 
         // Store the record
         records[id] = record
@@ -112,6 +149,14 @@ actor InMemoryIndex {
     /// Remove a file by ID from all index structures.
     func remove(id: UInt32) {
         guard let record = records.removeValue(forKey: id) else { return }
+        removeFromSubindices(record)
+    }
+
+    /// Remove a record's entries from all sub-indices (Trie, substringMap,
+    /// trigramIndex, pinyinIndex) without removing it from the records dict.
+    /// Used by both `remove(id:)` and the upsert path in `insert(_:)`.
+    private func removeFromSubindices(_ record: FileRecord) {
+        let id = record.id
         let name = record.name
 
         // Remove from Trie

@@ -1,11 +1,20 @@
 import Foundation
 
 /// Semantic file system event types, abstracting away raw FSEventStreamEventFlags.
+///
+/// These map to the corresponding `kFSEventStreamEventFlagItem*` flags from the
+/// macOS FSEvents API, but with clearer naming. Multiple events can occur in a
+/// single coalesced notification (e.g. a file can be both created and modified).
 enum FileEvent: Sendable, Hashable {
+    /// A new file or directory was created.
     case created
+    /// A file or directory was deleted.
     case deleted
+    /// A file or directory was renamed (moved).
     case renamed
+    /// A file's data content was modified.
     case modified
+    /// A file's metadata changed (permissions, ownership, extended attributes).
     case metadataChanged
 
     /// Parse raw FSEventStreamEventFlags into a set of semantic FileEvents.

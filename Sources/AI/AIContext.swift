@@ -2,11 +2,16 @@ import Foundation
 
 /// Context passed to AI model providers for completion requests.
 ///
-/// Deliberately contains ONLY metadata -- never file contents.
-/// This is the compile-time privacy boundary: AIContext can reference
-/// FileMetadataSummary but can never access FileRecord's raw fields
-/// (such as full paths, metadata blobs, etc.) except through the
-/// anonymized summary.
+/// **Privacy boundary**: This is the compile-time gateway between the search
+/// engine and AI providers. It deliberately contains ONLY metadata -- never
+/// file contents, thumbnails, or binary data. The type system enforces this:
+/// `AIContext` can reference `FileMetadataSummary` but can never access
+/// `FileRecord`'s raw fields (full paths, metadata blobs, etc.) except
+/// through the anonymized summary produced by `FileMetadataSummary.from(_:)`.
+///
+/// This struct is the ONLY data type that crosses the AI module boundary.
+/// If you need to pass additional context to an AI provider, add it here
+/// (as metadata, never as file contents).
 struct AIContext: Sendable, Codable, Equatable {
     /// The user's original query string
     let query: String

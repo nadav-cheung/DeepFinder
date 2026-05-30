@@ -2,9 +2,13 @@ import Foundation
 
 // MARK: - LaunchAgentError
 
+/// Errors thrown by ``LaunchAgent`` during plist management.
 enum LaunchAgentError: Error, CustomStringConvertible, Equatable {
+    /// The LaunchAgent plist could not be written to disk.
     case plistWriteFailed(String)
+    /// The LaunchAgent plist exists but could not be removed.
     case plistRemoveFailed(String)
+    /// No LaunchAgent plist was found at the expected path.
     case plistNotFound(String)
 
     var description: String {
@@ -28,6 +32,10 @@ enum LaunchAgentError: Error, CustomStringConvertible, Equatable {
 ///
 /// Installation is typically done via `deepfinder install` (v0.7).
 /// The daemon can also be auto-spawned by the CLI without a LaunchAgent.
+///
+/// **Platform note**: LaunchAgents are macOS-specific (launchd). The plist uses
+/// `RunAtLoad` to start on login and `KeepAlive` to restart on crash. Per-user
+/// agents run in the user's security session, which is required for Full Disk Access.
 enum LaunchAgent {
 
     // MARK: - Properties

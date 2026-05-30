@@ -4,6 +4,9 @@ import CryptoKit
 /// Computes SHA-256 hashes of file contents for duplicate detection.
 struct FileHasher: Sendable {
 
+    /// Prevent instantiation — all API is static.
+    private init() {}
+
     /// Compute the SHA-256 hex digest of the file at the given path.
     /// Returns nil if the file cannot be opened or read.
     /// Reads in 64 KB chunks to keep memory usage bounded.

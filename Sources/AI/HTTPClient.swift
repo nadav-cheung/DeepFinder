@@ -6,6 +6,11 @@ import Foundation
 ///
 /// Production uses `URLSessionHTTPClient` wrapping `URLSession`.
 /// Tests inject `MockHTTPClient` returning canned responses.
+///
+/// **Privacy note**: This is the transport layer for cloud AI providers. The request
+/// body is constructed by `OpenAICompatibleProvider` and contains only metadata from
+/// ``AIContext``/``FileMetadataSummary`` -- never file contents. See the module-level
+/// documentation in `AIModelProvider.swift` for the full privacy model.
 protocol HTTPClient: Sendable {
     /// Perform an HTTP request and return the raw response.
     func perform(_ request: URLRequest) async throws -> HTTPClientResponse
@@ -50,6 +55,11 @@ struct URLSessionHTTPClient: HTTPClient {
 /// data: {"choices":[{"delta":{"content":" world"}}]}
 /// data: [DONE]
 /// ```
+///
+/// Malformed lines (no "data: " prefix) are silently skipped by the caller
+/// (`OpenAICompatibleProvider.complete()`). Lines that fail JSON parsing in
+/// `parseContentDelta` are also silently skipped, so transient API glitches
+/// (e.g., incomplete JSON due to network buffering) don't crash the stream.
 struct SSELineSequence: AsyncSequence, Sendable {
     typealias Element = String
     let data: Data

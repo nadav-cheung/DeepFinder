@@ -36,13 +36,22 @@ struct NLOperation: Sendable, Equatable {
 ///
 /// Recognizes patterns like "move X to Y", "copy X to Y", "rename X to Y".
 /// Returns `nil` for destructive commands (delete, remove, rm) or
-/// unrecognized input — the system never auto-executes file deletion.
+/// unrecognized input -- the system never auto-executes file deletion.
+///
+/// **Safety model**: Only move, copy, and rename are permitted. The user can
+/// always undo these via Finder or Terminal. Destructive verbs are rejected
+/// immediately at parse time, before any file matching occurs. Operations are
+/// never auto-executed -- the `preview` field is shown to the user for
+/// confirmation before any filesystem changes.
+///
+/// **No AI required**: Uses simple pattern matching, no cloud or local AI provider.
 ///
 /// REQ-3.0-14: Natural Language Operations
 struct NLOperations: Sendable {
 
     /// Words that signal a destructive intent. If any of these appear at the
-    /// start of the command, we return `nil` rather than attempting to parse.
+    /// start of the command, `parse()` returns `nil` immediately.
+    /// This is a denylist approach -- only known-safe verbs are accepted.
     static let destructiveVerbs: Set<String> = [
         "delete", "remove", "rm", "erase", "trash", "shred", "unlink",
     ]

@@ -1,3 +1,26 @@
+/// # Filesystem Module
+///
+/// Handles filesystem scanning, real-time event monitoring, and volume management.
+///
+/// ## Components
+/// - ``FileScanner`` -- recursive directory scanner emitting ``ScanEvent`` via AsyncStream
+/// - ``FSEventWatcher`` -- real-time FSEvents consumer that updates the in-memory index
+/// - ``FileSystemEventStream`` -- protocol abstracting FSEventStream (production vs mock)
+/// - ``FSEventStreamImpl`` -- production FSEventStreamCreate wrapper
+/// - ``MockEventStream`` -- test-only event stream for deterministic testing
+/// - ``VolumeManager`` -- external/network volume enumeration and mount monitoring
+/// - ``FileEvent`` -- semantic file event types (created, deleted, renamed, modified)
+/// - ``ScanConfiguration`` -- scan parameters (skip paths, depth limits, symlink policy)
+///
+/// ## Event Pipeline
+/// ```
+/// FSEventStream -> FileSystemEventStream -> FSEventWatcher -> InMemoryIndex + IndexPersistence
+/// ```
+///
+/// ## Failure Handling
+/// - Stream start failure: exponential backoff retry (2s-60s, +/-20% jitter, max 5 attempts)
+/// - After max retries: degrade to polling mode (30s interval)
+/// - Dropped events (user/kernel): restart stream; burst protection degrades to polling
 import Foundation
 
 // MARK: - Configuration
@@ -75,6 +98,10 @@ struct ScanError: Sendable {
 
 /// Full filesystem scanner. Walks directory trees using `FileManager`
 /// and emits `ScanEvent`s through an `AsyncStream`.
+///
+/// **Platform note**: Requires Full Disk Access on macOS to scan protected
+/// directories (~/Documents, ~/Desktop, ~/Downloads). Without FDA, FileManager
+/// silently skips these directories without error.
 ///
 /// Usage:
 /// ```

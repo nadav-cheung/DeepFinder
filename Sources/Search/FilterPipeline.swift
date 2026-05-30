@@ -7,6 +7,7 @@ import Foundation
 /// All filters must match (AND semantics). Results that fail any filter are
 /// removed. Order of surviving results is preserved.
 struct FilterPipeline: Sendable {
+    /// The filters composing this pipeline. Public for test introspection.
     let filters: [SearchFilter]
 
     init(filters: [SearchFilter]) {

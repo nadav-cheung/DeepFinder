@@ -1,55 +1,59 @@
-/// 产品配置常量。
+/// Compile-time product configuration constants.
 ///
-/// 所有产品名、路径、标识符统一定义在此文件。
-/// 修改产品名只需改此文件 + PRODUCT.toml，不散落到其他代码中。
+/// Centralizes all product names, paths, and identifiers in one place.
+/// To rename the product, update only this file and `PRODUCT.toml` --
+/// no other source files should contain the product name directly.
 ///
-/// - Note: PRODUCT.toml 是配置的唯一来源（source of truth）。
-///   此文件是 Swift 侧的编译时常量表示。
-///   未来可改为运行时读取 config.json（v0.4+）。
+/// - Note: `PRODUCT.toml` is the authoritative source of truth for product naming.
+///   This file provides the Swift-side compile-time representation.
+///   May migrate to runtime config loading in a future version.
 enum Product {
 
-    // MARK: - 名称
+    // MARK: - Names
 
-    /// 显示名称（用于帮助文本、man page 标题、REPL banner）
+    /// Display name (used in help text, man page titles, REPL banner).
     static let name = "DeepFinder"
 
-    /// URL-safe slug（用于 GitHub repo、Homebrew formula 名）
+    /// URL-safe slug (used for GitHub repo, Homebrew formula name, directory names).
     static let slug = "deep-finder"
 
-    /// CLI 命令名（用于二进制文件名、shell completions、prompt）
+    /// CLI command name (used for binary name, shell completions, prompt).
     static let command = "deepfinder"
 
-    /// macOS bundle identifier / LaunchAgent label
+    /// macOS bundle identifier and LaunchAgent label.
     static let identifier = "com.nadav.deepfinder"
 
-    // MARK: - 路径
+    // MARK: - Paths
 
-    /// 数据目录（索引、配置、日志）
+    /// Root data directory for index, config, logs, and IPC socket.
     static let dataDir = "~/.deep-finder"
 
-    /// Unix domain socket（daemon IPC）
+    /// Unix domain socket path for daemon IPC communication.
     static let socketPath = "~/.deep-finder/ipc.sock"
 
-    /// Daemon PID 文件
+    /// Daemon PID file for singleton enforcement.
     static let pidPath = "~/.deep-finder/daemon.pid"
 
-    /// 用户配置文件
+    /// User configuration file (JSON).
     static let configPath = "~/.deep-finder/config.json"
 
-    /// REPL 历史文件
+    /// REPL command history file.
     static let historyPath = "~/.deep-finder/history"
 
-    /// SQLite 数据库
+    /// SQLite database path for persistent FileRecord storage.
     static let databasePath = "~/.deep-finder/index.db"
 
-    // MARK: - 版本
+    // MARK: - Version
 
-    /// Current version. Updated manually on each release.
-    /// Kept in sync with the VERSION file at repo root.
+    /// Current version string. Updated manually on each release.
+    /// Kept in sync with the `VERSION` file at the repository root.
     static let version = "0.5.0-dev"
 
-    // MARK: - 组织
+    // MARK: - Organization
 
+    /// Organization domain identifier.
     static let organization = "nadav.com.cn"
+
+    /// Author name for packaging and documentation.
     static let author = "Nadav"
 }

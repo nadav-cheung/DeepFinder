@@ -1,3 +1,33 @@
+/// # GUI Module
+///
+/// The SwiftUI-based graphical interface for DeepFinder, implementing a
+/// Spotlight-style floating search panel with Liquid Glass material effects.
+///
+/// ## Components
+/// - ``SearchPanelView`` -- main search panel with search bar and results list
+/// - ``SearchPanelHostingController`` -- NSPanel controller managing the floating window
+/// - ``SearchBarView`` -- search input field with autocomplete support
+/// - ``ResultsListView`` -- scrollable results container with keyboard navigation
+/// - ``ResultRowView`` -- single result row displaying file name, path, size, and date
+/// - ``SearchViewModel`` -- observable view model bridging GUI to IPC client
+/// - ``IntelligenceGlow`` -- Apple Intelligence-inspired animated glow border
+/// - ``GlassEffectContainer`` -- Liquid Glass material effect wrapper
+/// - ``GlobalHotkey`` -- system-wide keyboard shortcut (Ctrl+Cmd+K) via RegisterEventHotKey
+/// - ``HotkeyPermissionHelper`` -- Accessibility permission prompt for global hotkey
+/// - ``SettingsView`` / ``SettingsWindow`` -- preferences panel for daemon configuration
+/// - ``WorkspaceProtocol`` -- NSWorkspace protocol abstraction for testability
+///
+/// ## Architecture
+/// The GUI connects to the same background daemon via IPC -- no search logic
+/// runs in the GUI process. The ``SearchViewModel`` sends queries through an
+/// ``IPCClientProtocol`` and receives ``SearchResult`` arrays.
+///
+/// ## Panel Behavior
+/// - Floating NSPanel at `.floating` window level
+/// - Centers on the screen containing the mouse cursor
+/// - Dismisses on click-outside or Escape
+/// - Reopening preserves search text and cursor position
+/// - No Dock icon (LSUIElement menu bar app)
 import SwiftUI
 import AppKit
 

@@ -23,11 +23,24 @@ enum AIConfigKey: String, CaseIterable {
 /// AI config values are stored as strings in the existing ConfigStore
 /// under the "ai.<key>" namespace. This struct provides typed accessors
 /// and documented defaults.
+///
+/// **Privacy-first defaults**: All cloud-dependent AI features are OFF by default.
+/// The user must explicitly opt in:
+/// ```
+/// deepfinder config set ai.enabled true
+/// deepfinder config set ai.model deepseek
+/// deepfinder config set ai.apiKey sk-...
+/// ```
+/// Local-only features (vision, speech) default to enabled since they never leave the device.
 struct AIConfig: Sendable {
     /// Default values for all AI config keys.
     ///
-    /// All AI features are OFF by default -- the user must explicitly
-    /// opt in via `deepfinder config set ai.enabled true`.
+    /// - `ai.enabled`: `"false"` -- master switch, must be explicitly enabled
+    /// - `ai.model`: `"off"` -- no provider configured until user sets one
+    /// - `ai.sendMetadata`: `"false"` -- metadata not sent to cloud unless opted in
+    /// - `ai.pathAnonymization`: `"true"` -- paths anonymized by default for privacy
+    /// - `ai.localVision`: `"true"` -- on-device vision analysis enabled (no network)
+    /// - `ai.apiKey`: `""` -- empty until user provides one
     static let defaults: [String: String] = [
         "ai.enabled": "false",
         "ai.model": "off",

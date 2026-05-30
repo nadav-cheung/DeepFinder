@@ -93,6 +93,8 @@ actor REPL {
     private let historyPath: String?
 
     /// Last search results, stored for `:open N` / `:reveal N`.
+    ///
+    /// Updated on each query. 1-based indexing: result 1 corresponds to `lastResults[0]`.
     var lastResults: [SearchResult] = []
 
     // MARK: - Init
@@ -126,7 +128,7 @@ actor REPL {
         // Load readline history if path provided
         if let historyPath {
             let expanded = NSString(string: historyPath).expandingTildeInPath
-            _read_history(expanded)
+            _ = _read_history(expanded)
         }
 
         defer {
@@ -138,9 +140,9 @@ actor REPL {
                 try? FileManager.default.createDirectory(
                     atPath: dir, withIntermediateDirectories: true
                 )
-                _write_history(expanded)
+                _ = _write_history(expanded)
                 // Limit to 1000 entries
-                _history_truncate_file(expanded, 1000)
+                _ = _history_truncate_file(expanded, 1000)
             }
             output.write("Goodbye.\n")
         }
@@ -250,17 +252,21 @@ actor REPL {
 
     // MARK: - Command Handlers
 
+    /// Display help text listing all available REPL commands.
     private func handleHelp() -> Bool {
         let lines = ["Commands:"]
         let entries = REPLCommand.allCases.map { cmd in
             let aliases = aliasList(for: cmd)
             let aliasStr = aliases.isEmpty ? "" : " (\(aliases.joined(separator: ", ")))"
-            return "  :\(cmd.rawValue)\(aliasStr)  — \(cmd.description)"
+            // Pad command name to 12 chars for columnar alignment
+            let padded = ":\(cmd.rawValue)\(aliasStr)".padding(toLength: 14, withPad: " ", startingAt: 0)
+            return "  \(padded)\(cmd.description)"
         }
         output.write((lines + entries).joined(separator: "\n") + "\n")
         return true
     }
 
+    /// Returns alias strings for a given command (e.g. `:q` for `:quit`).
     private func aliasList(for command: REPLCommand) -> [String] {
         switch command {
         case .quit: return [":q"]
@@ -269,6 +275,7 @@ actor REPL {
         }
     }
 
+    /// Fetch and display daemon statistics (file count, index state, uptime, memory).
     private func handleStats() async -> Bool {
         let response: IPCResponse
         do {
@@ -292,6 +299,7 @@ actor REPL {
         return true
     }
 
+    /// Handle `:config KEY [VALUE]` — get or set a configuration key.
     private func handleConfig(args: [String]) async -> Bool {
         guard let key = args.first else {
             output.writeError("Usage: :config KEY [VALUE]\n")
@@ -324,6 +332,7 @@ actor REPL {
         return true
     }
 
+    /// Handle `:open N` — open result N with the default application.
     private func handleOpen(args: [String]) -> Bool {
         guard let indexStr = args.first, let index = Int(indexStr) else {
             output.writeError("Usage: :open N (N is a 1-based result index)\n")
@@ -341,6 +350,7 @@ actor REPL {
         return true
     }
 
+    /// Handle `:reveal N` — reveal result N in Finder.
     private func handleReveal(args: [String]) -> Bool {
         guard let indexStr = args.first, let index = Int(indexStr) else {
             output.writeError("Usage: :reveal N (N is a 1-based result index)\n")

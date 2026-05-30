@@ -46,6 +46,9 @@ enum VolumeEvent: Sendable, Equatable {
 /// Abstraction over volume monitoring. Production implementation uses
 /// FileManager + NSWorkspace notifications; test implementations inject
 /// events programmatically.
+///
+/// Apple platforms only — relies on `FileManager.mountedVolumeURLs` and
+/// `NSWorkspace` mount/unmount notifications which are not available on Linux.
 protocol VolumeMonitor: Sendable {
     /// Return the current list of mounted volumes.
     func mountedVolumes() -> [VolumeInfo]

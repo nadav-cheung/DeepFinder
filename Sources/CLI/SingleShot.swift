@@ -7,6 +7,9 @@ import Foundation
 /// Handles the request/response cycle for one-shot mode
 /// (`deepfinder "query"`). Applies limit from CLI options
 /// to the IPC request, and delegates formatting to `TerminalFormatter`.
+///
+/// Error messages are returned in `CLIOutput.stderr` so the caller
+/// can route them correctly (terminal stderr, not stdout).
 struct SingleShot {
 
     /// Execute a single query against the daemon.
@@ -15,28 +18,28 @@ struct SingleShot {
     ///   - query: The search query string.
     ///   - options: Parsed CLI options (limit, sort, output format, etc.).
     ///   - client: IPC client to communicate with the daemon.
-    /// - Returns: Tuple of (formatted output string, exit code).
+    /// - Returns: Tuple of (collected output with stdout/stderr separation, exit code).
     static func execute(
         query: String,
         options: CLIOptions,
         client: any IPCClientProtocol
-    ) async -> (output: String, exitCode: CLIExitCode) {
+    ) async -> (output: CLIOutput, exitCode: CLIExitCode) {
         // Build and send the IPC request
         let request: IPCRequest = .query(query, limit: options.limit)
         let response: IPCResponse
         do {
             response = try await client.send(request)
         } catch is IPCClientError {
-            return ("", .daemonError)
+            return (CLIOutput(stderr: "Error: could not reach daemon\n"), .daemonError)
         } catch {
-            return ("", .daemonError)
+            return (CLIOutput(stderr: "Error: could not reach daemon — \(error.localizedDescription)\n"), .daemonError)
         }
 
         // Process response
         switch response {
         case .results(let results, _):
             if results.isEmpty {
-                return ("", .noResults)
+                return (CLIOutput(), .noResults)
             }
 
             // Apply client-side sort if requested
@@ -64,28 +67,24 @@ struct SingleShot {
                 finalResults = []
             }
 
-            // Apply client-side limit (additional to server-side limit)
-            // If server already limited, this only further reduces
-            // If server returned all, this applies the user's limit
-            // TerminalFormatter handles output mode selection
-
-            let output = TerminalFormatter.format(finalResults, options: options)
-            return (output, .success)
+            // TerminalFormatter handles output mode selection (JSON, NUL, ANSI)
+            let formatted = TerminalFormatter.format(finalResults, options: options)
+            return (CLIOutput(stdout: formatted), .success)
 
         case .error(let ipcError):
             switch ipcError {
             case .queryError(let message):
-                return ("Error: \(message)\n", .queryError)
+                return (CLIOutput(stderr: "Error: \(message)\n"), .queryError)
             case .daemonNotReady:
-                return ("Error: daemon not ready\n", .daemonError)
+                return (CLIOutput(stderr: "Error: daemon not ready\n"), .daemonError)
             case .invalidRequest(let message):
-                return ("Error: \(message)\n", .queryError)
+                return (CLIOutput(stderr: "Error: \(message)\n"), .queryError)
             case .permissionDenied(let message):
-                return ("Error: \(message)\n", .queryError)
+                return (CLIOutput(stderr: "Error: \(message)\n"), .queryError)
             }
 
         default:
-            return ("Error: unexpected response from daemon\n", .daemonError)
+            return (CLIOutput(stderr: "Error: unexpected response from daemon\n"), .daemonError)
         }
     }
 }

@@ -17,6 +17,9 @@ actor FileIndexProvider: SearchProvider {
 
     // MARK: - Init
 
+    /// Create a file-index provider wrapping the given in-memory index.
+    ///
+    /// - Parameter index: The index actor to delegate searches to.
     init(index: InMemoryIndex) {
         self.index = index
     }

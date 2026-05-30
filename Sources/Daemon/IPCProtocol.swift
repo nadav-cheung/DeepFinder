@@ -1,15 +1,23 @@
 import Foundation
 
-/// Protocol version for forward compatibility. Old CLI can detect new daemon version.
+/// Protocol version for forward compatibility.
+///
+/// Incremented when the wire format changes in a non-backward-compatible way.
+/// Old CLI versions can detect incompatibility and prompt the user to upgrade.
+/// This value is embedded in every ``IPCRequest`` encoding.
 let ipcProtocolVersion = 1
 
 // MARK: - IPCError
 
-/// Fine-grained error types for IPC responses.
+/// Fine-grained error types returned in IPC error responses.
 enum IPCError: Codable, Sendable, Equatable {
+    /// The daemon is still starting up and not ready to serve queries.
     case daemonNotReady
+    /// The query could not be processed (syntax error, too long, etc.).
     case queryError(String)
+    /// The request was malformed or missing required fields.
     case invalidRequest(String)
+    /// The operation requires Full Disk Access or another permission.
     case permissionDenied(String)
 }
 
@@ -32,11 +40,17 @@ enum IPCRequest: Codable, Sendable, Equatable {
         case query, cancel, stats, configGet, configSet, indexStatus
     }
 
+    /// Execute a search query with an optional result limit.
     case query(_ query: String, limit: Int?)
+    /// Cancel an in-flight query by its identifier.
     case cancel(queryID: String)
+    /// Request daemon statistics (file count, uptime, memory usage).
     case stats
+    /// Read one or all configuration values. Pass `nil` for all keys.
     case configGet(key: String?)
+    /// Update a single configuration key-value pair.
     case configSet(key: String, value: String)
+    /// Request current index state and file count.
     case indexStatus
 
     // Custom Codable: encodes a `kind` discriminator + `ipcProtocolVersion` field.
@@ -94,18 +108,27 @@ enum IPCRequest: Codable, Sendable, Equatable {
 
 // MARK: - DaemonStats
 
+/// Runtime statistics reported by the daemon.
 struct DaemonStats: Codable, Sendable, Equatable {
+    /// Total number of files currently in the index.
     let totalFiles: Int
+    /// Current index state as a string (e.g. "live", "verifying", "polling").
     let indexState: String
+    /// Seconds since the daemon process started.
     let uptimeSeconds: Double
+    /// Approximate memory usage of the daemon process in megabytes.
     let memoryUsageMB: Double
 }
 
 // MARK: - DaemonIndexStatus
 
+/// Current state of the file index as reported by the daemon.
 struct DaemonIndexStatus: Codable, Sendable, Equatable {
+    /// Index state as a string (e.g. "stale", "verifying", "live", "polling").
     let state: String
+    /// Number of files currently indexed.
     let filesIndexed: Int
+    /// Timestamp of the last full scan, if available.
     let lastScanDate: Date?
 }
 
@@ -121,10 +144,15 @@ enum IPCResponse: Codable, Sendable, Equatable {
         case results, error, stats, ack, indexStatus
     }
 
+    /// Search results for a completed query, with the corresponding query identifier.
     case results([SearchResult], queryID: String)
+    /// An error occurred during request processing.
     case error(IPCError)
+    /// Daemon statistics response.
     case stats(DaemonStats)
+    /// Acknowledgment for commands that do not return data (e.g. config set, cancel).
     case ack
+    /// Current index state and statistics.
     case indexStatus(DaemonIndexStatus)
 
     func encode(to encoder: Encoder) throws {
@@ -173,7 +201,13 @@ enum IPCResponse: Codable, Sendable, Equatable {
 
 // MARK: - IPCFraming
 
-/// Wire-framing helpers: 4-byte big-endian length prefix + payload.
+/// Wire-framing helpers for the IPC protocol.
+///
+/// Uses a simple framing scheme: 4-byte big-endian length prefix followed by the
+/// JSON payload. This allows the receiver to detect message boundaries on a stream
+/// socket without relying on connection boundaries.
+///
+/// Debuggable via `nc -U ~/.deep-finder/ipc.sock` — the payload is human-readable JSON.
 enum IPCFraming {
     /// Prepend a 4-byte big-endian UInt32 length header to `payload`.
     static func addLengthPrefix(to payload: Data) -> Data {
@@ -213,7 +247,10 @@ enum IPCFraming {
 
 // MARK: - IPCFramingError
 
+/// Errors that can occur during IPC frame parsing.
 enum IPCFramingError: Error, Sendable {
+    /// Received fewer than 4 bytes — not enough for the length header.
     case insufficientHeader
+    /// The declared payload length exceeds the available data.
     case incompletePayload(expected: Int, actual: Int)
 }

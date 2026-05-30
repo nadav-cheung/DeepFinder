@@ -30,10 +30,16 @@ struct CrossLanguageSearch: Sendable {
 
     /// Expand a query with cross-language synonyms and translations.
     ///
+    /// **Graceful degradation**: Returns an empty array when:
+    /// - `provider` is `nil` (AI disabled) -- callers fall back to pinyin + substring matching
+    /// - AI call fails -- same fallback behavior
+    /// - AI returns no parseable terms -- same fallback behavior
+    /// The caller always gets a valid (possibly empty) array; never crashes.
+    ///
     /// - Parameter query: The user's search query (Chinese or English).
     /// - Returns: An array of expanded terms, or empty if unavailable.
     func expandQuery(_ query: String) async -> [String] {
-        // No provider configured: return empty (fallback to pinyin + substring)
+        // No provider configured: graceful fallback to pinyin + substring matching
         guard let provider else { return [] }
 
         // Check cache
@@ -79,16 +85,29 @@ struct CrossLanguageSearch: Sendable {
     }
 }
 
-// MARK: - ManagedTermCache (thread-safe)
+// MARK: - ManagedTermCache (thread-safe, bounded)
 
-/// A simple thread-safe cache for query -> term array mappings.
-/// Uses a lock instead of actor to keep CrossLanguageSearch a plain struct.
+/// A thread-safe, bounded cache for query -> term array mappings.
+///
+/// **Thread safety**: Uses `NSLock` (not actor) so that `CrossLanguageSearch` remains
+/// a plain struct. Lock is held for the minimum scope (get/set) with `defer { unlock() }`.
+///
+/// **Bounded**: Caps at 100 entries. When exceeded, expired entries are evicted en masse.
+/// If all entries are still within TTL, the cache temporarily exceeds 100 until entries
+/// expire naturally. This is intentional -- TTL-based expiry prevents unbounded growth
+/// over time, and the eviction-on-set policy avoids expensive eviction on every write.
+///
+/// **TTL**: 1 hour. Entries are lazily evicted on access (`get` checks TTL) or
+/// proactively evicted when the cache exceeds 100 entries (`set` triggers full sweep).
 private final class ManagedTermCache: @unchecked Sendable {
     private let lock = NSLock()
     private var store: [String: (value: [String], timestamp: Date)] = [:]
 
     /// TTL for cached entries (1 hour).
     private static let ttl: TimeInterval = 3600
+
+    /// Maximum entries before triggering proactive eviction.
+    private static let maxEntries = 100
 
     func get(_ key: String) -> [String]? {
         lock.lock()
@@ -104,8 +123,7 @@ private final class ManagedTermCache: @unchecked Sendable {
     func set(_ key: String, value: [String]) {
         lock.lock()
         defer { lock.unlock() }
-        // Evict expired entries when cache exceeds 100 entries
-        if store.count > 100 {
+        if store.count > Self.maxEntries {
             let now = Date()
             store = store.filter { now.timeIntervalSince($0.value.timestamp) < Self.ttl }
         }
