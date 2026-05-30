@@ -289,6 +289,167 @@ struct REPLTests {
         #expect(allOutput.contains(":reveal"))
         #expect(allOutput.contains(":config"))
         #expect(allOutput.contains(":daemon"))
+        #expect(allOutput.contains(":explain"))
+        #expect(allOutput.contains(":dataPreview"))
+        #expect(allOutput.contains(":undo"))
+    }
+
+    // MARK: - :explain tests
+
+    @Test(":explain N parses with numeric argument")
+    func testParseExplainWithArg() {
+        let (cmd, args, _) = REPLCommand.parse(":explain 2")
+        #expect(cmd == .explain)
+        #expect(args == ["2"])
+    }
+
+    @Test(":explain N shows match type, position, and reason")
+    func testExplainShowsMatchDetails() async {
+        let record = makeRecord(id: 1, name: "report.pdf", path: "/tmp/report.pdf")
+        let result = SearchResult(record: record, providerID: "test", score: 1.0, matchType: .exact)
+        let mockClient = MockIPCClient(response: .results([result], queryID: "q1"))
+
+        let inputSource = MockInputSource(lines: ["report.pdf", ":explain 1", ":quit"])
+        let output = REPLTestOutput()
+
+        let repl = await REPL(
+            client: mockClient,
+            inputSource: inputSource,
+            output: output,
+            historyPath: nil
+        )
+        await repl.run()
+
+        let allOutput = output.collected
+        #expect(allOutput.contains("Match type: exact"))
+        #expect(allOutput.contains("Position:"))
+        #expect(allOutput.contains("Reason:"))
+    }
+
+    @Test(":explain without argument shows usage")
+    func testExplainNoArg() async {
+        let mockClient = MockIPCClient(response: .results([], queryID: "q1"))
+        let inputSource = MockInputSource(lines: [":explain", ":quit"])
+        let output = REPLTestOutput()
+
+        let repl = await REPL(
+            client: mockClient,
+            inputSource: inputSource,
+            output: output,
+            historyPath: nil
+        )
+        await repl.run()
+
+        let allOutput = output.collected
+        #expect(allOutput.contains("Usage: :explain N"))
+    }
+
+    @Test(":explain with out-of-range index shows error")
+    func testExplainOutOfRange() async {
+        let record = makeRecord(id: 1, name: "hello.txt", path: "/tmp/hello.txt")
+        let result = SearchResult(record: record, providerID: "test", score: 1.0, matchType: .exact)
+        let mockClient = MockIPCClient(response: .results([result], queryID: "q1"))
+
+        let inputSource = MockInputSource(lines: ["hello.txt", ":explain 5", ":quit"])
+        let output = REPLTestOutput()
+
+        let repl = await REPL(
+            client: mockClient,
+            inputSource: inputSource,
+            output: output,
+            historyPath: nil
+        )
+        await repl.run()
+
+        let allOutput = output.collected
+        #expect(allOutput.contains("Invalid index"))
+    }
+
+    // MARK: - :data_preview tests
+
+    @Test(":data_preview parses as dataPreview command")
+    func testParseDataPreview() {
+        let (cmd, args, isQuery) = REPLCommand.parse(":data_preview")
+        #expect(cmd == .dataPreview)
+        #expect(args.isEmpty)
+        #expect(isQuery == false)
+    }
+
+    @Test(":data_preview outputs JSON sample")
+    func testDataPreviewOutput() async {
+        let mockClient = MockIPCClient(response: .results([], queryID: "q1"))
+        let inputSource = MockInputSource(lines: [":data_preview", ":quit"])
+        let output = REPLTestOutput()
+
+        let repl = await REPL(
+            client: mockClient,
+            inputSource: inputSource,
+            output: output,
+            historyPath: nil
+        )
+        await repl.run()
+
+        let allOutput = output.collected
+        #expect(allOutput.contains("example.pdf"))
+        #expect(allOutput.contains("name"))
+    }
+
+    // MARK: - :undo tests
+
+    @Test(":undo parses as undo command")
+    func testParseUndo() {
+        let (cmd, args, isQuery) = REPLCommand.parse(":undo")
+        #expect(cmd == .undo)
+        #expect(args.isEmpty)
+        #expect(isQuery == false)
+    }
+
+    @Test(":undo with empty history shows nothing to undo")
+    func testUndoEmptyHistory() async {
+        let mockClient = MockIPCClient(response: .results([], queryID: "q1"))
+        let inputSource = MockInputSource(lines: [":undo", ":quit"])
+        let output = REPLTestOutput()
+
+        let repl = await REPL(
+            client: mockClient,
+            inputSource: inputSource,
+            output: output,
+            historyPath: nil
+        )
+        await repl.run()
+
+        let allOutput = output.collected
+        #expect(allOutput.contains("Nothing to undo."))
+    }
+
+    @Test(":undo with history shows undone operation")
+    func testUndoWithHistory() async {
+        let mockClient = MockIPCClient(response: .results([], queryID: "q1"))
+        let inputSource = MockInputSource(lines: [":undo", ":quit"])
+        let output = REPLTestOutput()
+
+        let repl = await REPL(
+            client: mockClient,
+            inputSource: inputSource,
+            output: output,
+            historyPath: nil
+        )
+
+        // Pre-populate operation history
+        let operation = NLOperation(
+            type: .move,
+            sourcePattern: "photos",
+            destination: "/Volumes/Backup",
+            preview: ["/tmp/photos/a.jpg"]
+        )
+        await repl.operationHistory.record(operation)
+
+        await repl.run()
+
+        let allOutput = output.collected
+        #expect(allOutput.contains("Undone: move"))
+        #expect(allOutput.contains("photos"))
+        #expect(allOutput.contains("/Volumes/Backup"))
     }
 }
 

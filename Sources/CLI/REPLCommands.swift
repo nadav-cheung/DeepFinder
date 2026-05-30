@@ -14,6 +14,9 @@ enum REPLCommand: String, CaseIterable, Sendable {
     case open
     case reveal
     case daemon
+    case explain
+    case dataPreview
+    case undo
 
     /// One-line help text for each command.
     var description: String {
@@ -32,6 +35,12 @@ enum REPLCommand: String, CaseIterable, Sendable {
             return "Reveal result N in Finder (:reveal N)"
         case .daemon:
             return "Show daemon status (PID, uptime, connections)"
+        case .explain:
+            return "Show match explanation for result N (:explain N)"
+        case .dataPreview:
+            return "Show sample data sent to AI providers"
+        case .undo:
+            return "Undo last file operation"
         }
     }
 
@@ -72,6 +81,8 @@ enum REPLCommand: String, CaseIterable, Sendable {
             resolved = "quit"
         case "h":
             resolved = "help"
+        case "data_preview":
+            resolved = "dataPreview"
         default:
             resolved = commandStr
         }

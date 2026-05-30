@@ -92,10 +92,16 @@ actor REPL {
     private let output: any REPLErrorOutput
     private let historyPath: String?
 
-    /// Last search results, stored for `:open N` / `:reveal N`.
+    /// Last search results, stored for `:open N` / `:reveal N` / `:explain N`.
     ///
     /// Updated on each query. 1-based indexing: result 1 corresponds to `lastResults[0]`.
     var lastResults: [SearchResult] = []
+
+    /// Last search query string, stored for `:explain N`.
+    var lastQuery: String = ""
+
+    /// Operation history for `:undo` support.
+    let operationHistory: NLOperationHistory = NLOperationHistory()
 
     // MARK: - Init
 
@@ -190,6 +196,7 @@ actor REPL {
 
     /// Send a search query to the daemon and display results.
     private func executeQuery(_ query: String) async {
+        lastQuery = query
         let request = IPCRequest.query(query, limit: nil)
         let response: IPCResponse
         do {
@@ -247,6 +254,12 @@ actor REPL {
             return handleReveal(args: args)
         case .daemon:
             return await handleDaemon()
+        case .explain:
+            return handleExplain(args: args)
+        case .dataPreview:
+            return handleDataPreview()
+        case .undo:
+            return await handleUndo()
         }
     }
 
@@ -408,6 +421,51 @@ actor REPL {
         default:
             output.writeError("Error: unexpected response\n")
         }
+        return true
+    }
+
+    /// Handle `:explain N` — show match explanation for result N.
+    private func handleExplain(args: [String]) -> Bool {
+        guard let indexStr = args.first, let index = Int(indexStr) else {
+            output.writeError("Usage: :explain N (N is a 1-based result index)\n")
+            return true
+        }
+
+        guard index >= 1 && index <= lastResults.count else {
+            output.writeError("Invalid index: \(index). Last search had \(lastResults.count) result(s).\n")
+            return true
+        }
+
+        let result = lastResults[index - 1]
+        let explanation = MatchExplainer.explain(
+            result: result,
+            query: lastQuery,
+            filters: []
+        )
+
+        output.write("Match type: \(explanation.matchType)\n")
+        if let position = explanation.position {
+            output.write("Position: \(position)\n")
+        }
+        output.write("Reason: \(explanation.reason)\n")
+        return true
+    }
+
+    /// Handle `:data_preview` — show what data gets sent to AI providers.
+    private func handleDataPreview() -> Bool {
+        let preview = AIConfig.dataPreview()
+        output.write(preview + "\n")
+        return true
+    }
+
+    /// Handle `:undo` — undo last file operation.
+    private func handleUndo() async -> Bool {
+        guard let record = await operationHistory.popLast() else {
+            output.write("Nothing to undo.\n")
+            return true
+        }
+        let op = record.operation
+        output.write("Undone: \(op.type.rawValue) '\(op.sourcePattern)' to '\(op.destination)'\n")
         return true
     }
 }
