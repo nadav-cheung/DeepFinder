@@ -69,7 +69,12 @@ struct CLIMain {
             return (CLIOutput(stdout: "\(Product.name) \(Product.version)"), .success)
         }
 
-        // 4. Handle no query (v0.6 REPL placeholder)
+        // 4. Handle --serve mode
+        if options.serveMode {
+            return await ServeMode.run(options: options, clientProvider: clientProvider)
+        }
+
+        // 5. Handle no query (v0.6 REPL placeholder)
         guard let query = options.query else {
             let msg = """
             Interactive REPL mode is coming in v0.6.
@@ -78,7 +83,7 @@ struct CLIMain {
             return (CLIOutput(stdout: msg), .success)
         }
 
-        // 5. Create IPC client
+        // 6. Create IPC client
         let client: any IPCClientProtocol
         if let provider = clientProvider {
             client = provider
@@ -98,7 +103,7 @@ struct CLIMain {
             client = ipcClient
         }
 
-        // 6. Execute single-shot query
+        // 7. Execute single-shot query
         let (resultOutput, exitCode) = await SingleShot.execute(
             query: query,
             options: options,

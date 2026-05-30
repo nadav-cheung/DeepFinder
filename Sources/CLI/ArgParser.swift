@@ -24,6 +24,10 @@ struct CLIOptions: Sendable, Equatable {
     var showHelp: Bool = false
     /// Show version and exit.
     var showVersion: Bool = false
+    /// Enable HTTP serve mode (--serve).
+    var serveMode: Bool = false
+    /// Port for HTTP serve mode (--port). Default 7654.
+    var port: Int = 7654
     /// Subcommand for v0.7+ (e.g. "daemon", "config").
     var subcommand: String?
 }
@@ -78,6 +82,8 @@ struct ArgParser {
                     opts.showHelp = true
                 case "--version":
                     opts.showVersion = true
+                case "--serve":
+                    opts.serveMode = true
 
                 // Value flags
                 case "--sort":
@@ -102,6 +108,14 @@ struct ArgParser {
                         throw CLIError.missingValue(flag: "--offset")
                     }
                     opts.offset = n
+                    i += 1
+
+                case "--port":
+                    let value = try nextValue(after: i, in: args, flag: arg)
+                    guard let n = Int(value) else {
+                        throw CLIError.missingValue(flag: "--port")
+                    }
+                    opts.port = n
                     i += 1
 
                 default:
@@ -153,6 +167,8 @@ struct ArgParser {
           --offset <n>        Number of results to skip
           --reverse           Reverse sort order
           --verbose           Verbose output
+          --serve             Start HTTP search service (no query)
+          --port <n>          Port for --serve mode (default 7654)
           --help              Show this help text
           --version           Show version
 
@@ -166,6 +182,7 @@ struct ArgParser {
           deepfinder --limit 10 --sort date "report"
                                             Latest 10 results matching "report"
           deepfinder --0 "photo"            Null-delimited output for scripting
+          deepfinder --serve --port 8080    Start HTTP search service on port 8080
           deepfinder daemon start           Start the background daemon
 
         EXIT CODES
