@@ -63,6 +63,13 @@ struct FilterPipeline: Sendable {
                 if let filter = parseDepthFilter(value) {
                     parsedFilters.append(filter)
                 }
+            case "width", "height", "duration", "pages", "pageCount", "fps", "bitRate":
+                let normalizedKey = lowerKey == "pages" ? "pageCount" : lowerKey
+                if let filter = parseMetadataNumericFilter(key: normalizedKey, value: value) {
+                    parsedFilters.append(filter)
+                }
+            case "artist", "album", "title", "genre", "codec":
+                parsedFilters.append(.metadataMatch(lowerKey, value))
             default:
                 break
             }
@@ -106,5 +113,36 @@ extension FilterPipeline {
 
         guard let depth = Int(numStr) else { return nil }
         return .maxDepth(depth)
+    }
+
+    /// Parse metadata numeric filter value.
+    /// Examples: ">2560", "<300", ">=100", "10..50", "1920"
+    private static func parseMetadataNumericFilter(key: String, value: String) -> SearchFilter? {
+        let trimmed = value.trimmingCharacters(in: .whitespaces).lowercased()
+        if trimmed.hasPrefix(">=") {
+            guard let n = Int(trimmed.dropFirst(2)) else { return nil }
+            return .metadataMin(key, n)
+        }
+        if trimmed.hasPrefix(">") {
+            guard let n = Int(trimmed.dropFirst()) else { return nil }
+            return .metadataMin(key, n + 1)
+        }
+        if trimmed.hasPrefix("<=") {
+            guard let n = Int(trimmed.dropFirst(2)) else { return nil }
+            return .metadataMax(key, n)
+        }
+        if trimmed.hasPrefix("<") {
+            guard let n = Int(trimmed.dropFirst()) else { return nil }
+            return .metadataMax(key, n - 1)
+        }
+        // Range: "10..50"
+        if let sep = trimmed.range(of: "..") {
+            let lo = Int(trimmed[..<sep.lowerBound])
+            let hi = Int(trimmed[sep.upperBound...])
+            if let lo, let hi { return .metadataRange(key, lo...hi) }
+        }
+        // Exact match
+        guard let n = Int(trimmed) else { return nil }
+        return .metadataRange(key, n...n)
     }
 }

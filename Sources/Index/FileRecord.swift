@@ -16,4 +16,32 @@ struct FileRecord: Codable, Sendable {
     let modifiedAt: Date
     /// 文件扩展名（不含点号），目录为 nil
     let `extension`: String?
+    /// Optional media metadata (image/audio/video/PDF)
+    let metadata: ExtractedMetadata?
+
+    init(
+        id: UInt32,
+        name: String,
+        originalName: String,
+        path: String,
+        parentPath: String,
+        isDirectory: Bool,
+        size: Int64,
+        createdAt: Date,
+        modifiedAt: Date,
+        extension: String?,
+        metadata: ExtractedMetadata? = nil
+    ) {
+        self.id = id
+        self.name = name
+        self.originalName = originalName
+        self.path = path
+        self.parentPath = parentPath
+        self.isDirectory = isDirectory
+        self.size = size
+        self.createdAt = createdAt
+        self.modifiedAt = modifiedAt
+        self.extension = `extension`
+        self.metadata = metadata
+    }
 }

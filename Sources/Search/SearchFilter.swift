@@ -57,6 +57,14 @@ enum SearchFilter: Sendable, Equatable {
     case maxDepth(Int)
     /// extension matches a predefined type group
     case fileType(FileTypeGroup)
+    /// Metadata numeric field >= N
+    case metadataMin(String, Int)
+    /// Metadata numeric field <= N
+    case metadataMax(String, Int)
+    /// Metadata numeric field in range
+    case metadataRange(String, ClosedRange<Int>)
+    /// Metadata string field contains substring
+    case metadataMatch(String, String)
 
     // MARK: - Matching
 
@@ -91,6 +99,22 @@ enum SearchFilter: Sendable, Equatable {
         case .fileType(let group):
             guard let ext = record.extension else { return false }
             return group.extensions.contains(ext.lowercased())
+        case .metadataMin(let field, let threshold):
+            guard let meta = record.metadata,
+                  let value = meta.fields[field]?.doubleValue else { return false }
+            return Int(value) >= threshold
+        case .metadataMax(let field, let threshold):
+            guard let meta = record.metadata,
+                  let value = meta.fields[field]?.doubleValue else { return false }
+            return Int(value) <= threshold
+        case .metadataRange(let field, let range):
+            guard let meta = record.metadata,
+                  let value = meta.fields[field]?.doubleValue else { return false }
+            return range.contains(Int(value))
+        case .metadataMatch(let field, let query):
+            guard let meta = record.metadata,
+                  let value = meta.fields[field]?.stringValue else { return false }
+            return value.localizedCaseInsensitiveContains(query)
         }
     }
 

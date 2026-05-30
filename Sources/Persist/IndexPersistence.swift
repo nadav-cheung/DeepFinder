@@ -53,7 +53,7 @@ actor IndexPersistence {
     // MARK: - Schema
 
     /// Current schema version. Bumped when the schema changes.
-    private static let currentSchemaVersion: Int = 1
+    private static let currentSchemaVersion: Int = 2
 
     /// SQL to create the file_records table.
     private static let createFileRecordsSQL = """
@@ -67,7 +67,8 @@ actor IndexPersistence {
             size        INTEGER NOT NULL DEFAULT 0,
             created_at  REAL NOT NULL,
             modified_at REAL NOT NULL,
-            ext         TEXT
+            ext         TEXT,
+            metadata_json TEXT
         )
         """
 
@@ -163,8 +164,8 @@ actor IndexPersistence {
 
         let sql = """
             INSERT OR REPLACE INTO file_records
-                (id, name, original_name, path, parent_path, is_directory, size, created_at, modified_at, ext)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                (id, name, original_name, path, parent_path, is_directory, size, created_at, modified_at, ext, metadata_json)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """
 
         var stmt: OpaquePointer?
@@ -187,6 +188,14 @@ actor IndexPersistence {
             } else {
                 sqlite3_bind_null(stmt, 10)
             }
+            // Bind metadata_json
+            if let metadata = record.metadata,
+               let jsonData = try? JSONEncoder().encode(metadata),
+               let jsonStr = String(data: jsonData, encoding: .utf8) {
+                sqlite3_bind_text(stmt, 11, jsonStr, -1, SQLTransient)
+            } else {
+                sqlite3_bind_null(stmt, 11)
+            }
             sqlite3_step(stmt)
         }
     }
@@ -195,7 +204,7 @@ actor IndexPersistence {
     func loadAllRecords() throws -> [FileRecord] {
         let sql = """
             SELECT id, name, original_name, path, parent_path, is_directory,
-                   size, created_at, modified_at, ext
+                   size, created_at, modified_at, ext, metadata_json
             FROM file_records
             """
 
@@ -260,6 +269,71 @@ actor IndexPersistence {
 
         sqlite3_step(stmt)
         return Int(sqlite3_changes(db))
+    }
+
+    // MARK: - Metadata Batch Operations
+
+    /// Batch save metadata for multiple files.
+    ///
+    /// Updates only the `metadata_json` column for the given file IDs.
+    /// Uses a prepared statement and explicit transaction for throughput.
+    func saveMetadataBatch(_ entries: [(fileID: UInt32, metadata: ExtractedMetadata)]) {
+        guard !entries.isEmpty else { return }
+
+        try? exec("BEGIN IMMEDIATE")
+        defer { try? exec("COMMIT") }
+
+        let sql = "UPDATE file_records SET metadata_json = ? WHERE id = ?"
+        var stmt: OpaquePointer?
+        guard prepare(sql, &stmt) == SQLITE_OK, let stmt else { return }
+        defer { sqlite3_finalize(stmt) }
+
+        let encoder = JSONEncoder()
+        for entry in entries {
+            sqlite3_reset(stmt)
+            if let jsonData = try? encoder.encode(entry.metadata),
+               let jsonStr = String(data: jsonData, encoding: .utf8) {
+                sqlite3_bind_text(stmt, 1, jsonStr, -1, SQLTransient)
+            } else {
+                sqlite3_bind_null(stmt, 1)
+            }
+            sqlite3_bind_int64(stmt, 2, sqlite3_int64(entry.fileID))
+            sqlite3_step(stmt)
+        }
+    }
+
+    /// Load all metadata entries from the database.
+    ///
+    /// Returns an array of (fileID, metadata) pairs for all records that have metadata.
+    func loadAllMetadata() throws -> [(fileID: UInt32, metadata: ExtractedMetadata)] {
+        let sql = "SELECT id, metadata_json FROM file_records WHERE metadata_json IS NOT NULL"
+
+        var stmt: OpaquePointer?
+        guard prepare(sql, &stmt) == SQLITE_OK, let stmt else {
+            throw PersistenceError.prepareFailed(sql, sqlite3_errcode(db))
+        }
+        defer { sqlite3_finalize(stmt) }
+
+        let decoder = JSONDecoder()
+        var results: [(fileID: UInt32, metadata: ExtractedMetadata)] = []
+        while true {
+            let rc = sqlite3_step(stmt)
+            if rc == SQLITE_ROW {
+                let fileID = UInt32(sqlite3_column_int64(stmt, 0))
+                guard let jsonPtr = sqlite3_column_text(stmt, 1) else { continue }
+                let jsonStr = String(cString: jsonPtr)
+                guard let data = jsonStr.data(using: .utf8),
+                      let metadata = try? decoder.decode(ExtractedMetadata.self, from: data) else {
+                    continue
+                }
+                results.append((fileID, metadata))
+            } else if rc == SQLITE_DONE {
+                break
+            } else {
+                throw PersistenceError.stepFailed(rc)
+            }
+        }
+        return results
     }
 
     // MARK: - Event Cursor
@@ -353,8 +427,9 @@ actor IndexPersistence {
         try execSQL(db, "BEGIN")
 
         do {
-            // Future migrations go here:
-            // if currentVersion < 2 { try migrateToV2(db) }
+            // v1 → v2: Add metadata_json column for media metadata
+            if currentVersion < 2 { try migrateToV2(db) }
+            // Future migrations:
             // if currentVersion < 3 { try migrateToV3(db) }
 
             // Update schema version
@@ -374,6 +449,31 @@ actor IndexPersistence {
         defer { sqlite3_finalize(stmt) }
         guard sqlite3_step(stmt) == SQLITE_ROW else { return 0 }
         return Int(sqlite3_column_int(stmt, 0))
+    }
+
+    /// Migrate schema from v1 to v2: add metadata_json column.
+    private static func migrateToV2(_ db: OpaquePointer) throws {
+        // Check if column already exists (handles CREATE TABLE IF NOT EXISTS with new column)
+        let columns = columnNames(in: "file_records", on: db)
+        if !columns.contains("metadata_json") {
+            try execSQL(db, "ALTER TABLE file_records ADD COLUMN metadata_json TEXT")
+        }
+    }
+
+    /// Read column names for a table. Used by migrations to check for existing columns.
+    private static func columnNames(in table: String, on db: OpaquePointer) -> Set<String> {
+        var stmt: OpaquePointer?
+        let sql = "PRAGMA table_info(\(table))"
+        guard sqlite3_prepare_v3(db, sql, -1, 0, &stmt, nil) == SQLITE_OK,
+              let stmt else { return [] }
+        defer { sqlite3_finalize(stmt) }
+
+        var names: Set<String> = []
+        while sqlite3_step(stmt) == SQLITE_ROW {
+            let name = String(cString: sqlite3_column_text(stmt, 1))
+            names.insert(name)
+        }
+        return names
     }
 
     // MARK: - Internal Helpers
@@ -402,7 +502,15 @@ actor IndexPersistence {
 
     /// Parse a single row from a statement into a FileRecord.
     private static func recordFromStatement(_ stmt: OpaquePointer) -> FileRecord {
-        FileRecord(
+        let metadata: ExtractedMetadata? = {
+            guard sqlite3_column_type(stmt, 10) != SQLITE_NULL,
+                  let jsonPtr = sqlite3_column_text(stmt, 10) else { return nil }
+            let jsonStr = String(cString: jsonPtr)
+            guard let data = jsonStr.data(using: .utf8) else { return nil }
+            return try? JSONDecoder().decode(ExtractedMetadata.self, from: data)
+        }()
+
+        return FileRecord(
             id: UInt32(sqlite3_column_int64(stmt, 0)),
             name: String(cString: sqlite3_column_text(stmt, 1)),
             originalName: String(cString: sqlite3_column_text(stmt, 2)),
@@ -412,7 +520,8 @@ actor IndexPersistence {
             size: Int64(sqlite3_column_int64(stmt, 6)),
             createdAt: Date(timeIntervalSince1970: sqlite3_column_double(stmt, 7)),
             modifiedAt: Date(timeIntervalSince1970: sqlite3_column_double(stmt, 8)),
-            extension: columnTextOrNil(stmt, 9)
+            extension: columnTextOrNil(stmt, 9),
+            metadata: metadata
         )
     }
 
