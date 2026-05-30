@@ -1,5 +1,46 @@
 import Foundation
 
+// MARK: - FileManagerProvider
+
+/// Abstraction over FileManager for testability.
+///
+/// REQ-3.0-14: Actual file operation execution
+protocol FileManagerProvider: Sendable {
+    func moveItem(at src: URL, to dst: URL) throws
+    func copyItem(at src: URL, to dst: URL) throws
+    func createDirectory(at url: URL, withIntermediateDirectories createIntermediates: Bool) throws
+    func fileExists(atPath path: String) -> Bool
+    func removeItem(at url: URL) throws
+}
+
+/// Production implementation wrapping `FileManager.default`.
+///
+/// Marked `@unchecked Sendable` because `FileManager.default` is a
+/// thread-safe singleton, but the type system cannot prove it.
+struct SystemFileManagerProvider: FileManagerProvider, @unchecked Sendable {
+    nonisolated(unsafe) private let fm = FileManager.default
+
+    func moveItem(at src: URL, to dst: URL) throws {
+        try fm.moveItem(at: src, to: dst)
+    }
+
+    func copyItem(at src: URL, to dst: URL) throws {
+        try fm.copyItem(at: src, to: dst)
+    }
+
+    func createDirectory(at url: URL, withIntermediateDirectories createIntermediates: Bool) throws {
+        try fm.createDirectory(at: url, withIntermediateDirectories: createIntermediates)
+    }
+
+    func fileExists(atPath path: String) -> Bool {
+        fm.fileExists(atPath: path)
+    }
+
+    func removeItem(at url: URL) throws {
+        try fm.removeItem(at: url)
+    }
+}
+
 // MARK: - NLOperationType
 
 /// Safe file operations that can be triggered via natural language commands.
@@ -34,11 +75,16 @@ struct NLOperation: Sendable, Equatable {
 
 /// A record of a previously executed operation, stored for undo support.
 ///
+/// `originalPaths` maps each destination path back to its source path before
+/// the operation ran, enabling undo (move back, remove copy, rename back).
+///
 /// REQ-3.0-14: Undo support
 struct NLOperationRecord: Sendable, Equatable {
     let operation: NLOperation
     let timestamp: Date
     let reversed: Bool
+    /// Maps destination path -> original source path for undo.
+    let originalPaths: [String: String]
 }
 
 // MARK: - NLOperationHistory
@@ -57,11 +103,12 @@ actor NLOperationHistory {
     static let maxItems = 20
 
     /// Record an executed operation so it can be undone later.
-    func record(_ operation: NLOperation, reversed: Bool = false) {
+    func record(_ operation: NLOperation, reversed: Bool = false, originalPaths: [String: String] = [:]) {
         let record = NLOperationRecord(
             operation: operation,
             timestamp: Date(),
-            reversed: reversed
+            reversed: reversed,
+            originalPaths: originalPaths
         )
         stack.append(record)
         // Drop oldest when over capacity
@@ -90,8 +137,11 @@ actor NLOperationHistory {
 
 /// Result of executing an operation through the executor.
 struct NLOperationResult: Sendable, Equatable {
+    let success: Bool
     let affectedCount: Int
     let status: NLOperationStatus
+    /// Per-file errors collected during execution (non-fatal).
+    let errors: [String]
 }
 
 /// Execution status for an operation.
@@ -112,11 +162,25 @@ enum NLOperationStatus: String, Sendable, Equatable {
 /// The caller supplies a `confirm` closure (e.g. presenting a UI dialog) that
 /// returns `true` to proceed or `false` to cancel.
 ///
-/// REQ-3.0-14: Operation execution with confirmation
-struct NLOperationExecutor: Sendable {
+/// After successful execution, each operation is recorded in the history actor
+/// so it can be undone via `undoLast()`.
+///
+/// REQ-3.0-14: Operation execution with confirmation + undo
+struct NLOperationExecutor: @unchecked Sendable {
 
     /// Safe operation types that are permitted for execution.
     static let safeOperationTypes: Set<NLOperationType> = [.move, .copy, .rename]
+
+    let fileManager: any FileManagerProvider
+    let history: NLOperationHistory
+
+    init(
+        fileManager: any FileManagerProvider = SystemFileManagerProvider(),
+        history: NLOperationHistory = NLOperationHistory()
+    ) {
+        self.fileManager = fileManager
+        self.history = history
+    }
 
     /// Execute an operation after user confirmation.
     ///
@@ -124,33 +188,128 @@ struct NLOperationExecutor: Sendable {
     ///   - operation: The operation to execute.
     ///   - confirm: A closure the caller provides to ask the user for confirmation.
     ///     Returns `true` to proceed, `false` to cancel.
+    ///   - availableFiles: File paths matching the operation's source pattern,
+    ///     typically produced by `generatePreview()`.
     /// - Returns: An `NLOperationResult` with the affected file count and status,
     ///   or `nil` if the operation type is not safe.
     func execute(
         _ operation: NLOperation,
-        confirm: () -> Bool
-    ) -> NLOperationResult? {
+        confirm: () -> Bool,
+        availableFiles: [String]
+    ) async -> NLOperationResult? {
         // Reject any operation type outside the safe set
         guard Self.safeOperationTypes.contains(operation.type) else {
             return NLOperationResult(
+                success: false,
                 affectedCount: 0,
-                status: .rejectedDestructive
+                status: .rejectedDestructive,
+                errors: []
             )
         }
 
         // Ask the caller to confirm
         guard confirm() else {
             return NLOperationResult(
+                success: false,
                 affectedCount: 0,
-                status: .rejected
+                status: .rejected,
+                errors: []
             )
         }
 
-        // Execution would go here; for now we report the preview count
+        // Perform the actual file operations
+        var succeededCount = 0
+        var errors: [String] = []
+        var originalPaths: [String: String] = [:]
+
+        for sourcePath in availableFiles {
+            let sourceURL = URL(fileURLWithPath: sourcePath)
+            let fileName = sourceURL.lastPathComponent
+            let destDir: String
+            let destFileName: String
+
+            switch operation.type {
+            case .move, .copy:
+                destDir = operation.destination
+                destFileName = fileName
+            case .rename:
+                // For rename, destination is the new name in the same directory
+                destDir = sourceURL.deletingLastPathComponent().path
+                destFileName = operation.destination
+            }
+
+            let destPath = destDir.hasSuffix("/")
+                ? destDir + destFileName
+                : destDir + "/" + destFileName
+            let destURL = URL(fileURLWithPath: destPath)
+
+            do {
+                // Create destination directory if needed (move/copy)
+                if operation.type != .rename {
+                    let destDirURL = URL(fileURLWithPath: destDir)
+                    if !fileManager.fileExists(atPath: destDir) {
+                        try fileManager.createDirectory(at: destDirURL, withIntermediateDirectories: true)
+                    }
+                }
+
+                switch operation.type {
+                case .move, .rename:
+                    try fileManager.moveItem(at: sourceURL, to: destURL)
+                case .copy:
+                    try fileManager.copyItem(at: sourceURL, to: destURL)
+                }
+
+                originalPaths[destPath] = sourcePath
+                succeededCount += 1
+            } catch {
+                errors.append("\(sourcePath): \(error.localizedDescription)")
+            }
+        }
+
+        let success = errors.isEmpty
+
+        // Record in history for undo (only if something succeeded)
+        if succeededCount > 0 {
+            await history.record(operation, originalPaths: originalPaths)
+        }
+
         return NLOperationResult(
-            affectedCount: operation.preview.count,
-            status: .confirmed
+            success: success,
+            affectedCount: succeededCount,
+            status: .confirmed,
+            errors: errors
         )
+    }
+
+    /// Undo the most recently executed operation, if any.
+    ///
+    /// - Move/rename: moves the file back to its original location.
+    /// - Copy: removes the copied file from the destination.
+    /// - Returns: the undone `NLOperationRecord`, or `nil` if nothing to undo.
+    func undoLast() async -> NLOperationRecord? {
+        guard let record = await history.popLast() else { return nil }
+
+        for (destPath, originalPath) in record.originalPaths {
+            let destURL = URL(fileURLWithPath: destPath)
+            let originalURL = URL(fileURLWithPath: originalPath)
+
+            do {
+                switch record.operation.type {
+                case .move, .rename:
+                    // Move back to original location
+                    try fileManager.moveItem(at: destURL, to: originalURL)
+                case .copy:
+                    // Remove the copy; original was never moved
+                    try fileManager.removeItem(at: destURL)
+                }
+            } catch {
+                // Undo failures are best-effort; we still return the record
+                // so the caller knows what was attempted.
+                break
+            }
+        }
+
+        return record
     }
 }
 
