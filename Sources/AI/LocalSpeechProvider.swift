@@ -51,6 +51,21 @@ protocol SpeechRecognizerProtocol: Sendable {
 /// REQ-3.0-12: Local speech recognition.
 actor LocalSpeechProvider {
 
+    /// The approximate silence duration (in seconds) after which Apple's Speech
+    /// framework emits a final result (`isFinal == true`), automatically
+    /// triggering a search.
+    ///
+    /// The Speech framework handles silence detection natively — no explicit
+    /// timer or voice-activity detection is needed on our side. After roughly
+    /// this interval of silence following an utterance, the framework finalizes
+    /// recognition and delivers `isFinal == true` in the result callback.
+    ///
+    /// - Note: The exact timing varies slightly depending on audio conditions
+    ///   and is not configurable via the Speech API. This constant documents
+    ///   the observed ~1.5 s behavior for REQ-3.0-12 compliance and serves as
+    ///   a reference for UI elements that display auto-trigger timing.
+    static let speechAutoTriggerInterval: TimeInterval = 1.5
+
     /// Whether the provider is currently listening for speech input.
     private(set) var isListening: Bool = false
 

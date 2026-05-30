@@ -99,6 +99,13 @@ struct LocalSpeechProviderTests {
         #expect(result == nil)
     }
 
+    // MARK: - Speech auto-trigger interval (REQ-3.0-12)
+
+    @Test("speechAutoTriggerInterval is 1.5 seconds")
+    func speechAutoTriggerInterval() {
+        #expect(LocalSpeechProvider.speechAutoTriggerInterval == 1.5)
+    }
+
     @Test("transcribe streams multiple mock results sequentially")
     func transcribeStreamsMultipleResults() async {
         let results = [
