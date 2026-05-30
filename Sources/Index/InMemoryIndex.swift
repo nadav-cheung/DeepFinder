@@ -138,6 +138,35 @@ actor InMemoryIndex {
         pinyinIndex.remove(name: name, id: id)
     }
 
+    // MARK: - Volume Operations
+
+    /// Remove all records whose path starts with the given volume path prefix.
+    ///
+    /// Used when a volume is unmounted to clean up all indexed files on that volume.
+    /// Returns the IDs of removed records for downstream persistence cleanup.
+    ///
+    /// - Parameter volumePath: The mount point path of the volume (e.g. "/Volumes/USB Drive").
+    /// - Returns: Array of removed record IDs.
+    func removeRecordsForVolume(volumePath: String) -> [UInt32] {
+        let prefix = volumePath.hasSuffix("/") ? volumePath : volumePath + "/"
+        // Also match the volume path itself (in case a record has path == volumePath)
+        let exactMatch = volumePath
+
+        var removedIDs: [UInt32] = []
+        for (id, record) in records {
+            if record.path == exactMatch || record.path.hasPrefix(prefix) {
+                removedIDs.append(id)
+            }
+        }
+
+        // Remove each record via the normal remove path (updates all index structures)
+        for id in removedIDs {
+            remove(id: id)
+        }
+
+        return removedIDs
+    }
+
     // MARK: - Search
 
     /// Unified search across all index structures. Returns deduplicated, sorted results.
