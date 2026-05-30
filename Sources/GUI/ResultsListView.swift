@@ -112,6 +112,7 @@ struct ResultsListView: View {
 
     @Bindable var state: ResultsListState
     @FocusState private var isFocused: Bool
+    private let quickLookController = QuickLookPreviewController()
 
     var body: some View {
         Group {
@@ -124,12 +125,38 @@ struct ResultsListView: View {
         .focusable()
         .focused($isFocused)
         .onKeyPress(.upArrow) {
+            if quickLookController.isPreviewOpen {
+                _ = quickLookController.navigatePreview(
+                    results: state.visibleResults,
+                    direction: .up
+                )
+            }
             state.moveSelection(down: false)
             return .handled
         }
         .onKeyPress(.downArrow) {
+            if quickLookController.isPreviewOpen {
+                _ = quickLookController.navigatePreview(
+                    results: state.visibleResults,
+                    direction: .down
+                )
+            }
             state.moveSelection(down: true)
             return .handled
+        }
+        .onKeyPress(.space) {
+            quickLookController.togglePreview(
+                results: state.visibleResults,
+                selectedIndex: state.selectedIndex
+            )
+            return .handled
+        }
+        .onKeyPress(.escape) {
+            if quickLookController.isPreviewOpen {
+                quickLookController.closePreview()
+                return .handled
+            }
+            return .ignored
         }
     }
 

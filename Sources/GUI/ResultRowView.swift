@@ -11,6 +11,7 @@ struct ResultRowView: View {
     let result: SearchResult
     let isSelected: Bool
     var query: String = ""
+    var workspace: (any WorkspaceProtocol)? = nil
 
     var body: some View {
         let ext = result.record.extension
@@ -67,6 +68,18 @@ struct ResultRowView: View {
         .padding(.vertical, 6)
         .background(isSelected ? AnyShapeStyle(.selection) : AnyShapeStyle(.clear))
         .contentShape(.rect)
+        .contextMenu {
+            if workspace != nil {
+                let items = ResultContextMenu.menuItems(
+                    for: result.record.path,
+                    actions: ResultContextMenuHandler()
+                )
+                ForEach(items, id: \.id) { item in
+                    Button(item.label) { item.action() }
+                }
+            }
+        }
+        .resultDrag(path: result.record.path)
     }
 }
 
