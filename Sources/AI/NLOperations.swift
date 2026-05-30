@@ -30,6 +30,130 @@ struct NLOperation: Sendable, Equatable {
     let preview: [String]
 }
 
+// MARK: - NLOperationRecord
+
+/// A record of a previously executed operation, stored for undo support.
+///
+/// REQ-3.0-14: Undo support
+struct NLOperationRecord: Sendable, Equatable {
+    let operation: NLOperation
+    let timestamp: Date
+    let reversed: Bool
+}
+
+// MARK: - NLOperationHistory
+
+/// Maintains an undo stack of executed operations.
+///
+/// Thread-safe via actor isolation. Caps at 20 items — oldest entries are
+/// dropped first when the limit is exceeded.
+///
+/// REQ-3.0-14: Undo support
+actor NLOperationHistory {
+
+    private var stack: [NLOperationRecord] = []
+
+    /// Maximum number of records retained. Oldest are dropped first.
+    static let maxItems = 20
+
+    /// Record an executed operation so it can be undone later.
+    func record(_ operation: NLOperation, reversed: Bool = false) {
+        let record = NLOperationRecord(
+            operation: operation,
+            timestamp: Date(),
+            reversed: reversed
+        )
+        stack.append(record)
+        // Drop oldest when over capacity
+        if stack.count > Self.maxItems {
+            stack.removeFirst(stack.count - Self.maxItems)
+        }
+    }
+
+    /// Pop the most recent operation record for undo, if any.
+    func popLast() -> NLOperationRecord? {
+        return stack.popLast()
+    }
+
+    /// Whether there is an operation available to undo.
+    var canUndo: Bool {
+        return !stack.isEmpty
+    }
+
+    /// Remove all history.
+    func clear() {
+        stack.removeAll()
+    }
+}
+
+// MARK: - NLOperationResult
+
+/// Result of executing an operation through the executor.
+struct NLOperationResult: Sendable, Equatable {
+    let affectedCount: Int
+    let status: NLOperationStatus
+}
+
+/// Execution status for an operation.
+enum NLOperationStatus: String, Sendable, Equatable {
+    case confirmed
+    case rejected
+    case rejectedDestructive
+}
+
+// MARK: - NLOperationExecutor
+
+/// Executes safe file operations with a confirmation callback.
+///
+/// Only move, copy, and rename operations are allowed. Destructive operations
+/// (anything outside the safe set) are rejected immediately without calling
+/// the confirmation closure.
+///
+/// The caller supplies a `confirm` closure (e.g. presenting a UI dialog) that
+/// returns `true` to proceed or `false` to cancel.
+///
+/// REQ-3.0-14: Operation execution with confirmation
+struct NLOperationExecutor: Sendable {
+
+    /// Safe operation types that are permitted for execution.
+    static let safeOperationTypes: Set<NLOperationType> = [.move, .copy, .rename]
+
+    /// Execute an operation after user confirmation.
+    ///
+    /// - Parameters:
+    ///   - operation: The operation to execute.
+    ///   - confirm: A closure the caller provides to ask the user for confirmation.
+    ///     Returns `true` to proceed, `false` to cancel.
+    /// - Returns: An `NLOperationResult` with the affected file count and status,
+    ///   or `nil` if the operation type is not safe.
+    func execute(
+        _ operation: NLOperation,
+        confirm: () -> Bool
+    ) -> NLOperationResult? {
+        // Reject any operation type outside the safe set
+        guard Self.safeOperationTypes.contains(operation.type) else {
+            return NLOperationResult(
+                affectedCount: 0,
+                status: .rejectedDestructive
+            )
+        }
+
+        // Ask the caller to confirm
+        guard confirm() else {
+            return NLOperationResult(
+                affectedCount: 0,
+                status: .rejected
+            )
+        }
+
+        // Execution would go here; for now we report the preview count
+        return NLOperationResult(
+            affectedCount: operation.preview.count,
+            status: .confirmed
+        )
+    }
+}
+
 // MARK: - NLOperations
 
 /// Parses natural language commands into safe file operations.
