@@ -79,27 +79,39 @@ actor HTTPSearchService {
             }
         }
 
-        listener.newConnectionHandler = { [weak self] connection in
-            guard let self else {
-                connection.cancel()
-                return
-            }
-            // Capture what we need before entering the Task
-            let handler = self.searchHandler
-            let stats = self.statsHandler
+        // Capture handlers by value before the closure — they are @Sendable,
+        // so this is safe and avoids reading actor-isolated properties from
+        // the NWListener dispatch queue.
+        let handler = searchHandler
+        let stats = statsHandler
+
+        listener.newConnectionHandler = { connection in
             connection.start(queue: DispatchQueue(label: "http-conn", attributes: .concurrent))
-            connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { data, _, _, error in
-                guard let data, error == nil else {
-                    connection.cancel()
-                    return
+            // Buffer incoming data until we have the full HTTP header (\r\n\r\n).
+            // A single receive() may only get a TCP fragment.
+            var buffer = Data()
+            func readNext() {
+                connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { data, _, _, error in
+                    guard let data, error == nil else {
+                        connection.cancel()
+                        return
+                    }
+                    buffer.append(data)
+                    let headerEnd = Data("\r\n\r\n".utf8)
+                    if let range = buffer.range(of: headerEnd) {
+                        // We have the full header — use everything up to and including \r\n\r\n
+                        HTTPRouter.handleRequest(
+                            data: buffer,
+                            connection: connection,
+                            searchHandler: handler,
+                            statsHandler: stats
+                        )
+                    } else {
+                        readNext()
+                    }
                 }
-                HTTPRouter.handleRequest(
-                    data: data,
-                    connection: connection,
-                    searchHandler: handler,
-                    statsHandler: stats
-                )
             }
+            readNext()
         }
 
         listener.start(queue: queue)

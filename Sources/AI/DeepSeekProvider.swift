@@ -1,43 +1,36 @@
 import Foundation
 
-// MARK: - DeepSeekProvider
+// MARK: - OpenAICompatibleProvider
 
-/// AI model provider backed by the DeepSeek API.
+/// A generic AI model provider for OpenAI-compatible chat completions APIs.
 ///
-/// Uses the OpenAI-compatible chat completions endpoint with SSE streaming.
-/// REQ-3.0-03: DeepSeek integration.
-struct DeepSeekProvider: AIModelProvider, Sendable {
-    let name: String = "deepseek"
-
-    let capabilities: Set<AICapability> = [
-        .textToSearch,
-        .resultSummary,
-        .querySuggestion,
-        .intentAnalysis,
-    ]
-
-    /// API key for authentication.
+/// Shared implementation for providers that use the same SSE streaming format
+/// (DeepSeek, Qwen, and any future OpenAI-compatible endpoint).
+///
+/// REQ-3.0-03 (DeepSeek) and REQ-3.0-04 (Qwen) both use this base.
+struct OpenAICompatibleProvider: AIModelProvider, Sendable {
+    let name: String
+    let capabilities: Set<AICapability>
     let apiKey: String
-
-    /// The model identifier to use.
     let model: String
-
-    /// Injected HTTP client (production uses URLSession, tests use mock).
     let httpClient: any HTTPClient
-
-    /// Request timeout in seconds.
     let timeout: TimeInterval
-
-    private let endpoint = URL(string: "https://api.deepseek.com/chat/completions")!
+    private let endpoint: URL
 
     init(
+        name: String,
+        endpoint: URL,
         apiKey: String,
-        model: String = "deepseek-v4-flash",
+        model: String,
+        capabilities: Set<AICapability> = [.textToSearch, .resultSummary, .querySuggestion, .intentAnalysis],
         httpClient: any HTTPClient = URLSessionHTTPClient(),
         timeout: TimeInterval = 30
     ) {
+        self.name = name
+        self.endpoint = endpoint
         self.apiKey = apiKey
         self.model = model
+        self.capabilities = capabilities
         self.httpClient = httpClient
         self.timeout = timeout
     }
@@ -51,25 +44,20 @@ struct DeepSeekProvider: AIModelProvider, Sendable {
                     let request = try buildRequest(prompt: prompt, context: context)
                     let response = try await httpClient.perform(request)
 
-                    // Handle HTTP errors
                     if response.statusCode == 429 {
                         continuation.finish(throwing: AIError.rateLimited)
                         return
                     }
                     if response.statusCode >= 400 {
-                        continuation.finish(throwing: AIError.networkError(
-                            "HTTP \(response.statusCode)"
-                        ))
+                        continuation.finish(throwing: AIError.networkError("HTTP \(response.statusCode)"))
                         return
                     }
 
-                    // Parse SSE stream
                     for await line in SSELineSequence(data: response.data) {
                         if line == "data: [DONE]" { break }
                         guard line.hasPrefix("data: ") else { continue }
-
                         let jsonStr = String(line.dropFirst(6))
-                        if let content = parseContentDelta(from: jsonStr), !content.isEmpty {
+                        if let content = Self.parseContentDelta(from: jsonStr), !content.isEmpty {
                             continuation.yield(content)
                         }
                     }
@@ -86,67 +74,45 @@ struct DeepSeekProvider: AIModelProvider, Sendable {
     // MARK: - translateToSearchSyntax()
 
     func translateToSearchSyntax(naturalLanguage: String) async throws -> String {
-        let systemPrompt = Self.searchTranslationSystemPrompt
         let request = try buildRequest(
-            systemPrompt: systemPrompt,
+            systemPrompt: Self.searchTranslationSystemPrompt,
             userMessage: naturalLanguage
         )
         let response = try await httpClient.perform(request)
 
-        if response.statusCode == 429 {
-            throw AIError.rateLimited
-        }
-        if response.statusCode >= 400 {
-            throw AIError.networkError("HTTP \(response.statusCode)")
-        }
+        if response.statusCode == 429 { throw AIError.rateLimited }
+        if response.statusCode >= 400 { throw AIError.networkError("HTTP \(response.statusCode)") }
 
-        // Collect full response from SSE
         var fullText = ""
         for await line in SSELineSequence(data: response.data) {
             if line == "data: [DONE]" { break }
             guard line.hasPrefix("data: ") else { continue }
             let jsonStr = String(line.dropFirst(6))
-            if let content = parseContentDelta(from: jsonStr) {
+            if let content = Self.parseContentDelta(from: jsonStr) {
                 fullText += content
             }
         }
 
-        return stripMarkdown(fullText)
+        return Self.stripMarkdown(fullText)
     }
 
     // MARK: - Private
 
-    private func buildRequest(
-        prompt: String,
-        context: AIContext?
-    ) throws -> URLRequest {
+    private func buildRequest(prompt: String, context: AIContext?) throws -> URLRequest {
         var messages: [[String: String]] = []
-
-        // System prompt for general use
         messages.append(["role": "system", "content": Self.defaultSystemPrompt])
-
-        // Include context if provided
         if let context {
-            let contextStr = encodeContext(context)
-            messages.append([
-                "role": "system",
-                "content": "Search context:\n\(contextStr)",
-            ])
+            messages.append(["role": "system", "content": "Search context:\n\(Self.encodeContext(context))"])
         }
-
         messages.append(["role": "user", "content": prompt])
         return try buildURLRequest(messages: messages)
     }
 
-    private func buildRequest(
-        systemPrompt: String,
-        userMessage: String
-    ) throws -> URLRequest {
-        let messages: [[String: String]] = [
+    private func buildRequest(systemPrompt: String, userMessage: String) throws -> URLRequest {
+        try buildURLRequest(messages: [
             ["role": "system", "content": systemPrompt],
             ["role": "user", "content": userMessage],
-        ]
-        return try buildURLRequest(messages: messages)
+        ])
     }
 
     private func buildURLRequest(messages: [[String: String]]) throws -> URLRequest {
@@ -155,18 +121,12 @@ struct DeepSeekProvider: AIModelProvider, Sendable {
         request.timeoutInterval = timeout
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(apiKey)", forHTTPHeaderField: "Authorization")
-
-        let body: [String: Any] = [
-            "model": model,
-            "messages": messages,
-            "stream": true,
-        ]
+        let body: [String: Any] = ["model": model, "messages": messages, "stream": true]
         request.httpBody = try JSONSerialization.data(withJSONObject: body)
         return request
     }
 
-    /// Extract the `content` delta from a streaming chunk JSON.
-    private func parseContentDelta(from jsonString: String) -> String? {
+    private static func parseContentDelta(from jsonString: String) -> String? {
         guard let data = jsonString.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               let choices = json["choices"] as? [[String: Any]],
@@ -176,8 +136,7 @@ struct DeepSeekProvider: AIModelProvider, Sendable {
         return delta["content"] as? String
     }
 
-    /// Encode AIContext into a compact string for the system prompt.
-    private func encodeContext(_ context: AIContext) -> String {
+    private static func encodeContext(_ context: AIContext) -> String {
         var parts: [String] = []
         parts.append("Query: \(context.query)")
         parts.append("Results: \(context.indexStats.queryResults) files")
@@ -188,12 +147,9 @@ struct DeepSeekProvider: AIModelProvider, Sendable {
         return parts.joined(separator: "\n")
     }
 
-    /// Strip markdown code fences and formatting from AI output.
-    private func stripMarkdown(_ text: String) -> String {
+    private static func stripMarkdown(_ text: String) -> String {
         var result = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        // Remove code fences
         if result.hasPrefix("```") {
-            // Find first newline after opening fence
             if let newlineIdx = result.firstIndex(of: "\n") {
                 result = String(result[result.index(after: newlineIdx)...])
             }
@@ -208,7 +164,7 @@ struct DeepSeekProvider: AIModelProvider, Sendable {
         You are an AI assistant helping with file search. Be concise and helpful.
         """
 
-    private static let searchTranslationSystemPrompt = """
+    static let searchTranslationSystemPrompt = """
         You are a search syntax translator for DeepFinder, a macOS file search app.
 
         Translate the user's natural language query into DeepFinder search syntax.
@@ -230,4 +186,36 @@ struct DeepSeekProvider: AIModelProvider, Sendable {
         - If the query is ambiguous, make reasonable assumptions.
         - Support both Chinese and English natural language input.
         """
+}
+
+// MARK: - Convenience Type Aliases
+
+/// DeepSeek API provider. REQ-3.0-03.
+typealias DeepSeekProvider = OpenAICompatibleProvider
+
+extension DeepSeekProvider {
+    static func deepSeek(apiKey: String, httpClient: any HTTPClient = URLSessionHTTPClient()) -> DeepSeekProvider {
+        DeepSeekProvider(
+            name: "deepseek",
+            endpoint: URL(string: "https://api.deepseek.com/chat/completions")!,
+            apiKey: apiKey,
+            model: "deepseek-v4-flash",
+            httpClient: httpClient
+        )
+    }
+}
+
+/// Qwen (Tongyi Qianwen) API provider. REQ-3.0-04.
+typealias QwenProvider = OpenAICompatibleProvider
+
+extension QwenProvider {
+    static func qwen(apiKey: String, httpClient: any HTTPClient = URLSessionHTTPClient()) -> QwenProvider {
+        QwenProvider(
+            name: "qwen",
+            endpoint: URL(string: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions")!,
+            apiKey: apiKey,
+            model: "qwen-plus",
+            httpClient: httpClient
+        )
+    }
 }

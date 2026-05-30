@@ -85,17 +85,30 @@ struct CrossLanguageSearch: Sendable {
 /// Uses a lock instead of actor to keep CrossLanguageSearch a plain struct.
 private final class ManagedTermCache: @unchecked Sendable {
     private let lock = NSLock()
-    private var store: [String: [String]] = [:]
+    private var store: [String: (value: [String], timestamp: Date)] = [:]
+
+    /// TTL for cached entries (1 hour).
+    private static let ttl: TimeInterval = 3600
 
     func get(_ key: String) -> [String]? {
         lock.lock()
         defer { lock.unlock() }
-        return store[key]
+        guard let entry = store[key] else { return nil }
+        guard Date().timeIntervalSince(entry.timestamp) < Self.ttl else {
+            store.removeValue(forKey: key)
+            return nil
+        }
+        return entry.value
     }
 
     func set(_ key: String, value: [String]) {
         lock.lock()
         defer { lock.unlock() }
-        store[key] = value
+        // Evict expired entries when cache exceeds 100 entries
+        if store.count > 100 {
+            let now = Date()
+            store = store.filter { now.timeIntervalSince($0.value.timestamp) < Self.ttl }
+        }
+        store[key] = (value, Date())
     }
 }

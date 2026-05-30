@@ -130,7 +130,10 @@ actor LocalSpeechProvider {
         self.recognitionRequest = request
 
         return AsyncStream { continuation in
-            recognizer.recognitionTask(with: request) { [weak self] result, error in
+            // Strong reference is intentional — the recognition task is scoped
+            // to this stream's lifetime. Using [weak self] risks leaking the
+            // SFSpeechRecognitionTask if the actor is deallocated mid-recognition.
+            recognizer.recognitionTask(with: request) { result, error in
                 guard let result else {
                     continuation.finish()
                     return
@@ -144,13 +147,6 @@ actor LocalSpeechProvider {
 
                 if result.isFinal {
                     continuation.finish()
-                }
-            }
-
-            // Keep the stream alive until stopListening or final result
-            continuation.onTermination = { _ in
-                Task { [weak self] in
-                    await self?.cleanup()
                 }
             }
         }

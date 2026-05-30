@@ -103,6 +103,11 @@ private final class ManagedCache: @unchecked Sendable {
     func set(_ key: String, value: String) {
         lock.lock()
         defer { lock.unlock() }
+        // Evict expired entries when cache exceeds 100 entries
+        if store.count > 100 {
+            let now = Date()
+            store = store.filter { now.timeIntervalSince($0.value.timestamp) < ResultSummarizer.cacheTTL }
+        }
         store[key] = (value, Date())
     }
 }
