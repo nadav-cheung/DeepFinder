@@ -11,6 +11,43 @@ protocol SettingsConfigProvider: Sendable {
     func addExcludedPath(_ path: String) async
     func removeExcludedPath(_ path: String) async
     func getIndexStats() async -> SettingsIndexStats
+    func triggerRebuildIndex() async
+}
+
+// MARK: - SettingsAIProvider
+
+/// Protocol abstracting AI config access for the Settings AI tab.
+///
+/// Decouples the view model from KeychainStore and ConfigStore so AI settings
+/// can be tested without real Keychain or IPC. In production, the implementation
+/// reads/writes through IPC configSet/configGet and KeychainStore for API keys.
+protocol SettingsAIProvider: Sendable {
+    /// Whether AI assist is enabled.
+    func isEnabled() async -> Bool
+    /// Set AI assist enabled state.
+    func setEnabled(_ enabled: Bool) async
+    /// The selected AI model name ("off", "deepseek", "qwen").
+    func modelName() async -> String
+    /// Set the selected AI model.
+    func setModel(_ model: String) async
+    /// Retrieve the stored API key (from Keychain).
+    func getAPIKey() async -> String
+    /// Store the API key (to Keychain).
+    func setAPIKey(_ key: String) async throws
+    /// Whether metadata is sent to cloud providers.
+    func sendMetadata() async -> Bool
+    /// Set whether metadata is sent to cloud providers.
+    func setSendMetadata(_ enabled: Bool) async
+    /// Whether path anonymization is active.
+    func pathAnonymization() async -> Bool
+    /// Set path anonymization.
+    func setPathAnonymization(_ enabled: Bool) async
+    /// Whether local vision analysis is enabled.
+    func localVision() async -> Bool
+    /// Set local vision analysis.
+    func setLocalVision(_ enabled: Bool) async
+    /// Generate a JSON preview of data sent to AI providers.
+    func dataPreview() async -> String
 }
 
 // MARK: - SettingsIndexStats
@@ -28,7 +65,25 @@ struct SettingsIndexStats: Sendable, Equatable {
 enum SettingsTab: String, CaseIterable, Sendable {
     case general
     case index
+    case ai
     case about
+}
+
+// MARK: - AIModelOption
+
+/// Options for the AI model picker in Settings.
+enum AIModelOption: String, CaseIterable, Sendable {
+    case off
+    case deepseek
+    case qwen
+
+    var displayName: String {
+        switch self {
+        case .off: return "Off"
+        case .deepseek: return "DeepSeek"
+        case .qwen: return "Qwen"
+        }
+    }
 }
 
 // MARK: - SettingsViewModel
@@ -58,14 +113,48 @@ final class SettingsViewModel {
     /// The app version string.
     let version: String
 
+    // MARK: - AI State
+
+    /// Whether AI assist is enabled.
+    var aiEnabled: Bool = false
+
+    /// Selected AI model ("off", "deepseek", "qwen").
+    var aiModel: AIModelOption = .off
+
+    /// The API key text (masked in UI, stored in Keychain).
+    var aiAPIKeyText: String = ""
+
+    /// Whether metadata is sent to cloud AI providers.
+    var aiSendMetadata: Bool = false
+
+    /// Whether path anonymization is active.
+    var aiPathAnonymization: Bool = true
+
+    /// Whether local vision analysis is enabled.
+    var aiLocalVision: Bool = true
+
+    /// Preview data output from AIConfig.dataPreview().
+    var aiPreviewData: String = ""
+
+    /// Whether the preview sheet is visible.
+    var aiPreviewVisible: Bool = false
+
+    /// Whether a rebuild index operation is in progress.
+    var isRebuilding: Bool = false
+
+    /// The current global hotkey display string.
+    var hotkeyDisplay: String = "⌃⌘K"
+
     // MARK: - Dependencies
 
     private let configProvider: any SettingsConfigProvider
+    private let aiProvider: (any SettingsAIProvider)?
 
     // MARK: - Init
 
-    init(configProvider: any SettingsConfigProvider) {
+    init(configProvider: any SettingsConfigProvider, aiProvider: (any SettingsAIProvider)? = nil) {
         self.configProvider = configProvider
+        self.aiProvider = aiProvider
         self.version = Product.version
     }
 
@@ -81,6 +170,18 @@ final class SettingsViewModel {
         indexStats = await configProvider.getIndexStats()
     }
 
+    /// Load AI configuration from the AI provider.
+    func loadAIConfig() async {
+        guard let aiProvider else { return }
+        aiEnabled = await aiProvider.isEnabled()
+        let model = await aiProvider.modelName()
+        aiModel = AIModelOption(rawValue: model) ?? .off
+        aiAPIKeyText = await aiProvider.getAPIKey()
+        aiSendMetadata = await aiProvider.sendMetadata()
+        aiPathAnonymization = await aiProvider.pathAnonymization()
+        aiLocalVision = await aiProvider.localVision()
+    }
+
     // MARK: - Path Mutations
 
     /// Add a path to the exclusion list and persist via the provider.
@@ -94,11 +195,71 @@ final class SettingsViewModel {
         await configProvider.removeExcludedPath(path)
         excludedPaths = await configProvider.getExcludedPaths()
     }
+
+    // MARK: - Index Rebuild
+
+    /// Trigger an index rebuild via the config provider.
+    func rebuildIndex() async {
+        isRebuilding = true
+        await configProvider.triggerRebuildIndex()
+        isRebuilding = false
+        await loadIndexStats()
+    }
+
+    // MARK: - AI Mutations
+
+    /// Persist AI enabled state.
+    func setAIEnabled(_ enabled: Bool) async {
+        aiEnabled = enabled
+        await aiProvider?.setEnabled(enabled)
+    }
+
+    /// Persist AI model selection.
+    func setAIModel(_ model: AIModelOption) async {
+        aiModel = model
+        await aiProvider?.setModel(model.rawValue)
+    }
+
+    /// Persist API key to Keychain.
+    func setAIKey(_ key: String) async throws {
+        aiAPIKeyText = key
+        try await aiProvider?.setAPIKey(key)
+    }
+
+    /// Persist send metadata toggle.
+    func setAISendMetadata(_ enabled: Bool) async {
+        aiSendMetadata = enabled
+        await aiProvider?.setSendMetadata(enabled)
+    }
+
+    /// Persist path anonymization toggle.
+    func setAIPathAnonymization(_ enabled: Bool) async {
+        aiPathAnonymization = enabled
+        await aiProvider?.setPathAnonymization(enabled)
+    }
+
+    /// Persist local vision toggle.
+    func setAILocalVision(_ enabled: Bool) async {
+        aiLocalVision = enabled
+        await aiProvider?.setLocalVision(enabled)
+    }
+
+    /// Load the data preview from the AI provider.
+    func loadAIPreview() async {
+        aiPreviewData = await aiProvider?.dataPreview() ?? AIConfig.dataPreview()
+    }
+
+    // MARK: - Hotkey
+
+    /// Reset the global hotkey display to the default.
+    func resetHotkeyDisplay() {
+        hotkeyDisplay = "⌃⌘K"
+    }
 }
 
 // MARK: - SettingsView
 
-/// Settings window content with three tabs: General, Index, About.
+/// Settings window content with four tabs: General, Index, AI, About.
 struct SettingsView: View {
 
     let viewModel: SettingsViewModel
@@ -120,6 +281,12 @@ struct SettingsView: View {
                 }
                 .tag(SettingsTab.index)
 
+            aiTab
+                .tabItem {
+                    Label("AI", systemImage: "brain")
+                }
+                .tag(SettingsTab.ai)
+
             aboutTab
                 .tabItem {
                     Label("About", systemImage: "info.circle")
@@ -130,6 +297,7 @@ struct SettingsView: View {
         .task {
             await viewModel.loadConfig()
             await viewModel.loadIndexStats()
+            await viewModel.loadAIConfig()
         }
     }
 
@@ -138,6 +306,22 @@ struct SettingsView: View {
     private var generalTab: some View {
         @Bindable var vm = viewModel
         return Form {
+            Section("Hotkey") {
+                HStack {
+                    Text("Global Hotkey")
+                        .font(.body)
+                    Spacer()
+                    Text(viewModel.hotkeyDisplay)
+                        .font(.system(.body, design: .monospaced))
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 4)
+                        .background(.quaternary, in: .rect(cornerRadius: 4))
+                    Button("Reset to Default") {
+                        viewModel.resetHotkeyDisplay()
+                    }
+                }
+            }
+
             Section("Excluded Paths") {
                 List {
                     ForEach(viewModel.excludedPaths, id: \.self) { path in
@@ -202,11 +386,113 @@ struct SettingsView: View {
 
             Section("Maintenance") {
                 Button("Rebuild Index") {
-                    // Will be wired to IPC in v2.0 integration
+                    Task { await viewModel.rebuildIndex() }
+                }
+                .disabled(viewModel.isRebuilding)
+
+                if viewModel.isRebuilding {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text("Rebuilding index...")
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                    }
                 }
             }
         }
         .padding()
+    }
+
+    // MARK: - AI Tab
+
+    private var aiTab: some View {
+        @Bindable var vm = viewModel
+        return Form {
+            Section("AI Assist") {
+                Toggle("Enable AI Assist", isOn: Binding(
+                    get: { viewModel.aiEnabled },
+                    set: { newValue in Task { await viewModel.setAIEnabled(newValue) } }
+                ))
+
+                Picker("Model", selection: Binding(
+                    get: { viewModel.aiModel },
+                    set: { newValue in Task { await viewModel.setAIModel(newValue) } }
+                )) {
+                    ForEach(AIModelOption.allCases, id: \.self) { option in
+                        Text(option.displayName).tag(option)
+                    }
+                }
+                .disabled(!viewModel.aiEnabled)
+            }
+
+            Section("API Key") {
+                SecureField("API Key", text: Binding(
+                    get: { viewModel.aiAPIKeyText },
+                    set: { newValue in
+                        viewModel.aiAPIKeyText = newValue
+                        Task { try? await viewModel.setAIKey(newValue) }
+                    }
+                ))
+                .textFieldStyle(.roundedBorder)
+                .disabled(!viewModel.aiEnabled)
+            }
+
+            Section("Privacy") {
+                Toggle("Send Metadata to Cloud", isOn: Binding(
+                    get: { viewModel.aiSendMetadata },
+                    set: { newValue in Task { await viewModel.setAISendMetadata(newValue) } }
+                ))
+                .disabled(!viewModel.aiEnabled)
+
+                Toggle("Path Anonymization", isOn: Binding(
+                    get: { viewModel.aiPathAnonymization },
+                    set: { newValue in Task { await viewModel.setAIPathAnonymization(newValue) } }
+                ))
+            }
+
+            Section("Local Features") {
+                Toggle("Local Vision Analysis", isOn: Binding(
+                    get: { viewModel.aiLocalVision },
+                    set: { newValue in Task { await viewModel.setAILocalVision(newValue) } }
+                ))
+            }
+
+            Section("Diagnostics") {
+                Button("Preview Data") {
+                    Task {
+                        await viewModel.loadAIPreview()
+                        viewModel.aiPreviewVisible = true
+                    }
+                }
+                .disabled(!viewModel.aiEnabled)
+            }
+        }
+        .padding()
+        .sheet(isPresented: Binding(
+            get: { viewModel.aiPreviewVisible },
+            set: { viewModel.aiPreviewVisible = $0 }
+        )) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("AI Data Preview")
+                    .font(.headline)
+
+                ScrollView {
+                    Text(viewModel.aiPreviewData)
+                        .font(.system(.caption, design: .monospaced))
+                        .textSelection(.enabled)
+                }
+                .frame(maxHeight: 300)
+
+                HStack {
+                    Spacer()
+                    Button("Close") { viewModel.aiPreviewVisible = false }
+                        .keyboardShortcut(.cancelAction)
+                }
+            }
+            .padding()
+            .frame(width: 420)
+        }
     }
 
     // MARK: - About Tab
