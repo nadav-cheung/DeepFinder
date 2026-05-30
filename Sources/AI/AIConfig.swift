@@ -59,4 +59,36 @@ struct AIConfig: Sendable {
     static func modelName(config: [String: String]) -> String {
         config["ai.model"] ?? "off"
     }
+
+    /// Retrieve the API key. Checks Keychain first (secure storage), falls back
+    /// to config dict (legacy/plaintext). Returns empty string if neither has a key.
+    static func getAPIKey(config: [String: String], keychainStore: KeychainStore = KeychainStore()) -> String {
+        if let keychainValue = keychainStore.load(key: "ai.apiKey"), !keychainValue.isEmpty {
+            return keychainValue
+        }
+        return config["ai.apiKey"] ?? ""
+    }
+
+    /// Save the API key to Keychain (secure storage).
+    static func saveAPIKey(_ value: String, keychainStore: KeychainStore = KeychainStore()) throws {
+        try keychainStore.save(key: "ai.apiKey", value: value)
+    }
+
+    /// Generate a JSON sample showing what data would be sent to AI providers.
+    /// Used by `deepfinder config get ai.data_preview` (REQ-3.0-02/15).
+    static func dataPreview() -> String {
+        let sample = FileMetadataSummary(
+            name: "example.pdf",
+            path: "~/Documents/example.pdf",
+            size: 1_048_576,
+            modifiedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            extension: "pdf",
+            localTags: ["document", "report"]
+        )
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        guard let data = try? encoder.encode(sample) else { return "{}" }
+        return String(data: data, encoding: .utf8) ?? "{}"
+    }
 }

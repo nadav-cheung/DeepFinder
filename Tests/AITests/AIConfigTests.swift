@@ -51,3 +51,33 @@ struct AIConfigTests {
         #expect(AIConfig.defaults.count == AIConfigKey.allCases.count)
     }
 }
+
+@Suite("AIConfig Keychain Integration")
+struct AIConfigKeychainTests {
+
+    @Test("getAPIKey returns Keychain value when present")
+    func testGetAPIKeyFromKeychain() throws {
+        let service = "com.nadav.deepfinder.test.\(UUID().uuidString.prefix(8))"
+        let store = KeychainStore(service: service)
+        try store.save(key: "ai.apiKey", value: "sk-test-from-keychain")
+        let key = AIConfig.getAPIKey(config: ["ai.apiKey": "unused"], keychainStore: store)
+        #expect(key == "sk-test-from-keychain")
+        store.delete(key: "ai.apiKey")
+    }
+
+    @Test("getAPIKey falls back to config dict when Keychain empty")
+    func testFallbackToConfig() {
+        let store = KeychainStore(service: "com.nadav.deepfinder.test.nonexistent")
+        let key = AIConfig.getAPIKey(config: ["ai.apiKey": "sk-fallback"], keychainStore: store)
+        #expect(key == "sk-fallback")
+    }
+
+    @Test("dataPreview returns JSON sample of sent data")
+    func testDataPreview() {
+        let preview = AIConfig.dataPreview()
+        #expect(preview.contains("name"))
+        #expect(preview.contains("path"))
+        #expect(preview.contains("size"))
+        #expect(preview.contains("extension"))
+    }
+}
