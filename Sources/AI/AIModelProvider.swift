@@ -11,6 +11,7 @@
 /// - ``OpenAICompatibleProvider`` -- generic provider for OpenAI-compatible chat completions APIs
 /// - ``DeepSeekProvider`` -- DeepSeek API integration (typealias + factory)
 /// - ``QwenProvider`` -- Qwen API integration (typealias + factory)
+/// - ``AnthropicProvider`` -- Claude Messages API integration
 /// - ``LocalVisionProvider`` -- on-device image analysis via Vision framework
 /// - ``LocalSpeechProvider`` -- on-device speech recognition via Speech framework
 /// - ``NLSearchTranslator`` -- natural language to search syntax translation
