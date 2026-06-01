@@ -70,8 +70,8 @@ private enum DaemonCommandRunnerError: Error, CustomStringConvertible {
 /// Executes daemon subcommands (start, stop, restart, status).
 ///
 /// Designed for testability: process spawning, signal sending, socket waiting,
-/// and PID file access are all injected via protocols. Production uses the
-/// default concrete implementations; tests inject mocks.
+/// PID file access, and output are all injected via protocols. Production uses
+/// the default concrete implementations; tests inject mocks.
 struct DaemonCommandRunner: Sendable {
 
     /// Paths and binary location.
@@ -84,6 +84,7 @@ struct DaemonCommandRunner: Sendable {
     let processSignaler: any ProcessSignaler
     let socketWaiter: any SocketWaiter
     let pidReader: any PIDReader
+    let output: any CLIOutputWriter
 
     /// How long to wait for the daemon socket to become available after spawn.
     let startupTimeout: TimeInterval
@@ -104,6 +105,7 @@ struct DaemonCommandRunner: Sendable {
         processSignaler: any ProcessSignaler = SystemProcessSignaler(),
         socketWaiter: any SocketWaiter = SystemSocketWaiter(),
         pidReader: any PIDReader = SystemPIDReader(),
+        output: any CLIOutputWriter = StdoutWriter(),
         startupTimeout: TimeInterval = 5.0,
         shutdownTimeout: TimeInterval = 5.0,
         shutdownPollInterval: TimeInterval = 0.1
@@ -115,6 +117,7 @@ struct DaemonCommandRunner: Sendable {
         self.processSignaler = processSignaler
         self.socketWaiter = socketWaiter
         self.pidReader = pidReader
+        self.output = output
         self.startupTimeout = startupTimeout
         self.shutdownTimeout = shutdownTimeout
         self.shutdownPollInterval = shutdownPollInterval
@@ -148,7 +151,7 @@ struct DaemonCommandRunner: Sendable {
     private func doStart(client: any IPCClientProtocol) async -> Int32 {
         // Check if already running
         if let pid = pidReader.readPID(from: pidPath), processSignaler.isProcessAlive(pid) {
-            print("Daemon already running (PID \(pid))")
+            output.write("Daemon already running (PID \(pid))\n")
             return 0
         }
 
@@ -165,18 +168,18 @@ struct DaemonCommandRunner: Sendable {
         case .success:
             break
         case .failure(let error):
-            print("Error: \(DaemonCommandRunnerError.spawnFailed(error.localizedDescription))")
+            output.writeError("Error: \(DaemonCommandRunnerError.spawnFailed(error.localizedDescription))\n")
             return 1
         }
 
         // Wait for socket
         let ready = socketWaiter.waitForSocket(at: socketPath, timeout: startupTimeout)
         if !ready {
-            print("Error: \(DaemonCommandRunnerError.startupTimedOut)")
+            output.writeError("Error: \(DaemonCommandRunnerError.startupTimedOut)\n")
             return 1
         }
 
-        print("Daemon started")
+        output.write("Daemon started\n")
         return 0
     }
 
@@ -185,7 +188,7 @@ struct DaemonCommandRunner: Sendable {
     /// Stop the daemon by sending SIGTERM and polling until exit or timeout.
     private func doStop() async -> Int32 {
         guard let pid = pidReader.readPID(from: pidPath) else {
-            print("Daemon is not running")
+            output.write("Daemon is not running\n")
             return 1
         }
 
@@ -193,13 +196,13 @@ struct DaemonCommandRunner: Sendable {
             // Stale PID file
             pidReader.removePIDFile(at: pidPath)
             cleanupSocket()
-            print("Daemon is not running (cleaned up stale PID file)")
+            output.write("Daemon is not running (cleaned up stale PID file)\n")
             return 1
         }
 
         // Send SIGTERM
         guard processSignaler.sendSIGTERM(to: pid) else {
-            print("Error: failed to send SIGTERM to PID \(pid)")
+            output.writeError("Error: failed to send SIGTERM to PID \(pid)\n")
             return 1
         }
 
@@ -215,14 +218,14 @@ struct DaemonCommandRunner: Sendable {
         }
 
         if !exited {
-            print("Error: \(DaemonCommandRunnerError.stopTimedOut)")
+            output.writeError("Error: \(DaemonCommandRunnerError.stopTimedOut)\n")
             return 1
         }
 
         // Cleanup
         pidReader.removePIDFile(at: pidPath)
         cleanupSocket()
-        print("Daemon stopped")
+        output.write("Daemon stopped\n")
         return 0
     }
 
@@ -243,12 +246,12 @@ struct DaemonCommandRunner: Sendable {
     /// Print daemon status: PID, uptime, index state, file count, and memory usage.
     private func doStatus(client: any IPCClientProtocol) async -> Int32 {
         guard let pid = pidReader.readPID(from: pidPath) else {
-            print("Daemon is not running")
+            output.write("Daemon is not running\n")
             return 1
         }
 
         guard processSignaler.isProcessAlive(pid) else {
-            print("Daemon is not running (stale PID file)")
+            output.write("Daemon is not running (stale PID file)\n")
             return 1
         }
 
@@ -258,27 +261,27 @@ struct DaemonCommandRunner: Sendable {
             response = try await client.send(.stats)
         } catch {
             // Daemon PID exists but IPC failed
-            print("Daemon running (PID \(pid)) but not reachable via IPC")
-            print("  Error: \(error.localizedDescription)")
+            output.writeError("Daemon running (PID \(pid)) but not reachable via IPC\n")
+            output.writeError("  Error: \(error.localizedDescription)\n")
             return 1
         }
 
         switch response {
         case .stats(let stats):
             let uptime = formatUptime(stats.uptimeSeconds)
-            print("Daemon running (PID \(pid))")
-            print("  Uptime: \(uptime)")
-            print("  Index state: \(stats.indexState)")
-            print("  Files indexed: \(stats.totalFiles)")
-            print("  Memory: \(String(format: "%.1f", stats.memoryUsageMB)) MB")
+            output.write("Daemon running (PID \(pid))\n")
+            output.write("  Uptime: \(uptime)\n")
+            output.write("  Index state: \(stats.indexState)\n")
+            output.write("  Files indexed: \(stats.totalFiles)\n")
+            output.write("  Memory: \(String(format: "%.1f", stats.memoryUsageMB)) MB\n")
             return 0
 
         case .error(let ipcError):
-            print("Daemon running (PID \(pid)) but returned error: \(ipcError)")
+            output.writeError("Daemon running (PID \(pid)) but returned error: \(ipcError)\n")
             return 1
 
         default:
-            print("Daemon running (PID \(pid)) but returned unexpected response")
+            output.writeError("Daemon running (PID \(pid)) but returned unexpected response\n")
             return 1
         }
     }

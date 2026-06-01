@@ -27,31 +27,6 @@ protocol REPLInputSource: Sendable {
     func readline(prompt: String) -> String?
 }
 
-// MARK: - REPLErrorOutput
-
-/// Abstraction over REPL output (both stdout and stderr).
-///
-/// Production writes to real file descriptors.
-/// Tests inject a capturing implementation for assertion.
-protocol REPLErrorOutput: Sendable {
-    func write(_ text: String)
-    func writeError(_ text: String)
-}
-
-// MARK: - StdinOutput
-
-/// Production output: writes to stdout and stderr.
-struct StdinOutput: REPLErrorOutput {
-    func write(_ text: String) {
-        fputs(text, stdout)
-        fflush(stdout)
-    }
-
-    func writeError(_ text: String) {
-        fputs(text, stderr)
-        fflush(stderr)
-    }
-}
 
 // MARK: - StdinInputSource
 
@@ -79,17 +54,17 @@ struct StdinInputSource: REPLInputSource {
 /// Interactive read-eval-print loop for DeepFinder.
 ///
 /// Reads user input via a `REPLInputSource`, dispatches search queries
-/// and REPL commands, and writes output via `REPLErrorOutput`.
+/// and REPL commands, and writes output via `CLIOutputWriter`.
 ///
-/// Designed for testability: inject `MockInputSource` and `REPLTestOutput`
-/// in tests; production uses `StdinInputSource` and `StdinOutput`.
+/// Designed for testability: inject `MockInputSource` and a capturing output
+/// in tests; production uses `StdinInputSource` and `StdoutWriter`.
 actor REPL {
 
     // MARK: - Properties
 
     private let client: any IPCClientProtocol
     private let inputSource: any REPLInputSource
-    private let output: any REPLErrorOutput
+    private let output: any CLIOutputWriter
     private let historyPath: String?
 
     /// Last search results, stored for `:open N` / `:reveal N` / `:explain N`.
@@ -115,7 +90,7 @@ actor REPL {
     init(
         client: any IPCClientProtocol,
         inputSource: any REPLInputSource = StdinInputSource(),
-        output: any REPLErrorOutput = StdinOutput(),
+        output: any CLIOutputWriter = StdoutWriter(),
         historyPath: String? = Product.historyPath
     ) {
         self.client = client

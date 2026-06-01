@@ -479,7 +479,7 @@ final class MockInputSource: REPLInputSource, @unchecked Sendable {
 /// Captures all REPL output for testing.
 /// Uses nonisolated(unsafe) because tests read `collected` after
 /// the REPL actor has finished writing.
-final class REPLTestOutput: REPLErrorOutput, @unchecked Sendable {
+final class REPLTestOutput: CLIOutputWriter, @unchecked Sendable {
     nonisolated(unsafe) private var buffer: [String] = []
 
     func write(_ text: String) {
