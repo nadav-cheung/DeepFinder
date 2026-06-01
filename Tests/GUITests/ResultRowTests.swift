@@ -52,6 +52,16 @@ struct ResultRowTests {
         #expect(attributed.characters.count == filename.count)
     }
 
+    @Test("Match highlighting with no match returns plain attributed string")
+    func matchHighlightingNoMatch() {
+        let filename = "report.pdf"
+        let attributed = MatchHighlighter.highlight(filename: filename, query: "xyz")
+        let hasEmphasis = attributed.runs.contains { run in
+            run.inlinePresentationIntent?.contains(.stronglyEmphasized) == true
+        }
+        #expect(!hasEmphasis)
+    }
+
     // MARK: - Path shortening
 
     @Test("Path shortening replaces home directory with ~")
@@ -143,9 +153,9 @@ struct ResultRowTests {
 
     @Test("Match type badge label")
     func matchTypeBadgeLabel() {
-        #expect(MatchType.exact.badgeLabel == "精确")
-        #expect(MatchType.prefix.badgeLabel == "前缀")
-        #expect(MatchType.substring.badgeLabel == "子串")
-        #expect(MatchType.pinyin.badgeLabel == "拼音")
+        #expect(MatchType.exact.badgeLabel == "Exact")
+        #expect(MatchType.prefix.badgeLabel == "Prefix")
+        #expect(MatchType.substring.badgeLabel == "Substring")
+        #expect(MatchType.pinyin.badgeLabel == "Pinyin")
     }
 }

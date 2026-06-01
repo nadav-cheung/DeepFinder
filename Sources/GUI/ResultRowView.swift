@@ -151,8 +151,10 @@ enum MatchHighlighter {
             return attributed
         }
 
-        let lower = AttributedString.CharacterView.Index(range.lowerBound, within: attributed)!
-        let upper = AttributedString.CharacterView.Index(range.upperBound, within: attributed)!
+        guard let lower = AttributedString.CharacterView.Index(range.lowerBound, within: attributed),
+              let upper = AttributedString.CharacterView.Index(range.upperBound, within: attributed) else {
+            return attributed
+        }
         attributed[lower..<upper].foregroundColor = .accentColor
         attributed[lower..<upper].inlinePresentationIntent = .stronglyEmphasized
 
@@ -208,13 +210,13 @@ enum FileSizeFormatter {
 
 extension MatchType {
 
-    /// Localized badge label for display in ResultRowView.
+    /// Badge label for display in ResultRowView.
     var badgeLabel: String {
         switch self {
-        case .exact: "精确"
-        case .prefix: "前缀"
-        case .pinyin: "拼音"
-        case .substring: "子串"
+        case .exact: "Exact"
+        case .prefix: "Prefix"
+        case .pinyin: "Pinyin"
+        case .substring: "Substring"
         }
     }
 }

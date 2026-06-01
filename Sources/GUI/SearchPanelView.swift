@@ -198,6 +198,20 @@ struct SearchPanelView: View {
 
 /// A single row in the search results list.
 private struct ResultRow: View {
+
+    private nonisolated(unsafe) static let byteFormatter: ByteCountFormatter = {
+        let f = ByteCountFormatter()
+        f.countStyle = .file
+        return f
+    }()
+
+    private nonisolated(unsafe) static let dateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .short
+        f.timeStyle = .none
+        return f
+    }()
+
     let result: SearchResult
     let isSelected: Bool
 
@@ -247,16 +261,11 @@ private struct ResultRow: View {
     }
 
     private func formatSize(_ bytes: Int64) -> String {
-        let formatter = ByteCountFormatter()
-        formatter.countStyle = .file
-        return formatter.string(fromByteCount: bytes)
+        Self.byteFormatter.string(fromByteCount: bytes)
     }
 
     private func formatDate(_ date: Date) -> String {
-        let formatter = DateFormatter()
-        formatter.dateStyle = .short
-        formatter.timeStyle = .none
-        return formatter.string(from: date)
+        Self.dateFormatter.string(from: date)
     }
 }
 
