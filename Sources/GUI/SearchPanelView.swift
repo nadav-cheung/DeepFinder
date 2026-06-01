@@ -43,6 +43,7 @@ import AppKit
 struct SearchPanelView: View {
 
     @ObservedObject var viewModel: SearchViewModel
+    @State private var resultsListState = ResultsListState()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -85,25 +86,21 @@ struct SearchPanelView: View {
             } else if viewModel.hasSearched && viewModel.results.isEmpty {
                 errorStateView
             } else if !viewModel.results.isEmpty {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(Array(viewModel.results.enumerated()), id: \.element.record.id) { index, result in
-                            ResultRow(result: result, isSelected: viewModel.selectedIndex == index)
-                                .onTapGesture {
-                                    viewModel.selectedIndex = index
-                                }
-                                .onTapGesture(count: 2) {
-                                    viewModel.selectedIndex = index
-                                    _ = viewModel.openSelected()
-                                }
-                        }
-                    }
-                }
-                .frame(maxHeight: 400)
+                ResultsListView(state: resultsListState)
+                    .frame(maxHeight: 400)
             }
         }
         .frame(minWidth: 480, maxWidth: 800)
         .glassEffect(.regular, in: .rect(cornerRadius: 24))
+        .onChange(of: viewModel.results) { _, newResults in
+            resultsListState.setResults(newResults)
+        }
+        .onChange(of: viewModel.searchText) { _, newQuery in
+            resultsListState.currentQuery = newQuery
+        }
+        .onChange(of: resultsListState.selectedIndex) { _, newIndex in
+            viewModel.selectedIndex = newIndex
+        }
     }
 
     // MARK: - Error State View
@@ -191,81 +188,6 @@ struct SearchPanelView: View {
         }
         .padding(20)
         .frame(maxWidth: .infinity)
-    }
-}
-
-// MARK: - ResultRow
-
-/// A single row in the search results list.
-private struct ResultRow: View {
-
-    private nonisolated(unsafe) static let byteFormatter: ByteCountFormatter = {
-        let f = ByteCountFormatter()
-        f.countStyle = .file
-        return f
-    }()
-
-    private nonisolated(unsafe) static let dateFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.dateStyle = .short
-        f.timeStyle = .none
-        return f
-    }()
-
-    let result: SearchResult
-    let isSelected: Bool
-
-    var body: some View {
-        HStack(spacing: 10) {
-            // File icon
-            Image(systemName: result.record.isDirectory ? "folder" : "doc")
-                .foregroundStyle(.secondary)
-                .font(.system(size: 16))
-                .frame(width: 20)
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(result.record.originalName)
-                    .font(.system(size: 13, weight: .medium))
-                    .lineLimit(1)
-
-                Text(shortenedPath(result.record.path))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-
-            Spacer()
-
-            VStack(alignment: .trailing, spacing: 2) {
-                Text(formatSize(result.record.size))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-
-                Text(formatDate(result.record.modifiedAt))
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
-        .contentShape(Rectangle())
-    }
-
-    private func shortenedPath(_ path: String) -> String {
-        let home = FileManager.default.homeDirectoryForCurrentUser.path
-        if path.hasPrefix(home) {
-            return "~" + path.dropFirst(home.count)
-        }
-        return path
-    }
-
-    private func formatSize(_ bytes: Int64) -> String {
-        Self.byteFormatter.string(fromByteCount: bytes)
-    }
-
-    private func formatDate(_ date: Date) -> String {
-        Self.dateFormatter.string(from: date)
     }
 }
 
