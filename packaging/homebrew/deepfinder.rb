@@ -14,12 +14,13 @@ class Deepfinder < Formula
   desc "Instant file search for macOS — like Everything but native"
   homepage "https://github.com/nadav-cheung/DeepFinder"
   url "https://github.com/nadav-cheung/DeepFinder/archive/refs/tags/v3.0.0.tar.gz"
+  # TODO: Replace with actual tarball SHA256 before release
   sha256 "REPLACE_WITH_ACTUAL_TARBALL_SHA256"
   license "MIT"
   head "https://github.com/nadav-cheung/DeepFinder.git", branch: "main"
 
   depends_on :macos => :tahoe  # macOS 26+
-  depends_on :xcode => ["16.0", :build]
+  depends_on :xcode => ["26.0", :build]
 
   # Both executables are built from the same Swift package.
   def install

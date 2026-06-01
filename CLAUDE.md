@@ -134,7 +134,7 @@ Sources/
   Daemon/                     # DaemonMain, IPCServer, IPCProtocol, IPCClient, ConfigStore, LaunchAgent
   CLI/                        # CLIMain, ArgParser, SingleShot, REPL, TerminalFormatter, ConfigCommands, DaemonCommands, InstallCommands
   GUI/                        # SearchPanelView, SearchBarView, ResultsListView, SearchViewModel, AppDelegate, GlobalHotkey, IntelligenceGlow, GlassEffectContainer, OnboardingView, QuickLookPreview, SettingsView, StatusBarController, SpeechOverlayView
-  AI/                         # NLSearchTranslator, AIConfig, AIModelProvider, DeepSeekProvider, QwenProvider, SemanticGrouper, VisionTaggingCoordinator, LocalVisionProvider, LocalSpeechProvider, SpeechAuthorization, SearchAdvisor, ResultSummarizer, ImageSimilaritySearch, CrossLanguageSearch
+  AI/                         # AIConfig, AIContext, AIModelProvider, AnthropicProvider, ClipboardSearch, CloudEmbeddingProvider, CrossLanguageSearch, DeepSeekProvider, EmbeddingProvider, FileMetadataSummary, GeminiProvider, HTTPClient, ImageSimilaritySearch, KeychainStore, LocalSpeechProvider, LocalVisionProvider, MatchExplainer, NLEmbeddingProvider, NLOperations, NLSearchTranslator, PromptLoader, Prompts/, ProviderRegistry, QwenProvider, ResultSummarizer, SearchAdvisor, SemanticGrouper, SpeechAuthorization, VectorStore, VisionTaggingCoordinator
   Media/                      # ImageMetadataExtractor, AudioMetadataExtractor, VideoMetadataExtractor, PDFMetadataExtractor, MediaMetadataIndex
   Services/                   # HTTPSearchService, URLSchemeHandler, SearchIntent, SearchScriptCommand
 Tests/

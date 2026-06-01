@@ -7,16 +7,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
-
-- REQ-3.1-01: File content chunking (256 tokens, 64-token overlap) for txt, md, pdf, docx, rtf, and code files with source traceability.
-- REQ-3.1-02: Local embedding engine using paraphrase-multilingual-MiniLM-L12-v2 CoreML model (~470MB, 384-dim vectors, M4 GPU accelerated, 50+ languages).
-- REQ-3.1-03: Vector index storage with cosine similarity Top-K retrieval (<50ms query latency, supports 500K+ chunks).
-- REQ-3.1-04: Incremental embedding updates driven by FSEvents (embed new files, remove deleted file chunks).
-- REQ-3.1-05: Semantic retrieval that merges with filename search results, annotated by match type.
-- REQ-3.1-06: Local small model generation via Llama 3.2 1B/3B (MLX framework, fully offline, with graceful degradation).
-- REQ-3.1-07: RAG Q&A mode with automatic question detection, streaming response output, and source file citations.
-
 ## [3.0.0] — 2026-05-30
 
 ### Added
