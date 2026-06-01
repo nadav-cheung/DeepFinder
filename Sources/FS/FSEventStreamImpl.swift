@@ -82,7 +82,8 @@ final class FSEventStreamImpl: FileSystemEventStream, @unchecked Sendable {
                     events.reserveCapacity(Int(numEvents))
 
                     for i in 0..<Int(numEvents) {
-                        let path = (CFArrayGetValueAtIndex(pathArray, i) as! CFString) as String
+                        let pathValue = CFArrayGetValueAtIndex(pathArray, i)
+                        let path = unsafeBitCast(pathValue, to: CFString.self) as String
                         let flags = eventFlags[i]
                         events.append((path: path, flags: flags))
                     }

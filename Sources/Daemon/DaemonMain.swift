@@ -297,7 +297,10 @@ public actor DaemonMain {
             throw DaemonError.pidWriteFailed(path)
         }
 
-        let written = data.withUnsafeBytes { write(fd, $0.baseAddress!, $0.count) }
+        let written = data.withUnsafeBytes { ptr in
+            guard let base = ptr.baseAddress else { return 0 }
+            return write(fd, base, data.count)
+        }
         guard written == data.count else {
             cleanup()
             throw DaemonError.pidWriteFailed(path)

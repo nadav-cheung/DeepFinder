@@ -97,10 +97,12 @@ final class ResultsListState {
             return
         }
 
+        guard let current = selectedIndex else { return }
+
         if down {
-            selectedIndex = (selectedIndex! + 1) % count
+            selectedIndex = (current + 1) % count
         } else {
-            selectedIndex = (selectedIndex! - 1 + count) % count
+            selectedIndex = (current - 1 + count) % count
         }
     }
 }

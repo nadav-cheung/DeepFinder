@@ -21,8 +21,20 @@ struct SearchFilesIntent: AppIntent {
     var limit: Int?
 
     func perform() async throws -> some IntentResult & ReturnsValue<[String]> {
-        // Placeholder: returns empty results.
-        // Actual daemon IPC connection will be added in a later step.
-        return .result(value: [])
+        let client = IPCClient(socketPath: Product.socketPath)
+        let request: IPCRequest = .query(query, limit: limit ?? 20)
+        let response: IPCResponse
+        do {
+            response = try await client.send(request)
+        } catch {
+            return .result(value: [])
+        }
+        switch response {
+        case .results(let results, _):
+            let paths = results.map(\.record.path)
+            return .result(value: paths)
+        default:
+            return .result(value: [])
+        }
     }
 }

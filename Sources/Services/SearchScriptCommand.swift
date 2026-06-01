@@ -1,5 +1,30 @@
 import Foundation
 
+// MARK: - LockedBox
+
+/// A simple mutex-protected mutable box for bridging async results to sync contexts.
+/// Used by ``DeepFinderSearchCommand`` to safely pass IPC results through a semaphore.
+final class LockedBox<T>: @unchecked Sendable {
+    private var _value: T
+    private let lock = NSLock()
+
+    init(_ value: T) {
+        _value = value
+    }
+
+    var value: T {
+        get { lock.withLock { _value } }
+        set { lock.withLock { _value = newValue } }
+    }
+}
+
+// MARK: - SearchScriptError
+
+/// Errors thrown during AppleScript search command execution.
+enum SearchScriptError: Error {
+    case ipcTimeout
+}
+
 // MARK: - SearchScriptResult
 
 /// The result of an AppleScript `search` command.
@@ -53,9 +78,35 @@ class DeepFinderSearchCommand: NSScriptCommand {
     /// - Parameter query: The search query string, or `nil` if none was provided.
     /// - Returns: A ``SearchScriptResult`` with matching file paths.
     static func performSearch(query: String?) -> SearchScriptResult {
-        // Placeholder: returns empty results.
-        // Actual daemon IPC connection will be added in a later step.
-        return SearchScriptResult(paths: [])
+        guard let query, !query.isEmpty else {
+            return SearchScriptResult(paths: [])
+        }
+
+        let client = IPCClient(socketPath: Product.socketPath)
+        let request: IPCRequest = .query(query, limit: 20)
+
+        let box = LockedBox<SearchScriptResult>(SearchScriptResult(paths: []))
+        let semaphore = DispatchSemaphore(value: 0)
+
+        Task {
+            do {
+                let response = try await client.send(request)
+                switch response {
+                case .results(let results, _):
+                    box.value = SearchScriptResult(paths: results.map(\.record.path))
+                default:
+                    break
+                }
+            } catch {
+                // Daemon unavailable — return empty results
+            }
+            semaphore.signal()
+        }
+
+        guard semaphore.wait(timeout: .now() + 5) == .success else {
+            return SearchScriptResult(paths: [])
+        }
+        return box.value
     }
 
     /// NSScriptCommand entry point. Called by the Apple Events framework.

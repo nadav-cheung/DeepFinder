@@ -36,6 +36,18 @@ import Network
 /// - `GET /search?q=...&limit=N&offset=N` -> search results via `searchHandler`
 /// - `GET /stats` -> index stats via `statsHandler`
 /// - All other routes -> 404
+/// Errors thrown by ``HTTPSearchService``.
+enum HTTPError: Error, LocalizedError {
+    case invalidPort(UInt16)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidPort(let port):
+            return "Invalid port number: \(port)"
+        }
+    }
+}
+
 actor HTTPSearchService {
 
     // MARK: - Types
@@ -90,7 +102,9 @@ actor HTTPSearchService {
         let parameters = NWParameters()
         parameters.defaultProtocolStack.transportProtocol = NWProtocolTCP.Options()
 
-        let nwPort = NWEndpoint.Port(rawValue: port)!
+        guard let nwPort = NWEndpoint.Port(rawValue: port) else {
+            throw HTTPError.invalidPort(port)
+        }
         let listener = try NWListener(using: parameters, on: nwPort)
 
         let readyContinuation = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .bufferingNewest(1))
@@ -352,7 +366,7 @@ enum HTTPRouter {
             "Connection: close",
         ]
         let headerString = headerLines.joined(separator: "\r\n") + "\r\n\r\n"
-        let responseData = headerString.data(using: .utf8)! + bodyData
+        let responseData = (headerString.data(using: .utf8) ?? Data()) + bodyData
 
         connection.send(content: responseData, completion: .contentProcessed { _ in
             connection.cancel()

@@ -53,7 +53,8 @@ enum IPCFramingIO {
         var offset = 0
         while offset < data.count {
             let written = data.withUnsafeBytes { ptr in
-                write(fd, ptr.baseAddress!.advanced(by: offset), data.count - offset)
+                guard let base = ptr.baseAddress else { return 0 }
+                return write(fd, base.advanced(by: offset), data.count - offset)
             }
             if written < 0 {
                 throw IPCFramingIOError.writeFailed(String(cString: strerror(errno)))
