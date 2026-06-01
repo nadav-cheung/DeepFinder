@@ -28,6 +28,26 @@ struct VectorStoreTests {
         #expect(await store.count() == 0)
     }
 
+    @Test("delete of non-existent ID is no-op")
+    func deleteNonExistentIdIsNoOp() async throws {
+        let store = MockVectorStore()
+        try await store.insert(id: 1, vector: [1.0, 0.0])
+        #expect(await store.count() == 1)
+        try await store.delete(id: 999)
+        #expect(await store.count() == 1)
+    }
+
+    @Test("insert replaces existing vector for same ID")
+    func insertReplacesExisting() async throws {
+        let store = MockVectorStore()
+        try await store.insert(id: 1, vector: [1.0, 0.0, 0.0])
+        try await store.insert(id: 1, vector: [0.0, 1.0, 0.0])
+        #expect(await store.count() == 1)
+        let results = try await store.search(query: [0.0, 1.0, 0.0], topK: 1)
+        #expect(results[0].id == 1)
+        #expect(results[0].score > 0.99)
+    }
+
     @Test("empty store returns empty search results")
     func emptyStoreReturnsEmptyResults() async throws {
         let store = MockVectorStore()
