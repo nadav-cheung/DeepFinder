@@ -406,6 +406,85 @@ struct FSEventWatcherTests {
         #expect(delayLarge <= 72.0)
         #expect(delayLarge >= 48.0)
     }
+
+    // MARK: - Polling Scan
+
+    @Test("polling scan detects new, modified, and deleted files")
+    func testPollingScanDetectsChanges() async throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("FSEventWatcherPolling-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        // Create initial files
+        let fileA = tempDir.appendingPathComponent("alpha.txt")
+        let fileB = tempDir.appendingPathComponent("bravo.txt")
+        try Data("original-A".utf8).write(to: fileA)
+        try Data("original-B".utf8).write(to: fileB)
+
+        let index = InMemoryIndex()
+        let persistence = try IndexPersistence(dbPath: ":memory:")
+        let stream = AlwaysFailingMockEventStream()
+        let watcher = FSEventWatcher(
+            eventStream: stream,
+            index: index,
+            persistence: persistence
+        )
+
+        // Pre-populate the index with the initial files.
+        // This simulates the index state before FSEvents failed.
+        await index.insert(
+            name: "alpha.txt",
+            path: fileA.path,
+            parentPath: tempDir.path,
+            isDirectory: false,
+            size: 10,
+            extension: "txt"
+        )
+        await index.insert(
+            name: "bravo.txt",
+            path: fileB.path,
+            parentPath: tempDir.path,
+            isDirectory: false,
+            size: 10,
+            extension: "txt"
+        )
+
+        // Verify initial state
+        let beforeAlpha = await index.search(query: "alpha")
+        let beforeBravo = await index.search(query: "bravo")
+        #expect(beforeAlpha.count == 1)
+        #expect(beforeBravo.count == 1)
+
+        // Mutate filesystem:
+        // 1. Modify fileA
+        // 2. Delete fileB
+        // 3. Create fileC (new file)
+        try Data("modified-A-with-longer-content".utf8).write(to: fileA)
+        try FileManager.default.removeItem(at: fileB)
+        let fileC = tempDir.appendingPathComponent("charlie.txt")
+        try Data("new-C".utf8).write(to: fileC)
+
+        // Start watching with the always-failing stream so watchedPaths gets set.
+        try? await watcher.startWatching(paths: [tempDir.path], sinceEventID: 0)
+
+        // Directly invoke the polling scan (would normally run on the 30s timer).
+        await watcher.performPollingScan()
+
+        // Verify: fileA should be updated (remove + re-insert with new size)
+        let afterAlpha = await index.search(query: "alpha")
+        #expect(afterAlpha.count == 1)
+        #expect(afterAlpha[0].size == 30) // "modified-A-with-longer-content".utf8.count
+
+        // Verify: fileB should be removed from index
+        let afterBravo = await index.search(query: "bravo")
+        #expect(afterBravo.isEmpty)
+
+        // Verify: fileC should be added to index
+        let afterCharlie = await index.search(query: "charlie")
+        #expect(afterCharlie.count == 1)
+        #expect(afterCharlie[0].name == "charlie.txt")
+    }
 }
 
 // MARK: - Test Doubles

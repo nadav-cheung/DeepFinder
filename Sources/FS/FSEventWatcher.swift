@@ -430,10 +430,79 @@ actor FSEventWatcher {
 
     /// Perform a single polling scan cycle.
     ///
-    /// Placeholder implementation. A full implementation would scan watched paths
-    /// for mtime changes, diff against the in-memory index, and apply updates.
+    /// Scans all watched paths on disk, diffs against the in-memory index,
+    /// and applies updates for created, modified, and deleted files.
     /// This is only invoked when FSEvents has failed repeatedly.
-    private func performPollingScan() async {
-        // Placeholder: full implementation would scan watched paths for mtime changes.
+    func performPollingScan() async {
+        guard !watchedPaths.isEmpty else { return }
+
+        // Snapshot current index state: path -> (id, modifiedAt)
+        let indexedRecords = await index.allRecords()
+        var indexedPaths: [String: (id: UInt32, modifiedAt: Date)] = [:]
+        indexedPaths.reserveCapacity(indexedRecords.count)
+        for record in indexedRecords {
+            indexedPaths[record.path] = (id: record.id, modifiedAt: record.modifiedAt)
+        }
+
+        var pathsSeenOnDisk = Set<String>()
+        pathsSeenOnDisk.reserveCapacity(indexedRecords.count)
+
+        let fm = FileManager.default
+
+        for rootPath in watchedPaths {
+            guard let enumerator = fm.enumerator(
+                at: URL(fileURLWithPath: rootPath),
+                includingPropertiesForKeys: [
+                    .isRegularFileKey,
+                    .isDirectoryKey,
+                    .isSymbolicLinkKey,
+                    .fileSizeKey,
+                    .creationDateKey,
+                    .contentModificationDateKey,
+                ],
+                options: [.skipsPackageDescendants],
+                errorHandler: { _, _ in true }
+            ) else { continue }
+
+            while let item = enumerator.nextObject() {
+                guard let url = item as? URL else { continue }
+                let path = url.path
+                pathsSeenOnDisk.insert(path)
+
+                guard let resourceValues = try? url.resourceValues(forKeys: [
+                    .isRegularFileKey,
+                    .isDirectoryKey,
+                    .isSymbolicLinkKey,
+                    .fileSizeKey,
+                    .creationDateKey,
+                    .contentModificationDateKey,
+                ]) else { continue }
+
+                // Skip symlinks
+                if resourceValues.isSymbolicLink == true { continue }
+
+                let isDirectory = resourceValues.isDirectory ?? false
+                let isRegularFile = resourceValues.isRegularFile ?? false
+                guard isRegularFile || isDirectory else { continue }
+
+                if let existing = indexedPaths[path] {
+                    // File exists in index. Check if modified.
+                    let diskModifiedAt = resourceValues.contentModificationDate ?? Date()
+                    if diskModifiedAt != existing.modifiedAt {
+                        await handleFileModified(at: path)
+                    }
+                } else {
+                    // New file on disk not in index.
+                    await handleFileCreated(at: path)
+                }
+            }
+        }
+
+        // Delete records for paths that no longer exist on disk.
+        for record in indexedRecords {
+            if !pathsSeenOnDisk.contains(record.path) {
+                await handleFileDeleted(at: record.path)
+            }
+        }
     }
 }
