@@ -63,7 +63,7 @@ public struct CLIOutput: Sendable {
 /// Top-level entry point for the DeepFinder CLI.
 ///
 /// Parses arguments, handles meta-flags (--help, --version),
-/// dispatches to REPL (v0.6) or single-shot query mode,
+/// dispatches to subcommand runners, REPL, or single-shot query mode,
 /// and returns the appropriate exit code along with collected output.
 ///
 /// This struct performs no I/O — it returns all output as strings.
@@ -76,7 +76,30 @@ public struct CLIMain {
     public static func run(
         args: [String]
     ) async -> (output: CLIOutput, exitCode: CLIExitCode) {
-        await run(args: args, clientProvider: nil)
+        let result = await run(args: args, clientProvider: nil)
+
+        // REPL mode: when stdin is a terminal, launch the interactive REPL.
+        // The REPL writes directly to stdout/stderr (not to CLIOutput).
+        // When stdin is not a tty (test harness, pipe), the REPL hint
+        // message is returned via CLIOutput for test compatibility.
+        if result.exitCode == .success && result.output._replHint {
+            if isatty(STDIN_FILENO) != 0 {
+                do {
+                    let client = IPCClient(socketPath: Product.socketPath)
+                    try await client.ensureDaemonRunning()
+                    let repl = REPL(client: client)
+                    await repl.run()
+                    return (CLIOutput(), .success)
+                } catch {
+                    return (
+                        CLIOutput(stderr: "Error: could not start daemon — \(error.localizedDescription)\n"),
+                        .daemonError
+                    )
+                }
+            }
+        }
+
+        return result
     }
 
     /// Run the CLI with the given argument list and optional IPC client injection.
@@ -116,16 +139,48 @@ public struct CLIMain {
             return await ServeMode.run(options: options, clientProvider: clientProvider)
         }
 
-        // 5. Handle no query (v0.6 REPL placeholder)
-        guard let query = options.query else {
-            let msg = """
-            Interactive REPL mode is coming in v0.6.
-            For now, use: \(Product.command) "your query"
-            """
-            return (CLIOutput(stdout: msg), .success)
+        // 5. Handle subcommand dispatch
+        // ArgParser assigns first positional to query, second to subcommand.
+        // E.g. "daemon start" → query="daemon", subcommand="start"
+        //      "config set key val" → query="config", subcommand="set"
+        //      "install" → query="install", subcommand=nil
+        if let query = options.query {
+            let positionalArgs = Self.extractPositionalArgs(from: args)
+
+            switch query {
+            case "daemon":
+                return await handleDaemonSubcommand(
+                    action: options.subcommand,
+                    clientProvider: clientProvider
+                )
+
+            case "config":
+                return await handleConfigSubcommand(
+                    action: options.subcommand,
+                    extraArgs: Array(positionalArgs.dropFirst(2)),
+                    clientProvider: clientProvider
+                )
+
+            case "install":
+                return handleInstallSubcommand()
+
+            case "uninstall":
+                return handleUninstallSubcommand()
+
+            default:
+                break // Not a subcommand — treat as search query
+            }
         }
 
-        // 6. Create IPC client
+        // 6. Handle no query → REPL mode
+        guard let query = options.query else {
+            return (
+                CLIOutput(stdout: "\(Product.name) \(Product.version) — interactive REPL\n"),
+                .success
+            )
+        }
+
+        // 7. Create IPC client
         let client: any IPCClientProtocol
         if let provider = clientProvider {
             client = provider
@@ -145,7 +200,7 @@ public struct CLIMain {
             client = ipcClient
         }
 
-        // 7. Execute single-shot query
+        // 8. Execute single-shot query
         let (resultOutput, exitCode) = await SingleShot.execute(
             query: query,
             options: options,
@@ -153,5 +208,196 @@ public struct CLIMain {
         )
 
         return (resultOutput, exitCode)
+    }
+
+    // MARK: - Subcommand Handlers
+
+    /// Handle `daemon start|stop|restart|status` subcommand.
+    private static func handleDaemonSubcommand(
+        action: String?,
+        clientProvider: (any IPCClientProtocol)?
+    ) async -> (CLIOutput, CLIExitCode) {
+        guard let action else {
+            return (
+                CLIOutput(stderr: "Usage: \(Product.command) daemon start|stop|restart|status\n"),
+                .queryError
+            )
+        }
+
+        guard let subcommand = DaemonSubcommand(rawValue: action) else {
+            return (
+                CLIOutput(stderr: "Unknown daemon action: \(action). Use start, stop, restart, or status.\n"),
+                .queryError
+            )
+        }
+
+        let client: any IPCClientProtocol
+        if let provider = clientProvider {
+            client = provider
+        } else {
+            let ipcClient = IPCClient(socketPath: Product.socketPath)
+            do {
+                try await ipcClient.ensureDaemonRunning()
+            } catch {
+                // For daemon start/restart, the daemon may not be running yet — that's OK.
+                // For stop/status, we need it running but the runner handles the error.
+                if subcommand != .start && subcommand != .restart {
+                    return (
+                        CLIOutput(stderr: "Error: could not reach daemon — \(error.localizedDescription)\n"),
+                        .daemonError
+                    )
+                }
+            }
+            client = ipcClient
+        }
+
+        let runner = DaemonCommandRunner()
+        let exitCode = await runner.run(subcommand, client: client)
+        return (CLIOutput(), CLIExitCode(rawValue: exitCode) ?? .queryError)
+    }
+
+    /// Handle `config get|set|list|reset` subcommand.
+    private static func handleConfigSubcommand(
+        action: String?,
+        extraArgs: [String],
+        clientProvider: (any IPCClientProtocol)?
+    ) async -> (CLIOutput, CLIExitCode) {
+        guard let action else {
+            return (
+                CLIOutput(stderr: "Usage: \(Product.command) config get|set|list|reset\n"),
+                .queryError
+            )
+        }
+
+        let client: any IPCClientProtocol
+        if let provider = clientProvider {
+            client = provider
+        } else {
+            let ipcClient = IPCClient(socketPath: Product.socketPath)
+            do {
+                try await ipcClient.ensureDaemonRunning()
+            } catch {
+                return (
+                    CLIOutput(stderr: "Error: could not start daemon — \(error.localizedDescription)\n"),
+                    .daemonError
+                )
+            }
+            client = ipcClient
+        }
+
+        // ConfigCommandRunner writes to a CLIOutputWriter.
+        // Capture output into CLIOutput for return.
+        let capturingOutput = CapturingOutputWriter()
+
+        switch action {
+        case "get":
+            guard let key = extraArgs.first else {
+                return (CLIOutput(stderr: "Usage: \(Product.command) config get <key>\n"), .queryError)
+            }
+            let code = await ConfigCommandRunner.get(key: key, client: client, output: capturingOutput)
+            return (capturingOutput.toCLIOutput(), CLIExitCode(rawValue: code) ?? .queryError)
+
+        case "set":
+            guard extraArgs.count >= 2 else {
+                return (CLIOutput(stderr: "Usage: \(Product.command) config set <key> <value>\n"), .queryError)
+            }
+            let code = await ConfigCommandRunner.set(
+                key: extraArgs[0], value: extraArgs[1],
+                client: client, output: capturingOutput
+            )
+            return (capturingOutput.toCLIOutput(), CLIExitCode(rawValue: code) ?? .queryError)
+
+        case "list":
+            let code = await ConfigCommandRunner.list(client: client, output: capturingOutput)
+            return (capturingOutput.toCLIOutput(), CLIExitCode(rawValue: code) ?? .queryError)
+
+        case "reset":
+            let code = await ConfigCommandRunner.reset(client: client, output: capturingOutput)
+            return (capturingOutput.toCLIOutput(), CLIExitCode(rawValue: code) ?? .queryError)
+
+        default:
+            return (
+                CLIOutput(stderr: "Unknown config action: \(action). Use get, set, list, or reset.\n"),
+                .queryError
+            )
+        }
+    }
+
+    /// Handle `install` subcommand.
+    private static func handleInstallSubcommand() -> (CLIOutput, CLIExitCode) {
+        let capturingOutput = CapturingOutputWriter()
+        do {
+            let code = try InstallCommandRunner.install(output: capturingOutput)
+            return (capturingOutput.toCLIOutput(), CLIExitCode(rawValue: code) ?? .queryError)
+        } catch {
+            return (CLIOutput(stderr: "Error: \(error.localizedDescription)\n"), .queryError)
+        }
+    }
+
+    /// Handle `uninstall` subcommand.
+    private static func handleUninstallSubcommand() -> (CLIOutput, CLIExitCode) {
+        let capturingOutput = CapturingOutputWriter()
+        do {
+            let code = try InstallCommandRunner.uninstall(output: capturingOutput)
+            return (capturingOutput.toCLIOutput(), CLIExitCode(rawValue: code) ?? .queryError)
+        } catch {
+            return (CLIOutput(stderr: "Error: \(error.localizedDescription)\n"), .queryError)
+        }
+    }
+
+    // MARK: - Helpers
+
+    /// Extract positional arguments (non-flag) from the raw args list.
+    /// Skips values consumed by flags (e.g. the "5" in "--limit 5").
+    private static func extractPositionalArgs(from args: [String]) -> [String] {
+        var positionals: [String] = []
+        var i = 0
+        while i < args.count {
+            let arg = args[i]
+            if arg.hasPrefix("--") {
+                // Skip the flag and its value (if it takes one)
+                switch arg {
+                case "--sort", "--limit", "--offset", "--port":
+                    i += 2 // skip flag + value
+                default:
+                    i += 1 // boolean flag
+                }
+            } else {
+                positionals.append(arg)
+                i += 1
+            }
+        }
+        return positionals
+    }
+}
+
+// MARK: - CapturingOutputWriter
+
+/// Captures CLI output into buffers for returning as CLIOutput.
+/// Used by subcommand handlers that write to CLIOutputWriter.
+private final class CapturingOutputWriter: CLIOutputWriter, @unchecked Sendable {
+    private var stdout = ""
+    private var stderr = ""
+
+    func write(_ text: String) {
+        stdout += text
+    }
+
+    func writeError(_ text: String) {
+        stderr += text
+    }
+
+    func toCLIOutput() -> CLIOutput {
+        CLIOutput(stdout: stdout, stderr: stderr)
+    }
+}
+
+// MARK: - CLIOutput REPL hint
+
+extension CLIOutput {
+    /// Indicates this output is a REPL hint (not real output).
+    /// The public `run(args:)` uses this to decide whether to launch REPL.
+    var _replHint: Bool {
+        stdout.contains("interactive REPL")
     }
 }
