@@ -37,8 +37,10 @@ struct FullSubstringMap {
 
         let lowered = normalized.lowercased()
 
-        // Track whether this is a new entry to avoid double-counting
-        let isNew = index[lowered, default: []].insert(id).inserted
+        // Early-return if this (name, id) pair is already indexed — avoids O(n^2) re-work
+        if index[lowered]?.contains(id) == true {
+            return
+        }
 
         for startIdx in 0..<lowered.count {
             let start = lowered.index(lowered.startIndex, offsetBy: startIdx)
@@ -48,9 +50,7 @@ struct FullSubstringMap {
                 index[substring, default: []].insert(id)
             }
         }
-        if isNew {
-            _count += 1
-        }
+        _count += 1
     }
 
     /// Look up all FileRecord IDs whose filename contains `substring`.

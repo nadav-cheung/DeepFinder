@@ -79,7 +79,6 @@ actor REPLHistory {
     /// Sets file permissions to 0600 (owner read/write only).
     func save() throws {
         let content = entries.joined(separator: "\n")
-        let tmpPath = filePath + ".tmp"
 
         // Ensure parent directory exists
         let parentDir = (filePath as NSString).deletingLastPathComponent
@@ -88,20 +87,14 @@ actor REPLHistory {
             withIntermediateDirectories: true
         )
 
-        // Write to temp file
+        // Write atomically — .atomic handles temp file + rename internally
         guard let data = content.data(using: .utf8) else { return }
-        try data.write(to: URL(fileURLWithPath: tmpPath), options: .atomic)
+        try data.write(to: URL(fileURLWithPath: filePath), options: .atomic)
 
         // Set permissions to owner-only
         try FileManager.default.setAttributes(
             [.posixPermissions: 0o600],
-            ofItemAtPath: tmpPath
-        )
-
-        // Atomic rename
-        try FileManager.default.moveItem(
-            atPath: tmpPath,
-            toPath: filePath
+            ofItemAtPath: filePath
         )
     }
 
