@@ -62,6 +62,8 @@ enum SearchFilter: Sendable, Equatable {
     case isDirectory
     /// path component count <= N
     case maxDepth(Int)
+    /// path component count >= N
+    case minDepth(Int)
     /// extension matches a predefined type group
     case fileType(FileTypeGroup)
     /// Metadata numeric field >= N
@@ -103,6 +105,8 @@ enum SearchFilter: Sendable, Equatable {
             return record.isDirectory
         case .maxDepth(let depth):
             return Self.pathDepth(record.path) <= depth
+        case .minDepth(let depth):
+            return Self.pathDepth(record.path) >= depth
         case .fileType(let group):
             guard let ext = record.extension else { return false }
             return group.extensions.contains(ext.lowercased())

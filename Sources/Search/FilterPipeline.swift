@@ -95,25 +95,26 @@ extension FilterPipeline {
     }
 
     /// Parse depth filter value.
-    /// Examples: "3", "<=5"
+    /// Examples: "3", "<=5", ">3", ">=2", "<4"
     private static func parseDepthFilter(_ value: String) -> SearchFilter? {
         let trimmed = value.lowercased()
-        let numStr: String
 
         if trimmed.hasPrefix("<=") {
-            numStr = String(trimmed.dropFirst(2))
+            guard let depth = Int(trimmed.dropFirst(2)) else { return nil }
+            return .maxDepth(depth)
         } else if trimmed.hasPrefix(">=") {
-            numStr = String(trimmed.dropFirst(2))
+            guard let depth = Int(trimmed.dropFirst(2)) else { return nil }
+            return .minDepth(depth)
         } else if trimmed.hasPrefix("<") {
-            numStr = String(trimmed.dropFirst(1))
+            guard let depth = Int(trimmed.dropFirst()) else { return nil }
+            return .maxDepth(depth - 1)
         } else if trimmed.hasPrefix(">") {
-            numStr = String(trimmed.dropFirst(1))
+            guard let depth = Int(trimmed.dropFirst()) else { return nil }
+            return .minDepth(depth + 1)
         } else {
-            numStr = trimmed
+            guard let depth = Int(trimmed) else { return nil }
+            return .maxDepth(depth)
         }
-
-        guard let depth = Int(numStr) else { return nil }
-        return .maxDepth(depth)
     }
 
     /// Parse metadata numeric filter value.

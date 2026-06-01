@@ -248,4 +248,61 @@ struct SearchFilterTests {
         #expect(!filter.matches(file))
         #expect(filter.matches(dir))
     }
+
+    // MARK: - Depth Filters
+
+    @Test("maxDepth filter matches records with path component count <= threshold")
+    func maxDepthFilterMatches() {
+        let filter = SearchFilter.maxDepth(2)
+        let shallow = FileRecord(
+            id: 1, name: "a.txt", originalName: "a.txt",
+            path: "/a.txt", parentPath: "/",
+            isDirectory: false, size: 0,
+            createdAt: Date(), modifiedAt: Date(), extension: "txt"
+        )   // depth 1
+        let atLimit = FileRecord(
+            id: 2, name: "b.txt", originalName: "b.txt",
+            path: "/usr/b.txt", parentPath: "/usr",
+            isDirectory: false, size: 0,
+            createdAt: Date(), modifiedAt: Date(), extension: "txt"
+        )   // depth 2
+        let tooDeep = FileRecord(
+            id: 3, name: "c.txt", originalName: "c.txt",
+            path: "/usr/local/c.txt", parentPath: "/usr/local",
+            isDirectory: false, size: 0,
+            createdAt: Date(), modifiedAt: Date(), extension: "txt"
+        )   // depth 3
+
+        #expect(filter.matches(shallow))
+        #expect(filter.matches(atLimit))
+        #expect(!filter.matches(tooDeep))
+    }
+
+    @Test("minDepth filter matches records with path component count >= threshold")
+    func minDepthFilterMatches() {
+        let filter = SearchFilter.minDepth(3)
+        let tooShallow = FileRecord(
+            id: 1, name: "a.txt", originalName: "a.txt",
+            path: "/a.txt", parentPath: "/",
+            isDirectory: false, size: 0,
+            createdAt: Date(), modifiedAt: Date(), extension: "txt"
+        )   // depth 1
+        let atLimit = FileRecord(
+            id: 2, name: "b.txt", originalName: "b.txt",
+            path: "/usr/local/bin", parentPath: "/usr/local",
+            isDirectory: false, size: 0,
+            createdAt: Date(), modifiedAt: Date(), extension: "txt"
+        )   // depth 3  -- wait, path is "/usr/local/bin" which is 3 components
+        // Actually the name is appended: path="/usr/local/bin" -> depth 3
+        let deeper = FileRecord(
+            id: 3, name: "c.txt", originalName: "c.txt",
+            path: "/usr/local/bin/c.txt", parentPath: "/usr/local/bin",
+            isDirectory: false, size: 0,
+            createdAt: Date(), modifiedAt: Date(), extension: "txt"
+        )   // depth 4
+
+        #expect(!filter.matches(tooShallow))
+        #expect(filter.matches(atLimit))
+        #expect(filter.matches(deeper))
+    }
 }

@@ -114,6 +114,8 @@ enum MatchExplainer: Sendable {
             return "directory"
         case .maxDepth:
             return "depth filter"
+        case .minDepth:
+            return "depth filter"
         case .fileType(let group):
             return "file type (\(group.rawValue))"
         case .metadataMin(let field, let value):

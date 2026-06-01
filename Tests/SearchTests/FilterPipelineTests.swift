@@ -168,6 +168,74 @@ struct FilterPipelineTests {
         #expect(filtered[1].record.name == "b.txt")
     }
 
+    @Test("Min depth filter")
+    func testMinDepthFilter() {
+        let pipeline = FilterPipeline(filters: [.minDepth(3)])
+        let results = [
+            makeResult(id: 1, name: "a.txt", path: ""),             // depth 1
+            makeResult(id: 2, name: "b.txt", path: "/usr"),         // depth 2
+            makeResult(id: 3, name: "c.txt", path: "/usr/local"),   // depth 3
+            makeResult(id: 4, name: "d.txt", path: "/usr/local/bin"), // depth 4
+        ]
+
+        let filtered = pipeline.apply(to: results)
+        #expect(filtered.count == 2)
+        #expect(filtered[0].record.name == "c.txt")
+        #expect(filtered[1].record.name == "d.txt")
+    }
+
+    // MARK: - Depth Filter Parsing Tests
+
+    @Test("Parse depth filter: bare number returns maxDepth")
+    func testParseDepthBareNumber() {
+        let pipeline = FilterPipeline.parse(from: [("depth", "3")])
+        #expect(pipeline.filters == [.maxDepth(3)])
+    }
+
+    @Test("Parse depth filter: <= returns maxDepth")
+    func testParseDepthLessThanOrEqual() {
+        let pipeline = FilterPipeline.parse(from: [("depth", "<=3")])
+        #expect(pipeline.filters == [.maxDepth(3)])
+    }
+
+    @Test("Parse depth filter: >= returns minDepth")
+    func testParseDepthGreaterThanOrEqual() {
+        let pipeline = FilterPipeline.parse(from: [("depth", ">=3")])
+        #expect(pipeline.filters == [.minDepth(3)])
+    }
+
+    @Test("Parse depth filter: < returns maxDepth(N-1)")
+    func testParseDepthLessThan() {
+        let pipeline = FilterPipeline.parse(from: [("depth", "<3")])
+        #expect(pipeline.filters == [.maxDepth(2)])
+    }
+
+    @Test("Parse depth filter: > returns minDepth(N+1)")
+    func testParseDepthGreaterThan() {
+        let pipeline = FilterPipeline.parse(from: [("depth", ">3")])
+        #expect(pipeline.filters == [.minDepth(4)])
+    }
+
+    @Test("Parse depth filter: invalid value returns empty pipeline")
+    func testParseDepthInvalid() {
+        let pipeline = FilterPipeline.parse(from: [("depth", "abc")])
+        #expect(pipeline.filters.isEmpty)
+    }
+
+    @Test("Parse depth filter: >3 end-to-end filters shallow paths")
+    func testParseDepthGreaterThanEndToEnd() {
+        let pipeline = FilterPipeline.parse(from: [("depth", ">2")])
+        let results = [
+            makeResult(id: 1, name: "a.txt", path: ""),           // depth 1
+            makeResult(id: 2, name: "b.txt", path: "/usr"),       // depth 2
+            makeResult(id: 3, name: "c.txt", path: "/usr/local"), // depth 3
+        ]
+
+        let filtered = pipeline.apply(to: results)
+        #expect(filtered.count == 1)
+        #expect(filtered[0].record.name == "c.txt")
+    }
+
     @Test("Parse from modifier pairs")
     func testParseFromModifierPairs() {
         let modifiers: [(key: String, value: String)] = [
