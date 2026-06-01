@@ -14,6 +14,9 @@ let package = Package(
             name: "DeepFinder",
             path: "Sources",
             exclude: ["CLIEntry", "DaemonEntry"],
+            resources: [
+                .process("AI/Prompts")
+            ],
             linkerSettings: [
                 .linkedLibrary("edit")
             ]
