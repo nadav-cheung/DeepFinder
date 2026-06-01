@@ -189,19 +189,7 @@ final class SystemVolumeMonitor: VolumeMonitor {
                 continuation.yield(.unmounted(path: volumePath))
             }
 
-            let willUnmountObserver = NotificationCenter.default.addObserver(
-                forName: NSWorkspace.willUnmountNotification,
-                object: nil,
-                queue: .main
-            ) { notification in
-                guard let volumePath = notification.userInfo?["NSDevicePath"] as? String else { return }
-                guard knownVolumes.contains(volumePath) else { return }
-                knownVolumes.remove(volumePath)
-
-                continuation.yield(.unmounted(path: volumePath))
-            }
-
-            observers = [mountedObserver, unmountedObserver, willUnmountObserver]
+            observers = [mountedObserver, unmountedObserver]
 
             continuation.onTermination = { _ in
                 DispatchQueue.main.async {
