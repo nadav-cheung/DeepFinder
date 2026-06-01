@@ -156,17 +156,17 @@ struct SearchFilterTests {
         }
     }
 
-    @Test("parseDateFilter 'thisweek' returns after Monday of this week")
+    @Test("parseDateFilter 'thisweek' returns after first weekday of this week")
     func parseDateFilterThisWeek() {
         let cal = Calendar(identifier: .gregorian)
         let now = Date()
-        // Find Monday of the current week
+        // Find first weekday of the current week (respects locale)
         let weekday = cal.component(.weekday, from: now)
         // Sunday=1, Monday=2, ... Saturday=7
-        let daysSinceMonday = (weekday + 5) % 7  // Monday=0, Tuesday=1, ...
-        let monday = cal.date(
+        let daysSinceStart = (weekday - cal.firstWeekday + 7) % 7
+        let weekStart = cal.date(
             byAdding: .day,
-            value: -daysSinceMonday,
+            value: -daysSinceStart,
             to: cal.startOfDay(for: now)
         )!
 
@@ -174,7 +174,7 @@ struct SearchFilterTests {
         #expect(result != nil)
 
         if case .dateModifiedAfter(let date) = result {
-            #expect(date == monday)
+            #expect(date == weekStart)
         } else {
             Issue.record("Expected dateModifiedAfter, got \(String(describing: result))")
         }
