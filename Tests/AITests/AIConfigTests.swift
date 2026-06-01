@@ -41,6 +41,8 @@ struct AIConfigTests {
         let expected: Set<String> = [
             "enabled", "model", "sendMetadata",
             "pathAnonymization", "localVision", "apiKey",
+            "cloudFallback", "embeddingModel", "cacheTTL",
+            "customEndpoint", "customModelName", "customAPIKey",
         ]
         let actual = Set(AIConfigKey.allCases.map(\.rawValue))
         #expect(actual == expected)

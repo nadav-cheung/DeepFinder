@@ -14,6 +14,12 @@ enum AIConfigKey: String, CaseIterable {
     case pathAnonymization
     case localVision
     case apiKey
+    case cloudFallback
+    case embeddingModel
+    case cacheTTL
+    case customEndpoint
+    case customModelName
+    case customAPIKey
 }
 
 // MARK: - AIConfig
@@ -48,6 +54,12 @@ struct AIConfig: Sendable {
         "ai.pathAnonymization": "true",
         "ai.localVision": "true",
         "ai.apiKey": "",
+        "ai.cloudFallback": "true",
+        "ai.embeddingModel": "nlcontextual",
+        "ai.cacheTTL": "300",
+        "ai.customEndpoint": "",
+        "ai.customModelName": "",
+        "ai.customAPIKey": "",
     ]
 
     /// Check whether AI is enabled in the given config dictionary.
@@ -109,5 +121,36 @@ struct AIConfig: Sendable {
         encoder.dateEncodingStrategy = .iso8601
         guard let data = try? encoder.encode(sample) else { return "{}" }
         return String(data: data, encoding: .utf8) ?? "{}"
+    }
+
+    /// Get the configured embedding model name, or "nlcontextual" if not set.
+    static func embeddingModelName(config: [String: String]) -> String {
+        config["ai.embeddingModel"] ?? "nlcontextual"
+    }
+
+    /// Get the AI cache TTL in seconds, clamped to [60, 3600]. Default: 300.
+    static func cacheTTL(config: [String: String]) -> Int {
+        let raw = Int(config["ai.cacheTTL"] ?? "300") ?? 300
+        return min(3600, max(60, raw))
+    }
+
+    /// Check whether cloud fallback is enabled. Defaults to true.
+    static func cloudFallbackEnabled(config: [String: String]) -> Bool {
+        config["ai.cloudFallback"] != "false"
+    }
+
+    /// Get the custom cloud endpoint URL, or empty string if not configured.
+    static func customEndpoint(config: [String: String]) -> String {
+        config["ai.customEndpoint"] ?? ""
+    }
+
+    /// Get the custom model name override, or empty string if not configured.
+    static func customModelName(config: [String: String]) -> String {
+        config["ai.customModelName"] ?? ""
+    }
+
+    /// Get the custom API key, or empty string if not configured.
+    static func customAPIKey(config: [String: String]) -> String {
+        config["ai.customAPIKey"] ?? ""
     }
 }
