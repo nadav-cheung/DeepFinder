@@ -194,6 +194,40 @@ struct TrieTests {
         #expect(trie.get(key: Array("abc".unicodeScalars)) == nil)
     }
 
+    // MARK: - Copy-on-Write Value Semantics
+
+    @Test("复制 Trie 后修改副本不影响原始")
+    func copyOnWriteMutatingCopyDoesNotAffectOriginal() {
+        var original = Trie<UnicodeScalar, UInt32>()
+        original.insert(Array("hello".unicodeScalars), value: 1)
+        original.insert(Array("help".unicodeScalars), value: 2)
+
+        var copy = original
+        copy.insert(Array("helm".unicodeScalars), value: 3)
+        _ = copy.remove(Array("hello".unicodeScalars))
+
+        // Original is unchanged
+        let originalResults = original.search(prefix: Array("hel".unicodeScalars))
+        #expect(originalResults.sorted() == [1, 2])
+        #expect(original.count == 2)
+
+        // Copy has the mutations: "helm"(3) added, "hello"(1) removed, "help"(2) kept
+        let copyResults = copy.search(prefix: Array("hel".unicodeScalars))
+        #expect(copyResults.sorted() == [2, 3])
+        #expect(copy.count == 2)
+    }
+
+    @Test("复制 Trie 后不修改则共享节点")
+    func copyOnWriteReadsShareStorage() {
+        var trie = Trie<UnicodeScalar, UInt32>()
+        trie.insert(Array("abc".unicodeScalars), value: 10)
+
+        let copy = trie
+        // Both should return the same results without any mutation
+        #expect(trie.search(prefix: Array("a".unicodeScalars)) == [10])
+        #expect(copy.search(prefix: Array("a".unicodeScalars)) == [10])
+    }
+
     @Test("get 区分前缀关系：删除长键不影响短键")
     func getDistinguishesPrefixRelationships() {
         var trie = Trie<UnicodeScalar, Set<UInt32>>()

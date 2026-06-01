@@ -3,18 +3,31 @@
 /// Used for filename indexing as `Trie<UnicodeScalar, UInt32>` where the value is
 /// a `FileRecord.ID`. All input should be NFC-normalized before insertion.
 ///
-/// Thread safety: This is a value type (struct). When used inside an actor
-/// (e.g. `InMemoryIndex`), no internal synchronization is needed.
+/// Copy-on-write: this is a value type (struct). Copying a Trie shares the
+/// underlying node graph; the first mutation after a copy deep-clones the
+/// affected path so that the original remains unchanged.
+///
+/// Thread safety: When used inside an actor (e.g. `InMemoryIndex`), no internal
+/// synchronization is needed beyond the COW guarantee.
 struct Trie<Key: Hashable, Value> {
 
     /// Internal node — holds an optional value at this node and children keyed
-    /// by the next element.
+    /// by the next element. Reference type enables COW via isKnownUniquelyReferenced.
     private final class Node {
         var value: Value?
         var children: [Key: Node] = [:]
 
         init(value: Value? = nil) {
             self.value = value
+        }
+
+        /// Deep-copy this node and all descendants.
+        func deepCopy() -> Node {
+            let copy = Node(value: value)
+            for (key, child) in children {
+                copy.children[key] = child.deepCopy()
+            }
+            return copy
         }
     }
 
@@ -28,9 +41,18 @@ struct Trie<Key: Hashable, Value> {
 
     init() {}
 
+    /// Ensure `root` is uniquely referenced. If not, deep-copy the entire
+    /// node tree so that subsequent mutations do not affect other Trie copies.
+    private mutating func ensureUnique() {
+        if !isKnownUniquelyReferenced(&root) {
+            root = root.deepCopy()
+        }
+    }
+
     /// Insert a key associated with a value. If the key already exists, its
     /// value is updated (the old value is discarded).
     mutating func insert(_ key: [Key], value: Value) {
+        ensureUnique()
         var node = root
         for element in key {
             if let child = node.children[element] {
@@ -80,6 +102,7 @@ struct Trie<Key: Hashable, Value> {
     /// (acceptable trade-off for an in-memory index that grows, not shrinks).
     @discardableResult
     mutating func remove(_ key: [Key]) -> Value? {
+        ensureUnique()
         var node = root
         for element in key {
             guard let child = node.children[element] else {
