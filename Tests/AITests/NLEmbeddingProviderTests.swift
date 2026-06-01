@@ -1,18 +1,32 @@
 import Foundation
 import Testing
+@preconcurrency import NaturalLanguage
 @testable import DeepFinder
+
+/// Whether NLContextualEmbedding models can be loaded in this process.
+/// Some test environments (headless CI, swift-testing helper) crash with SIGSEGV
+/// when NLContextualEmbedding.embeddingResult() is called.
+private var nlEmbeddingAvailable: Bool {
+    // Try loading the Latin model — if it fails, skip all embedding tests.
+    guard let emb = NLContextualEmbedding(script: .latin),
+          (try? emb.load()) != nil else { return false }
+    // Probe: try a single embedding to confirm the runtime doesn't crash.
+    // Use a non-throwing check — if this returns nil, the model isn't functional.
+    let result = try? emb.embeddingResult(for: "test", language: nil)
+    return result != nil
+}
 
 @Suite("NLEmbeddingProvider", .serialized)
 struct NLEmbeddingProviderTests {
 
     @Test("provider returns 512 dimensions")
-    func dimensionsAre512() async throws {
+    func dimensionsAre512() {
         let provider = NLEmbeddingProvider()
         #expect(provider.name == "nlcontextual")
         #expect(provider.dimensions == 512)
     }
 
-    @Test("embed Chinese text returns non-zero 512-dim vector")
+    @Test("embed Chinese text returns non-zero 512-dim vector", .enabled(if: nlEmbeddingAvailable))
     func embedChineseText() async throws {
         let provider = NLEmbeddingProvider()
         let vector = try await provider.embed(text: "财务报表2024.xlsx")
@@ -21,7 +35,7 @@ struct NLEmbeddingProviderTests {
         #expect(hasNonZero)
     }
 
-    @Test("embed English text returns non-zero 512-dim vector")
+    @Test("embed English text returns non-zero 512-dim vector", .enabled(if: nlEmbeddingAvailable))
     func embedEnglishText() async throws {
         let provider = NLEmbeddingProvider()
         let vector = try await provider.embed(text: "budget-report-2024.xlsx")
@@ -30,7 +44,7 @@ struct NLEmbeddingProviderTests {
         #expect(hasNonZero)
     }
 
-    @Test("embed mixed Chinese-English text returns non-zero vector")
+    @Test("embed mixed Chinese-English text returns non-zero vector", .enabled(if: nlEmbeddingAvailable))
     func embedMixedText() async throws {
         let provider = NLEmbeddingProvider()
         let vector = try await provider.embed(text: "Q4财务report-final.pdf")
@@ -39,7 +53,7 @@ struct NLEmbeddingProviderTests {
         #expect(hasNonZero)
     }
 
-    @Test("embedBatch preserves count and order")
+    @Test("embedBatch preserves count and order", .enabled(if: nlEmbeddingAvailable))
     func embedBatchPreservesOrder() async throws {
         let provider = NLEmbeddingProvider()
         let texts = ["file-a.txt", "文件B.doc", "mixed-C.pdf"]
@@ -52,7 +66,7 @@ struct NLEmbeddingProviderTests {
         }
     }
 
-    @Test("similar Chinese texts cluster closer than dissimilar")
+    @Test("similar Chinese texts cluster closer than dissimilar", .enabled(if: nlEmbeddingAvailable))
     func similarChineseTextsCluster() async throws {
         let provider = NLEmbeddingProvider()
         let v1 = try await provider.embed(text: "财务报表2024.xlsx")
@@ -64,7 +78,7 @@ struct NLEmbeddingProviderTests {
         #expect(sim12 > sim13)
     }
 
-    @Test("similar English texts cluster closer than dissimilar")
+    @Test("similar English texts cluster closer than dissimilar", .enabled(if: nlEmbeddingAvailable))
     func similarEnglishTextsCluster() async throws {
         let provider = NLEmbeddingProvider()
         let v1 = try await provider.embed(text: "budget-2024.xlsx")
