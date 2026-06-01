@@ -70,10 +70,13 @@ struct OpenAICompatibleProvider: AIModelProvider, Sendable {
     ///
     /// The continuation is guaranteed to finish (with `.finish()` or `.finish(throwing:)`)
     /// on every code path -- no leaked continuations. Error paths:
-    /// - HTTP 429 -> `AIError.rateLimited`
+    /// - HTTP 429 (after 3 retries) -> `AIError.rateLimited`
     /// - HTTP 4xx/5xx -> `AIError.networkError`
-    /// - Transport error -> wrapped in `AIError.networkError`
+    /// - Transport error (after 3 retries) -> wrapped in `AIError.networkError`
     /// - `AIError` from HTTPClient -> propagated unchanged
+    ///
+    /// The HTTP call is wrapped in ``performWithRetry(request:)`` which retries
+    /// on 429 and transport errors with exponential backoff + jitter (max 3 attempts).
     ///
     /// If the consuming `Task` is cancelled, `AsyncThrowingStream` handles
     /// cancellation by terminating iteration -- the continuation may yield a few
@@ -83,16 +86,7 @@ struct OpenAICompatibleProvider: AIModelProvider, Sendable {
             Task {
                 do {
                     let request = try buildRequest(prompt: prompt, context: context)
-                    let response = try await httpClient.perform(request)
-
-                    if response.statusCode == 429 {
-                        continuation.finish(throwing: AIError.rateLimited)
-                        return
-                    }
-                    if response.statusCode >= 400 {
-                        continuation.finish(throwing: AIError.networkError("HTTP \(response.statusCode)"))
-                        return
-                    }
+                    let response = try await performWithRetry(request: request)
 
                     for await line in SSELineSequence(data: response.data) {
                         if line == "data: [DONE]" { break }
@@ -143,6 +137,56 @@ struct OpenAICompatibleProvider: AIModelProvider, Sendable {
     }
 
     // MARK: - Private
+
+    /// Perform an HTTP request with exponential backoff retry.
+    ///
+    /// Retry strategy (max 3 attempts):
+    /// - HTTP 200-399: return immediately
+    /// - HTTP 429: sleep for 2^attempt seconds (with +/-25% jitter), then retry
+    /// - Transport error: sleep for 2^attempt seconds, then retry
+    /// - Other HTTP errors: throw immediately (no retry)
+    /// - After 3 failed attempts for 429/transport: throw `AIError.rateLimited`
+    ///   or `AIError.networkError` respectively
+    private func performWithRetry(request: URLRequest) async throws -> HTTPClientResponse {
+        var lastError: Error = AIError.networkError("Unknown")
+        let maxAttempts = 3
+        for attempt in 0..<maxAttempts {
+            do {
+                let response = try await httpClient.perform(request)
+                if response.statusCode == 429 {
+                    lastError = AIError.rateLimited
+                    if attempt < maxAttempts - 1 {
+                        let delay = Double(1 << attempt) * (0.75 + Double.random(in: 0...0.5))
+                        try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                        continue
+                    }
+                    throw AIError.rateLimited
+                }
+                if response.statusCode >= 400 {
+                    throw AIError.networkError("HTTP \(response.statusCode)")
+                }
+                return response
+            } catch let error as AIError {
+                if error == .rateLimited {
+                    // Already handled above; re-throw if exhausted
+                    lastError = error
+                    if attempt < maxAttempts - 1 {
+                        continue  // Already slept above
+                    }
+                }
+                throw error
+            } catch {
+                lastError = error
+                if attempt < maxAttempts - 1 {
+                    let delay = Double(1 << attempt)
+                    try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                    continue
+                }
+                throw error
+            }
+        }
+        throw lastError
+    }
 
     private func buildRequest(prompt: String, context: AIContext?) throws -> URLRequest {
         var messages: [[String: String]] = []

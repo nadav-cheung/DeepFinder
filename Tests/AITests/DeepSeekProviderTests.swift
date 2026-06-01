@@ -185,6 +185,54 @@ struct DeepSeekProviderTests {
         }
     }
 
+    // MARK: - Retry behavior
+
+    @Test("retry on 429 succeeds on second attempt")
+    func retryOn429SucceedsOnSecondAttempt() async throws {
+        let counter = SendableCounter()
+        let sseResponse = """
+            data: {"choices":[{"delta":{"content":"retried"}}]}
+
+            data: [DONE]
+
+            """
+        let mock = MockHTTPClient(handler: { _ in
+            let call = counter.increment()
+            if call == 1 {
+                return HTTPClientResponse(statusCode: 429, data: Data())
+            }
+            return HTTPClientResponse(statusCode: 200, data: Data(sseResponse.utf8))
+        })
+        let provider = DeepSeekProvider.deepSeek(apiKey: "test-key", httpClient: mock)
+        let stream = provider.complete(prompt: "hi", context: nil)
+        var chunks: [String] = []
+        for try await chunk in stream {
+            chunks.append(chunk)
+        }
+        #expect(chunks == ["retried"])
+        #expect(counter.value == 2)
+    }
+
+    @Test("retry max 3 attempts then fails with rateLimited")
+    func retryMaxAttemptsThenRateLimited() async {
+        let counter = SendableCounter()
+        let mock = MockHTTPClient(handler: { _ in
+            counter.increment()
+            return HTTPClientResponse(statusCode: 429, data: Data())
+        })
+        let provider = DeepSeekProvider.deepSeek(apiKey: "test-key", httpClient: mock)
+        let stream = provider.complete(prompt: "hi", context: nil)
+        do {
+            for try await _ in stream {}
+            Issue.record("Expected rateLimited error, but no error was thrown")
+        } catch let error as AIError {
+            #expect(error == .rateLimited)
+        } catch {
+            Issue.record("Expected AIError.rateLimited, got \(error)")
+        }
+        #expect(counter.value == 3)
+    }
+
     @Test("Network failure throws AIError.networkError")
     func networkFailureThrows() async {
         let mock = MockHTTPClient(error: URLError(.notConnectedToInternet))
