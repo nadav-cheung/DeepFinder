@@ -223,9 +223,9 @@ enum SearchFilter: Sendable, Equatable {
 
     // MARK: - Private Helpers
 
-    /// Count path components by splitting on "/" and filtering empty segments.
+    /// Count path components — delegates to the shared ``PathUtils/depth(_:)`` utility.
     private static func pathDepth(_ path: String) -> Int {
-        path.components(separatedBy: "/").filter { !$0.isEmpty }.count
+        PathUtils.depth(path)
     }
 
     private static func parseByteCount(_ input: String) -> Int64? {

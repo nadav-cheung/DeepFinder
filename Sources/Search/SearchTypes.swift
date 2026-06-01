@@ -1,5 +1,19 @@
 import Foundation
 
+// MARK: - Path Utilities
+
+/// Shared path-depth computation used by both `SearchSorter` and `SearchFilter`.
+///
+/// Counts non-empty path components by splitting on "/" and filtering empty
+/// segments. This handles trailing slashes and double slashes consistently
+/// (e.g. "/a//b/" → 2, "" → 0).
+enum PathUtils {
+    /// Returns the number of non-empty path components in `path`.
+    static func depth(_ path: String) -> Int {
+        path.components(separatedBy: "/").filter { !$0.isEmpty }.count
+    }
+}
+
 // MARK: - MatchType
 
 /// Describes how a query matched a file name.

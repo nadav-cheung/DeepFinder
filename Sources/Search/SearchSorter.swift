@@ -83,10 +83,9 @@ struct SearchSorter: Sendable {
         return aIdx == aEnd && bIdx < bEnd
     }
 
-    /// Count the number of path components (separators + 1 for non-empty paths).
+    /// Delegate to the shared ``PathUtils/depth(_:)`` utility.
     static func pathDepth(_ path: String) -> Int {
-        guard !path.isEmpty else { return 0 }
-        return path.filter { $0 == "/" }.count
+        PathUtils.depth(path)
     }
 
     // MARK: - Private
