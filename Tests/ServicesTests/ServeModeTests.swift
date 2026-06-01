@@ -79,7 +79,13 @@ struct ServeModeTests {
             uptimeSeconds: 100,
             memoryUsageMB: 50
         )))
-        let (output, exitCode) = await CLIMain.run(args: ["--serve"], clientProvider: mock)
+        let task = Task {
+            await CLIMain.run(args: ["--serve"], clientProvider: mock)
+        }
+        // Give the service time to start, then cancel to unblock
+        try? await Task.sleep(for: .milliseconds(200))
+        task.cancel()
+        let (output, exitCode) = await task.value
         #expect(exitCode == .success)
         #expect(output.stdout.contains("HTTP search service running on http://localhost:7654"))
     }
@@ -92,7 +98,12 @@ struct ServeModeTests {
             uptimeSeconds: 0,
             memoryUsageMB: 0
         )))
-        let (output, exitCode) = await CLIMain.run(args: ["--serve", "--port", "9090"], clientProvider: mock)
+        let task = Task {
+            await CLIMain.run(args: ["--serve", "--port", "9090"], clientProvider: mock)
+        }
+        try? await Task.sleep(for: .milliseconds(200))
+        task.cancel()
+        let (output, exitCode) = await task.value
         #expect(exitCode == .success)
         #expect(output.stdout.contains("9090"))
     }

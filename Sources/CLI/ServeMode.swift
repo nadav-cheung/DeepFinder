@@ -111,11 +111,16 @@ struct ServeMode {
         let actualPort = await service.listeningPort ?? port
         let statusMsg = "HTTP search service running on http://localhost:\(actualPort)\n"
 
-        // 4. In production, the caller would block here until SIGINT.
-        //    Since CLIMain.run returns immediately, the @main entry point
-        //    is responsible for blocking and calling service.stop() on Ctrl+C.
-        //    For now, stop the service and return the status message.
-        await service.stop()
+        // 4. Keep the service running until the calling task is cancelled
+        //    (e.g. SIGINT from the CLI entry point). When cancelled,
+        //    stop the service gracefully and return.
+        let (cancelStream, cancelContinuation) = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .bufferingNewest(1))
+        await withTaskCancellationHandler {
+            for await _ in cancelStream { break }
+            await service.stop()
+        } onCancel: {
+            cancelContinuation.finish()
+        }
 
         return (CLIOutput(stdout: statusMsg), .success)
     }
