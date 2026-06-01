@@ -4,11 +4,6 @@ on:
   push:
     tags: ['v*']
 
-# macos-26 (Tahoe) is not yet generally available on GitHub-hosted runners.
-# When using this workflow before GitHub adds the macos-26 label, configure
-# a self-hosted macOS 26 runner and replace `runs-on: macos-26` with the
-# appropriate self-hosted label (e.g. `runs-on: [self-hosted, macos-26]`).
-
 jobs:
   release:
     runs-on: macos-26
