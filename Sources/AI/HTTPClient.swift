@@ -14,6 +14,8 @@ import Foundation
 protocol HTTPClient: Sendable {
     /// Perform an HTTP request and return the raw response.
     func perform(_ request: URLRequest) async throws -> HTTPClientResponse
+    /// Timeout interval for each request, in seconds.
+    var requestTimeout: TimeInterval { get }
 }
 
 // MARK: - HTTPClientResponse
@@ -24,24 +26,37 @@ struct HTTPClientResponse: Sendable {
     let statusCode: Int
     /// Raw body data.
     let data: Data
+    /// Response headers.
+    let headers: [String: String]
+
+    init(statusCode: Int, data: Data, headers: [String: String] = [:]) {
+        self.statusCode = statusCode
+        self.data = data
+        self.headers = headers
+    }
 }
 
 // MARK: - URLSessionHTTPClient
 
 /// Production HTTP client backed by `URLSession`.
 struct URLSessionHTTPClient: HTTPClient {
+    let requestTimeout: TimeInterval
     private let session: URLSession
 
-    init(session: URLSession = .shared) {
+    init(timeout: TimeInterval = 30, session: URLSession = .shared) {
+        self.requestTimeout = timeout
         self.session = session
     }
 
     func perform(_ request: URLRequest) async throws -> HTTPClientResponse {
-        let (data, response) = try await session.data(for: request)
+        var req = request
+        req.timeoutInterval = requestTimeout
+        let (data, response) = try await session.data(for: req)
         guard let http = response as? HTTPURLResponse else {
             throw AIError.networkError("Non-HTTP response")
         }
-        return HTTPClientResponse(statusCode: http.statusCode, data: data)
+        let headers = (http.allHeaderFields as? [String: String]) ?? [:]
+        return HTTPClientResponse(statusCode: http.statusCode, data: data, headers: headers)
     }
 }
 
