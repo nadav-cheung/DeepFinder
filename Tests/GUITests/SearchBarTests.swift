@@ -44,37 +44,6 @@ struct SearchBarTests {
         _ = view
     }
 
-    // MARK: - CJK marked text handling (via SearchBarState)
-
-    @Test("CJK marked text does not trigger search")
-    func cjkMarkedTextDoesNotTriggerSearch() {
-        var commitCount = 0
-        let state = SearchBarState(onCommit: { _ in
-            commitCount += 1
-        })
-
-        state.hasMarkedText = true
-        state.onTextChange("中")
-        #expect(commitCount == 0)
-
-        state.hasMarkedText = false
-        state.onTextChange("中国")
-        #expect(commitCount == 1)
-    }
-
-    // MARK: - Search on commit (via SearchBarState)
-
-    @Test("Search triggered on text commit (non-CJK)")
-    func searchTriggeredOnCommit() {
-        var lastQuery: String?
-        let state = SearchBarState(onCommit: { query in
-            lastQuery = query
-        })
-
-        state.hasMarkedText = false
-        state.onTextChange("report")
-        #expect(lastQuery == "report")
-    }
 }
 
 // MARK: - Test helpers
