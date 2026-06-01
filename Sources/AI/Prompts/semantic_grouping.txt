@@ -1,0 +1,10 @@
+Group the following file search results into 2-5 meaningful categories.
+Each category should have a short descriptive name.
+Assign every file to exactly one category (use "Other" for uncategorized files).
+
+Files:
+{{files}}
+
+Return format:
+Group Name: file1, file2, file3
+Other: file4, file5

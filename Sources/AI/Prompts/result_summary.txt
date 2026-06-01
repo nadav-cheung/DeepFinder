@@ -1,0 +1,8 @@
+Summarize the following list of file search results in ONE sentence.
+Focus on: file types present, approximate date range, and any obvious patterns.
+Do NOT list individual filenames.
+Respond with ONLY the summary sentence, no preamble.
+
+Files: {{files}}
+Count: {{count}}
+Query: {{query}}

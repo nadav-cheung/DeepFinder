@@ -1,0 +1,4 @@
+The user searched for "{{query}}" but got few or no results.
+Suggest ONE alternative search query that might find what they are looking for.
+Consider: broader terms, different extensions, similar file types, or relaxed filters.
+Return ONLY the suggested DeepFinder search syntax, no explanation.
