@@ -122,8 +122,7 @@ struct InstallCommandsTests {
         let expectedLabel = LaunchAgent.label
         #expect(content.contains("<string>\(expectedLabel)</string>"))
 
-        // Verify ProgramArguments contains the binary path and --daemon
-        #expect(content.contains("--daemon"))
-        #expect(content.contains("deepfinder"))
+        // Verify ProgramArguments contains the daemon binary path
+        #expect(content.contains("deepfinder-daemon"))
     }
 }

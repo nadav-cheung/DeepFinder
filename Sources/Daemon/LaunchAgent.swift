@@ -55,15 +55,15 @@ enum LaunchAgent {
     ///
     /// The plist configures:
     /// - Label: `com.nadav.deepfinder.daemon`
-    /// - Program: full path to the `deepfinder` binary
-    /// - Arguments: `--daemon` flag
+    /// - Program: full path to the `deepfinder-daemon` binary
+    /// - Arguments: (none)
     /// - RunAtLoad: `true` (start on login)
     /// - KeepAlive: `true` (restart on crash)
     /// - StandardOutPath / StandardErrorPath: log files in `~/.deep-finder/log/`
     ///
     /// - Returns: A complete XML plist string.
     static func generatePlist() -> String {
-        let binaryPath = "/usr/local/bin/\(Product.command)"
+        let binaryPath = "/usr/local/bin/\(Product.daemonCommand)"
         let logDir = "\(Product.dataDir)/log"
         let logOut = "\(logDir)/daemon-stdout.log"
         let logErr = "\(logDir)/daemon-stderr.log"
@@ -78,7 +78,6 @@ enum LaunchAgent {
             <key>ProgramArguments</key>
             <array>
                 <string>\(binaryPath)</string>
-                <string>--daemon</string>
             </array>
             <key>Program</key>
             <string>\(binaryPath)</string>
