@@ -97,16 +97,16 @@ actor VolumeManager {
         monitor.monitorVolumes()
     }
 
-    /// Determine whether a given volume should be indexed based on daemon config.
+    /// Determine whether a given volume should be indexed based on excluded volume paths.
     ///
     /// Policy:
     /// - Local volumes (root "/"): always indexed
     /// - External volumes (USB/Thunderbolt): indexed by default, skippable via excludedVolumes
     /// - Network volumes (SMB/AFP/NFS): indexed by default, skippable via excludedVolumes
     /// - Any volume in excludedVolumes is never indexed
-    func shouldIndex(volume: VolumeInfo, config: DaemonConfig) -> Bool {
+    func shouldIndex(volume: VolumeInfo, excludedVolumes: Set<String>) -> Bool {
         // Check exclusion list first
-        if config.excludedVolumes.contains(volume.path) {
+        if excludedVolumes.contains(volume.path) {
             return false
         }
 

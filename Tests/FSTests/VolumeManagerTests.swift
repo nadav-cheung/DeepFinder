@@ -94,28 +94,27 @@ struct VolumeManagerTests {
     @Test("shouldIndex: local volume always indexed")
     func testShouldIndexLocalAlways() async {
         let (manager, _) = makeManager(volumes: [localVolume])
-        let config = DaemonConfig.defaults
 
-        let result = await manager.shouldIndex(volume: localVolume, config: config)
+        let result = await manager.shouldIndex(volume: localVolume, excludedVolumes: [])
         #expect(result == true)
     }
 
     @Test("shouldIndex: external volume indexed by default")
     func testShouldIndexExternalByDefault() async {
         let (manager, _) = makeManager(volumes: [externalVolume])
-        let config = DaemonConfig.defaults
 
-        let result = await manager.shouldIndex(volume: externalVolume, config: config)
+        let result = await manager.shouldIndex(volume: externalVolume, excludedVolumes: [])
         #expect(result == true)
     }
 
     @Test("shouldIndex: excluded volume skipped")
     func testShouldIndexExcludedSkipped() async {
         let (manager, _) = makeManager(volumes: [externalVolume])
-        var config = DaemonConfig.defaults
-        config.excludedVolumes = ["/Volumes/USB Drive"]
 
-        let result = await manager.shouldIndex(volume: externalVolume, config: config)
+        let result = await manager.shouldIndex(
+            volume: externalVolume,
+            excludedVolumes: ["/Volumes/USB Drive"]
+        )
         #expect(result == false)
     }
 
