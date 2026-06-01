@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import UniformTypeIdentifiers
 
 // MARK: - ResultRowView
 
@@ -116,11 +117,15 @@ enum FileIconCache {
 
         let icon: NSImage
         if isDirectory {
-            icon = NSWorkspace.shared.icon(forFileType: NSFileTypeForHFSTypeCode(OSType(kGenericFolderIcon)))
+            icon = NSWorkspace.shared.icon(for: .folder)
         } else if let ext, !ext.isEmpty {
-            icon = NSWorkspace.shared.icon(forFileType: ext)
+            if let utType = UTType(filenameExtension: ext) {
+                icon = NSWorkspace.shared.icon(for: utType)
+            } else {
+                icon = NSWorkspace.shared.icon(for: .item)
+            }
         } else {
-            icon = NSWorkspace.shared.icon(forFileType: NSFileTypeForHFSTypeCode(OSType(kGenericDocumentIcon)))
+            icon = NSWorkspace.shared.icon(for: .item)
         }
 
         let sized = NSImage(size: NSSize(width: 16, height: 16))

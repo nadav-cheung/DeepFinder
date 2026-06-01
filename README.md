@@ -189,7 +189,7 @@ Sources/
   Services/       # HTTPSearchService, URLSchemeHandler, SearchScriptCommand
   AI/             # AIModelProvider, NLSearchTranslator, LocalVisionProvider, etc.
 Tests/
-  DeepFinderTests/  # 435+ tests covering all modules
+  DeepFinderTests/  # 900+ tests covering all modules
 ```
 
 ## AI Features
@@ -215,7 +215,7 @@ DeepFinder's AI features are designed with a privacy-first philosophy:
 # Build
 swift build
 
-# Run all tests (435+)
+# Run all tests (900+)
 swift test
 
 # Run specific test suite
