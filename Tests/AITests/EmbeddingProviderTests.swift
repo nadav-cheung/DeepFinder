@@ -35,6 +35,13 @@ struct EmbeddingProviderTests {
         #expect(provider.dimensions == 768)
     }
 
+    @Test("embedBatch with empty input returns empty result")
+    func embedBatchWithEmptyInput() async throws {
+        let provider = MockEmbeddingProvider(dimensions: 256)
+        let results = try await provider.embedBatch(texts: [])
+        #expect(results.isEmpty)
+    }
+
     @Test("nil provider pattern allows graceful degradation")
     func nilProviderPattern() {
         let provider: (any EmbeddingProvider)? = nil
