@@ -39,23 +39,92 @@ v3.0 的局限：
 
 ### 2.1 LLM 策略
 
-**核心原则**：云主路径（全区域一致），设备端兜底（有则用）。
+**核心原则**：Provider-agnostic 架构 — 用户可选择任何主流 AI 提供商。设备端兜底（有则用），云主路径（全区域一致）。
 
-| 角色 | 方案 | 模型 | 说明 |
-|------|------|------|------|
-| **主路径** | Qwen Cloud (DashScope) | Qwen3.6-Plus | 1M ctx, 中文 SOTA, OpenAI 兼容 API, 全区域可用 |
-| **备选** | DeepSeek Cloud | V4-Pro | 价格最低, 中文优秀, 无 Embedding API |
-| **设备端兜底** | Apple LanguageModelSession | ~3B quantized | macOS 26, 4096 ctx, 仅在有区域支持时可用 |
-| **未来** | MLX 本地 Qwen | Qwen3.5-7B/30B | 需引入 MLX Swift 依赖，按需评估 |
+#### 2.1.1 支持的提供商
 
-**配置模型**：
+**OpenAI 兼容协议**（复用 `OpenAICompatibleProvider`，配置 endpoint + model name 即可）：
+
+| 提供商 | 推荐模型 | 中文质量 | Embedding API | 说明 |
+|--------|----------|----------|---------------|------|
+| **Qwen** (通义千问) | Qwen3.6-Plus | ⭐⭐⭐⭐⭐ SOTA | ✅ text-embedding-v4 | 中文最强, 1M ctx, 全区域 |
+| **DeepSeek** | V4-Pro | ⭐⭐⭐⭐⭐ 优秀 | ❌ 无 | 价格最低, 1M ctx |
+| **智谱** (GLM) | GLM-5.5-Plus | ⭐⭐⭐⭐ 很好 | ✅ Embedding-3 | 国产, 中文优化, 工具调用强 |
+| **OpenAI** | GPT-5.1 | ⭐⭐⭐ 良好 | ✅ text-embedding-3 | 全球生态最成熟 |
+| **Moonshot** (Kimi) | Kimi-K2 | ⭐⭐⭐⭐ 很好 | ❌ 无 | 超长上下文, 中文优秀 |
+| **MiniMax** | MiniMax-Text-01 | ⭐⭐⭐⭐ 很好 | ❌ 无 | 国产, 456B 参数 |
+| **任何 OAI 兼容** | — | 取决于提供商 | 取决于提供商 | 用户自定义 endpoint |
+
+**自定义协议**（需独立 provider 实现）：
+
+| 提供商 | 推荐模型 | 中文质量 | Embedding API | 协议格式 |
+|--------|----------|----------|---------------|----------|
+| **Anthropic** (Claude) | Claude Opus 4.5 | ⭐⭐⭐ 良好 | ❌ 无 (需 Voyage AI) | Messages API (非 OAI) |
+| **Google** (Gemini) | Gemini 2.5 Pro | ⭐⭐⭐ 良好 | ✅ text-embedding-004 | Gemini API (非 OAI) |
+
+**设备端**：
+
+| 方案 | 模型 | 中文质量 | 说明 |
+|------|------|----------|------|
+| **Apple 设备端** | LanguageModelSession (~3B) | ⭐⭐ 基础 | macOS 26, 仅在有区域支持时兜底 |
+| **MLX 本地** (未来) | Qwen3.5-7B/30B | ⭐⭐⭐⭐⭐ 优秀 | 需引入 MLX Swift, 按需评估 |
+
+#### 2.1.2 配置模型
+
 ```
-ai.model = "auto"     # 默认：自动选择（优先 Qwen → DeepSeek → Apple 设备端）
-ai.model = "qwen"     # 强制 Qwen Cloud
-ai.model = "deepseek" # 强制 DeepSeek Cloud
-ai.model = "apple"    # 强制 Apple 设备端（不可用时降级提示）
-ai.model = "off"      # 关闭文本 AI
+# 提供商选择
+ai.model = "auto"        # 默认：自动选择 (见 2.6 路由逻辑)
+ai.model = "qwen"        # 通义千问
+ai.model = "deepseek"    # DeepSeek
+ai.model = "zhipu"       # 智谱 GLM
+ai.model = "openai"      # OpenAI
+ai.model = "moonshot"    # Moonshot Kimi
+ai.model = "minimax"     # MiniMax
+ai.model = "anthropic"   # Claude
+ai.model = "gemini"      # Google Gemini
+ai.model = "custom"      # 用户自定义 OAI 兼容 endpoint
+ai.model = "apple"       # Apple 设备端 (不可用时降级提示)
+ai.model = "off"         # 关闭文本 AI
+
+# 自定义 endpoint (仅 ai.model=custom 时生效)
+ai.customEndpoint = "https://api.example.com/v1"
+ai.customModelName = "model-name"
+ai.customAPIKey = "sk-..."
+
+# Embedding 提供商 (可独立于 LLM 选择)
+ai.embeddingModel = "qwen"      # Qwen text-embedding-v4
+ai.embeddingModel = "zhipu"     # 智谱 Embedding-3
+ai.embeddingModel = "openai"    # OpenAI text-embedding-3
+ai.embeddingModel = "gemini"    # Google text-embedding-004
+ai.embeddingModel = "nlcontextual" # Apple 设备端 (零依赖)
+ai.embeddingModel = "off"       # 关闭语义搜索
 ```
+
+#### 2.1.3 架构：Provider-Agnostic
+
+```
+              AIModelProvider (protocol)
+                     │
+         ┌───────────┼───────────┬──────────────┐
+         ▼           ▼           ▼              ▼
+  OpenAICompat    Anthropic    Gemini       AppleOnDevice
+  Provider        Provider     Provider     Provider
+  ┌──────────┐   (Messages    (Gemini      (Language
+  │ Qwen     │    API)        API)         ModelSession)
+  │ DeepSeek │
+  │ 智谱     │
+  │ OpenAI   │
+  │ Moonshot │
+  │ MiniMax  │
+  │ custom   │
+  └──────────┘
+```
+
+- `OpenAICompatibleProvider` — 覆盖 80% 的提供商，仅需配置 endpoint + model + API key
+- `AnthropicProvider` — 新增，Messages API，需处理不同的 SSE 格式
+- `GeminiProvider` — 新增，Gemini API，需处理不同的请求/响应格式
+- `AppleOnDeviceProvider` — 新增，FoundationModels，设备端兜底
+- 新增提供商只需实现 `AIModelProvider` 协议的两个方法
 
 **AIModelProvider 协议增强**：
 ```swift
@@ -66,19 +135,24 @@ protocol AIModelProvider {
     var capabilities: AICapability { get }
 
     // 新增
-    var supportsOnDevice: Bool { get }      // 是否设备端
-    var contextLimit: Int { get }           // token 上限，用于调用方截断
+    var displayName: String { get }          // 用于 UI/CLI 显示
+    var supportsOnDevice: Bool { get }       // 是否设备端
+    var contextLimit: Int { get }            // token 上限，调用方截断
+    var hasEmbeddingAPI: Bool { get }        // 是否有 Embedding API
 }
 ```
 
 ### 2.2 Embedding 策略
 
-**核心原则**：为语义搜索提供向量化能力，设备端优先，云可选。
+**核心原则**：为语义搜索提供向量化能力。Embedding 提供商可独立于 LLM 选择。设备端兜底（零依赖），云可选。
 
 | 角色 | 方案 | 维度 | 说明 |
 |------|------|------|------|
-| **主路径** | Qwen text-embedding-v4 (Cloud) | 1024 (可配置) | 中文最佳, $0.07/1M tokens, 需用户 opt-in |
-| **设备端兜底** | NLContextualEmbedding | 512 | macOS 14+, .cjk + .latin 双模型, 零依赖 |
+| **Qwen** | text-embedding-v4 | 64-2048 (可配置) | 中文最佳, $0.07/1M tokens, OAI 兼容 |
+| **智谱** | Embedding-3 | 1024/2048 | 国产, 中文优化, OAI 兼容 |
+| **OpenAI** | text-embedding-3-small/large | 512/1536/3072 | 生态最成熟 |
+| **Google** | text-embedding-004 | 768 | Gemini 生态 |
+| **设备端兜底** | NLContextualEmbedding | 512 | macOS 14+, .cjk+.latin 双模型, 零依赖 |
 | **未来升级** | CoreML Qwen3-Embedding | 1024 | 捆绑到 App, 全设备端, ~200MB |
 
 **新增 EmbeddingProvider 协议**：
@@ -91,8 +165,9 @@ protocol EmbeddingProvider {
 ```
 
 **实现**：
-- `NLEmbeddingProvider` — NLContextualEmbedding, .cjk + .latin 双模型路由
-- `QwenEmbeddingProvider` — Cloud, opt-in, 文件名仅（非完整路径）
+- `CloudEmbeddingProvider` — OAI 兼容通用实现 (Qwen / 智谱 / OpenAI), opt-in, 文件名仅
+- `NLEmbeddingProvider` — NLContextualEmbedding, .cjk + .latin 双模型路由, 零依赖
+- `GeminiEmbeddingProvider` — Google text-embedding-004 (Gemini API 格式)
 - `CoreMLEmbeddingProvider` — 未来, 捆绑模型
 
 ### 2.3 向量存储
@@ -167,14 +242,24 @@ protocol VectorStore {
 查询进入 → ai.model 配置检查
   ├─ "off" → 无 AI，直接关键词搜索
   ├─ "apple" → 检查区域支持 → 可用则用，不可用降级提示
-  ├─ "qwen" / "deepseek" → 直接云 API
-  └─ "auto" → 按能力路由:
-       ├─ NL 翻译: Qwen Cloud (全区域一致) → Apple 设备端兜底
-       ├─ 结果摘要: 同上
-       ├─ Vision/OCR: 始终设备端 (不受区域限制)
-       ├─ Speech: 始终设备端 (不受区域限制)
-       ├─ Embedding: Qwen Cloud (opt-in) → NLContextualEmbedding 兜底
-       └─ 跨语言: Qwen Cloud (质量) → 拼音+子串兜底
+  ├─ 具体提供商名 → 直接使用该云 API
+  ├─ "custom" → 使用 ai.customEndpoint 配置的 endpoint
+  └─ "auto" → 按优先级尝试（首个可用即用）:
+       ├─ Qwen (中文最强, 全区域可用, 有 Embedding)
+       ├─ 智谱 (国产备选, 中文优秀, 有 Embedding)
+       ├─ DeepSeek (价格最低, 无 Embedding)
+       ├─ OpenAI (全球通用)
+       └─ Apple 设备端 (兜底, 区域受限)
+
+Embedding 路由 (独立于 LLM):
+  ├─ ai.embeddingModel = "qwen"|"zhipu"|"openai"|"gemini" → 对应云 API
+  ├─ ai.embeddingModel = "nlcontextual" → Apple 设备端 (零依赖, 默认)
+  └─ ai.embeddingModel = "off" → 无语义搜索
+
+其他能力路由 (不受 LLM 配置影响):
+  ├─ Vision/OCR: 始终设备端 (不受区域限制)
+  ├─ Speech: 始终设备端 (不受区域限制)
+  └─ 跨语言: LLM (质量) → 拼音+子串兜底
 ```
 
 ---
@@ -217,7 +302,7 @@ protocol VectorStore {
 | NL 查询 | `deepfinder 'find big videos from last week'` |
 | JSON 输出 | `--json` 添加 `ai_translated_query`, `ai_summary`, `ai_groups` |
 | AI 状态 | `:stats` 显示提供商、设备端/云状态、向量索引大小 |
-| 配置 | `deepfinder config set ai.model auto/qwen/deepseek/apple/off` |
+| 配置 | `deepfinder config set ai.model auto/qwen/deepseek/zhipu/openai/moonshot/minimax/anthropic/gemini/custom/apple/off` |
 | 强制云 | `deepfinder --cloud 'complex query'` |
 | 数据预览 | `deepfinder config get ai.data_preview` |
 
@@ -246,9 +331,12 @@ protocol VectorStore {
 | `Sources/AI/EmbeddingProvider.swift` | Embedding 生成协议 |
 | `Sources/AI/VectorStore.swift` | 向量存储协议 |
 | `Sources/AI/NLEmbeddingProvider.swift` | NLContextualEmbedding 实现 (双模型 .cjk+.latin) |
-| `Sources/AI/QwenEmbeddingProvider.swift` | Qwen Cloud Embedding (opt-in) |
+| `Sources/AI/CloudEmbeddingProvider.swift` | 云 Embedding 通用实现 (OAI 兼容: Qwen/智谱/OpenAI) |
 | `Sources/AI/FlatFileVectorStore.swift` | mmap + BNNSVectorSearch 实现 |
 | `Sources/AI/AppleOnDeviceProvider.swift` | FoundationModels LanguageModelSession 实现 |
+| `Sources/AI/AnthropicProvider.swift` | Claude Messages API 实现 |
+| `Sources/AI/GeminiProvider.swift` | Google Gemini API 实现 |
+| `Sources/AI/ProviderRegistry.swift` | 提供商注册/发现/auto 路由 |
 | `Sources/AI/OCRPipeline.swift` | RecognizeDocumentsRequest OCR 管道 |
 | `Sources/AI/SemanticImageEmbedder.swift` | ViTDet-L 语义图像嵌入 |
 | `Sources/AI/VideoFrameExtractor.swift` | AVAssetImageGenerator 视频帧提取 |
@@ -264,7 +352,7 @@ protocol VectorStore {
 | 文件 | 变更 |
 |------|------|
 | `AIModelProvider.swift` | +`supportsOnDevice`, +`contextLimit`, +`onDeviceTextAI` capability |
-| `AIConfig.swift` | +`cloudFallback`, +`embeddingModel`, +`cacheTTL`；工厂方法；验证 |
+| `AIConfig.swift` | +`cloudFallback`, +`embeddingModel`, +`cacheTTL`, +`customEndpoint`, +`customModelName`, +`customAPIKey`；工厂方法；提供商验证 |
 | `AIContext.swift` | +`contentSnippets` (仅设备端), +`FileSnippet`, IndexStats 增强 |
 | `DeepSeekProvider.swift` | Prompt 外部化；指数退避重试 (1s→30s, 3次)；token 计数；rate limit header 解析 |
 | `HTTPClient.swift` | +`cancelRequest(id:)`, +`requestTimeout`, +response headers, dataTask 替代 data(for:) |
@@ -282,22 +370,26 @@ protocol VectorStore {
 
 ## 5. 迁移路线
 
-### Phase 1: v3.1 — 协议 + 增强基础 (2-3 周)
+### Phase 1: v3.1 — 协议 + 多提供商 + 增强基础 (3-4 周)
 
-**目标**：引入 Embedding/Vector 协议，添加 OCR/SpeechAnalyzer，零新依赖。
+**目标**：引入 Embedding/Vector 协议，Provider-agnostic 多提供商支持，OCR/SpeechAnalyzer，零新依赖。
 
 | 步骤 | 内容 | 验证 |
 |------|------|------|
 | 1 | EmbeddingProvider + VectorStore 协议 | 编译通过，现有代码不变 |
-| 2 | NLEmbeddingProvider (.cjk + .latin 双模型) | 单测: 中/英/混合文本 embedding, 512-dim, 余弦相似度聚类 |
-| 3 | FlatFileVectorStore (mmap + BNNS) | 单测: 1万向量插入+搜索, 性能: 10万向量 <50ms |
-| 4 | AppleOnDeviceProvider (LanguageModelSession) | 集成测试: NL 查询翻译质量 vs 云基线 |
-| 5 | Prompt 外部化到 Prompts/*.txt | 现有云 provider 测试仍通过 |
-| 6 | OCRPipeline (RecognizeDocumentsRequest) | 单测: 截图文本提取, 中英混合, FullSubstringMap 可搜索 |
-| 7 | SpeechAnalyzerProvider | 集成测试: 中英文转录, 无时长限制, 自动语言检测 |
-| 8 | AIConfig 工厂方法 + 新键 | 配置 round-trip 测试 |
-| 9 | OpenAICompatibleProvider 重试/退避 | 单测: mock HTTP 429 → 验证退避 + 最多 3 次 |
-| 10 | AITests (新组件全覆盖) | 测试通过, 覆盖率 >80%, 现有 698 测试仍通过 |
+| 2 | ProviderRegistry: 提供商注册/发现/auto 路由 | 单测: auto 优先级、provider 别名解析 |
+| 3 | AnthropicProvider: Claude Messages API + SSE | 单测: mock HTTP, 流式响应解析 |
+| 4 | GeminiProvider: Google Gemini API | 单测: mock HTTP, 非 OAI 格式转换 |
+| 5 | CloudEmbeddingProvider: OAI 兼容通用实现 (Qwen/智谱/OpenAI) | 单测: 多 provider endpoint 切换, 维度验证 |
+| 6 | NLEmbeddingProvider (.cjk + .latin 双模型) | 单测: 中/英/混合文本 embedding, 512-dim |
+| 7 | FlatFileVectorStore (mmap + BNNS) | 单测: 1万向量插入+搜索, 性能: 10万向量 <50ms |
+| 8 | AppleOnDeviceProvider (LanguageModelSession) | 集成测试: NL 查询翻译质量 vs 云基线 |
+| 9 | Prompt 外部化到 Prompts/*.txt | 现有云 provider 测试仍通过 |
+| 10 | OCRPipeline (RecognizeDocumentsRequest) | 单测: 截图文本提取, 中英混合 |
+| 11 | SpeechAnalyzerProvider | 集成测试: 中英文转录, 无时长限制 |
+| 12 | AIConfig 工厂方法 + 新键 (含 custom endpoint) | 配置 round-trip 测试 |
+| 13 | OpenAICompatibleProvider 重试/退避 | 单测: mock HTTP 429 → 验证退避 |
+| 14 | AITests (新组件全覆盖) | 测试通过, 覆盖率 >80%, 现有测试仍通过 |
 
 ### Phase 2: v3.2 — 语义搜索 + Vision 增强 (2-3 周)
 
