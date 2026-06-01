@@ -6,7 +6,6 @@
 /// - ``MetadataExtractor`` -- protocol for format-specific metadata extractors
 /// - ``MetadataExtractorRegistry`` -- dispatcher that routes files to the correct extractor by extension
 /// - ``ExtractedMetadata`` / ``MetadataValue`` -- polymorphic metadata storage types
-/// - ``MediaMetadataIndex`` -- actor managing in-memory metadata storage
 /// - ``ImageMetadataExtractor`` -- extracts dimensions, DPI, color model via ImageIO/CGImageSource
 /// - ``AudioMetadataExtractor`` -- extracts duration, bitrate, artist, album via AVFoundation
 /// - ``VideoMetadataExtractor`` -- extracts resolution, duration, codec via AVFoundation
@@ -38,11 +37,9 @@ protocol MetadataExtractor: Sendable {
 
 /// Registry that manages all metadata extractors and dispatches by file extension.
 struct MetadataExtractorRegistry: Sendable {
-    private let extractors: [MetadataExtractor]
     private let extensionMap: [String: MetadataExtractor]
 
     init(extractors: [MetadataExtractor]) {
-        self.extractors = extractors
         var map: [String: MetadataExtractor] = [:]
         for extractor in extractors {
             for fileExt in extractor.supportedExtensions {

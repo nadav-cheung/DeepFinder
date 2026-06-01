@@ -310,7 +310,6 @@ actor IPCServer {
                 // Brief pause prevents busy-looping; persistent errors will eventually
                 // resolve or the server will be stopped via stop().
                 try? await Task.sleep(nanoseconds: 1_000_000)
-                try? await Task.sleep(nanoseconds: 1_000_000)
                 continue
             }
 
