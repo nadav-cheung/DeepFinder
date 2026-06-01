@@ -87,6 +87,8 @@ enum AICapability: String, Sendable, Codable, CaseIterable {
     case localVision
     /// Local speech recognition via Speech framework
     case localSpeech
+    /// On-device text AI (FoundationModels LanguageModelSession)
+    case onDeviceTextAI
 }
 
 // MARK: - AIError
@@ -122,6 +124,21 @@ protocol AIModelProvider: Sendable {
     /// Set of capabilities this provider supports.
     var capabilities: Set<AICapability> { get }
 
+    /// User-facing display name for UI/CLI (e.g., "Qwen Cloud", "Claude (Anthropic)").
+    var displayName: String { get }
+
+    /// Whether this provider runs entirely on-device (no network).
+    /// Default false. AppleOnDeviceProvider overrides to true.
+    var supportsOnDevice: Bool { get }
+
+    /// Maximum token count for the context window.
+    /// Used by callers to truncate file lists before sending.
+    var contextLimit: Int { get }
+
+    /// Whether this provider has a companion Embedding API.
+    /// Used by ProviderRegistry to decide embedding routing.
+    var hasEmbeddingAPI: Bool { get }
+
     /// Stream a completion for the given prompt, optionally with search context.
     ///
     /// Returns an `AsyncThrowingStream` for streaming (token-by-token) responses.
@@ -147,4 +164,13 @@ protocol AIModelProvider: Sendable {
     /// - Parameter naturalLanguage: The user's natural language input.
     /// - Returns: A valid DeepFinder search syntax string.
     func translateToSearchSyntax(naturalLanguage: String) async throws -> String
+}
+
+// MARK: - AIModelProvider Defaults
+
+extension AIModelProvider {
+    var displayName: String { name }
+    var supportsOnDevice: Bool { false }
+    var contextLimit: Int { 128_000 }
+    var hasEmbeddingAPI: Bool { false }
 }

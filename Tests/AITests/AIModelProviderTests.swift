@@ -12,6 +12,7 @@ struct AIModelProviderTests {
         let expected: Set<String> = [
             "textToSearch", "resultSummary", "querySuggestion",
             "intentAnalysis", "localVision", "localSpeech",
+            "onDeviceTextAI",
         ]
         let actual = Set(AICapability.allCases.map(\.rawValue))
         #expect(actual == expected)
@@ -19,7 +20,7 @@ struct AIModelProviderTests {
 
     @Test("AICapability is CaseIterable")
     func aiCapabilityCaseIterable() {
-        #expect(AICapability.allCases.count == 6)
+        #expect(AICapability.allCases.count == 7)
     }
 
     // MARK: - AIError
@@ -72,6 +73,39 @@ struct AIModelProviderTests {
         func assertSendable<T: Sendable>(_: T) {}
         assertSendable(provider)
     }
+
+    // MARK: - Default property values
+
+    @Test("displayName defaults to name")
+    func displayNameDefaultsToName() async {
+        let provider = MockAIProvider()
+        #expect(provider.displayName == provider.name)
+    }
+
+    @Test("supportsOnDevice defaults to false")
+    func supportsOnDeviceDefaultsFalse() async {
+        let provider = MockAIProvider()
+        #expect(provider.supportsOnDevice == false)
+    }
+
+    @Test("contextLimit defaults to 128,000")
+    func contextLimitDefault() async {
+        let provider = MockAIProvider()
+        #expect(provider.contextLimit == 128_000)
+    }
+
+    @Test("hasEmbeddingAPI defaults to false")
+    func hasEmbeddingAPIDefaultsFalse() async {
+        let provider = MockAIProvider()
+        #expect(provider.hasEmbeddingAPI == false)
+    }
+
+    @Test("MockProvider can override displayName")
+    func overrideDisplayName() async {
+        let provider = MockAIProviderWithDisplayName()
+        #expect(provider.displayName == "Mock AI")
+        #expect(provider.name == "mock")
+    }
 }
 
 // MARK: - Mock Implementation
@@ -80,6 +114,26 @@ struct AIModelProviderTests {
 final class MockAIProvider: AIModelProvider, @unchecked Sendable {
     let name: String = "mock"
     let capabilities: Set<AICapability> = Set(AICapability.allCases)
+
+    func complete(prompt: String, context: AIContext?) -> AsyncThrowingStream<String, Error> {
+        AsyncThrowingStream { continuation in
+            continuation.yield("mock")
+            continuation.yield(" ")
+            continuation.yield("response")
+            continuation.finish()
+        }
+    }
+
+    func translateToSearchSyntax(naturalLanguage: String) async throws -> String {
+        "ext:mp4;mov;mkv size:>100mb"
+    }
+}
+
+/// A mock AIModelProvider that overrides the displayName default.
+final class MockAIProviderWithDisplayName: AIModelProvider, @unchecked Sendable {
+    let name: String = "mock"
+    let capabilities: Set<AICapability> = Set(AICapability.allCases)
+    let displayName: String = "Mock AI"
 
     func complete(prompt: String, context: AIContext?) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
