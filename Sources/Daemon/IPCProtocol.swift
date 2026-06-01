@@ -7,10 +7,18 @@ import Foundation
 /// This value is embedded in every ``IPCRequest`` encoding.
 let ipcProtocolVersion = 1
 
+/// Maximum allowed query string length in characters.
+///
+/// Queries exceeding this limit are rejected before parsing to prevent
+/// excessive memory allocation in the search pipeline. The IPC framing
+/// layer enforces a 16 MB message limit; this guard rejects unreasonably
+/// long queries much earlier, well before the search engine processes them.
+let maxQueryLength = 10_240
+
 // MARK: - IPCError
 
 /// Fine-grained error types returned in IPC error responses.
-enum IPCError: Codable, Sendable, Equatable {
+enum IPCError: Codable, Sendable, Equatable, Error {
     /// The daemon is still starting up and not ready to serve queries.
     case daemonNotReady
     /// The query could not be processed (syntax error, too long, etc.).
@@ -19,6 +27,8 @@ enum IPCError: Codable, Sendable, Equatable {
     case invalidRequest(String)
     /// The operation requires Full Disk Access or another permission.
     case permissionDenied(String)
+    /// The client's protocol version is newer than what this daemon supports.
+    case incompatibleProtocolVersion
 }
 
 // MARK: - IPCRequest
@@ -83,9 +93,24 @@ enum IPCRequest: Codable, Sendable, Equatable {
     init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let kind = try c.decode(Kind.self, forKey: .kind)
+
+        // Validate protocol version for forward compatibility.
+        // Old clients (pre-version field) default to 1. Newer clients
+        // sending a higher version than this daemon supports are rejected
+        // with a clear error rather than risking silent misinterpretation.
+        let clientVersion = try c.decodeIfPresent(Int.self, forKey: .ipcProtocolVersion) ?? 1
+        guard clientVersion <= ipcProtocolVersion else {
+            throw IPCError.incompatibleProtocolVersion
+        }
+
         switch kind {
         case .query:
             let q = try c.decode(String.self, forKey: .query)
+            guard q.count <= maxQueryLength else {
+                throw IPCError.queryError(
+                    "Query too long (\(q.count) chars, max \(maxQueryLength))"
+                )
+            }
             let lim = try c.decodeIfPresent(Int.self, forKey: .limit)
             self = .query(q, limit: lim)
         case .cancel:

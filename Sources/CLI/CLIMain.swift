@@ -43,7 +43,7 @@ import Foundation
 /// - 1 = no results found
 /// - 2 = daemon error
 /// - 3 = query error
-enum CLIExitCode: Int32, Sendable, Equatable {
+public enum CLIExitCode: Int32, Sendable, Equatable {
     case success = 0
     case noResults = 1
     case daemonError = 2
@@ -53,9 +53,9 @@ enum CLIExitCode: Int32, Sendable, Equatable {
 // MARK: - CLIOutput
 
 /// Output from a CLI run, separated into stdout and stderr streams.
-struct CLIOutput: Sendable {
-    var stdout: String = ""
-    var stderr: String = ""
+public struct CLIOutput: Sendable {
+    public var stdout: String = ""
+    public var stderr: String = ""
 }
 
 // MARK: - CLIMain
@@ -69,9 +69,17 @@ struct CLIOutput: Sendable {
 /// This struct performs no I/O — it returns all output as strings.
 /// The caller (the `@main` entry point) is responsible for writing
 /// to the actual stdout/stderr file descriptors.
-struct CLIMain {
+public struct CLIMain {
 
-    /// Run the CLI with the given argument list.
+    /// Public entry point for executable entry points.
+    /// Calls through to the internal run with default clientProvider.
+    public static func run(
+        args: [String]
+    ) async -> (output: CLIOutput, exitCode: CLIExitCode) {
+        await run(args: args, clientProvider: nil)
+    }
+
+    /// Run the CLI with the given argument list and optional IPC client injection.
     ///
     /// - Parameters:
     ///   - args: Command-line arguments excluding the program name

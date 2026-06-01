@@ -18,13 +18,15 @@
 ///
 /// ## Lifecycle
 /// 1. Ensure data directory (`~/.deep-finder`, permissions 700)
-/// 2. Singleton check via PID file
+/// 2. Atomically acquire PID file (O_CREAT|O_EXCL + flock)
 /// 3. Load SQLite index, rebuild InMemoryIndex
 /// 4. Start IPCServer
 /// 5. Start FSEventWatcher
 /// 6. Register SIGTERM/SIGINT handlers
-/// 7. On shutdown: flush SQLite, save cursor, remove PID + socket
+/// 7. On shutdown: flush SQLite, save cursor, unlink PID + close fd + remove socket
+import Darwin
 import Foundation
+import OSLog
 
 // MARK: - DaemonState
 
@@ -37,7 +39,7 @@ import Foundation
 /// State transitions are one-way. The daemon starts in `starting`, moves to
 /// `ready` once IPC is listening, `live` once FSEventWatcher is active, and
 /// `shuttingDown` when a termination signal is received.
-enum DaemonState: String, Sendable, Equatable {
+public enum DaemonState: String, Sendable, Equatable {
     case starting
     case ready
     case live
@@ -47,7 +49,7 @@ enum DaemonState: String, Sendable, Equatable {
 // MARK: - DaemonError
 
 /// Errors thrown during daemon lifecycle operations.
-enum DaemonError: Error, CustomStringConvertible, Equatable {
+public enum DaemonError: Error, CustomStringConvertible, Equatable {
     /// Another daemon instance is already running with the given PID.
     case alreadyRunning(pid: Int32)
     /// The data directory could not be created at the given path.
@@ -55,7 +57,7 @@ enum DaemonError: Error, CustomStringConvertible, Equatable {
     /// The PID file could not be written at the given path.
     case pidWriteFailed(String)
 
-    var description: String {
+    public var description: String {
         switch self {
         case .alreadyRunning(let pid):
             return "Daemon already running (PID \(pid))"
@@ -73,7 +75,7 @@ enum DaemonError: Error, CustomStringConvertible, Equatable {
 ///
 /// Orchestrates the startup sequence:
 /// 1. Ensure data directory exists (permissions 700)
-/// 2. Check for existing daemon (singleton via PID file)
+/// 2. Atomically acquire PID file (O_CREAT|O_EXCL + flock)
 /// 3. Load SQLite index -> rebuild InMemoryIndex
 /// 4. Start IPCServer (Unix domain socket)
 /// 5. Start FSEventWatcher
@@ -87,9 +89,12 @@ enum DaemonError: Error, CustomStringConvertible, Equatable {
 /// 5. Remove socket file
 ///
 /// Thread-safe via actor isolation.
-actor DaemonMain {
+public actor DaemonMain {
 
     // MARK: - Properties
+
+    /// Logger for daemon lifecycle events.
+    private let logger = Logger(subsystem: "com.nadav.deepfinder.daemon", category: "lifecycle")
 
     /// Root data directory (e.g. ~/.deep-finder).
     private let dataDir: String
@@ -121,8 +126,19 @@ actor DaemonMain {
     /// Whether to install signal handlers during `run()`. Disabled in tests.
     private let installSignals: Bool
 
+    /// Background initial-scan task, if one was started. Cancelled on shutdown.
+    private var backgroundScanTask: Task<Void, Never>?
+
     /// Event stream factory for dependency injection. Defaults to FSEventStreamImpl.
     private let eventStreamProvider: @Sendable () -> FileSystemEventStream
+
+    /// File descriptor for the locked PID file. Held open for the daemon lifetime
+    /// to maintain the `flock` advisory lock. `nil` until `acquirePIDFile` succeeds.
+    private var pidFileDescriptor: Int32?
+
+    /// Continuation that signals shutdown without polling. Created in `run()`,
+    /// yielded to from `shutdown()`, consumed by `waitForShutdown()`.
+    private var shutdownContinuation: AsyncStream<Void>.Continuation?
 
     // MARK: - Public Accessors
 
@@ -157,6 +173,12 @@ actor DaemonMain {
         self.resolvedDbPath = (resolved as NSString).appendingPathComponent("index.db")
     }
 
+    /// Public no-arg convenience initializer for executable entry points.
+    /// Uses default data directory and production FSEventStreamImpl internally.
+    public init() {
+        self.init(dataDir: Product.dataDir, installSignals: true)
+    }
+
     // MARK: - Static Utilities
 
     /// Expand `~` in a path to the user's home directory.
@@ -186,30 +208,91 @@ actor DaemonMain {
         }
     }
 
-    /// Write the current process PID to the given file path.
+    /// Atomically acquire the PID file for singleton enforcement.
+    ///
+    /// Uses `O_CREAT | O_EXCL` for atomic creation — if two daemon processes start
+    /// simultaneously, exactly one will succeed and the other will see `EEXIST`
+    /// and detect the live daemon. This eliminates the TOCTOU race between the
+    /// old `checkExistingDaemon` → `writePIDFile` sequence.
+    ///
+    /// After creating the file, writes the current PID and acquires an advisory
+    /// `flock(LOCK_EX | LOCK_NB)` lock. The returned file descriptor must be kept
+    /// open for the daemon lifetime; the lock is released on close or process exit.
+    ///
+    /// Stale PID files (from a crashed daemon) are detected via `kill(pid, 0)` and
+    /// automatically cleaned up before retrying.
     ///
     /// - Parameter pidPath: Absolute path to the PID file.
-    /// - Throws: `DaemonError.pidWriteFailed` if the file cannot be written.
-    static func writePIDFile(pidPath: String) throws {
-        let pid = ProcessInfo.processInfo.processIdentifier
-        let dir = (pidPath as NSString).deletingLastPathComponent
-        let fm = FileManager.default
+    /// - Returns: A locked file descriptor for the PID file.
+    /// - Throws: `DaemonError.alreadyRunning` if a live daemon already owns the file.
+    /// - Throws: `DaemonError.pidWriteFailed` on I/O errors.
+    static func acquirePIDFile(pidPath: String) throws -> Int32 {
+        let flags: Int32 = O_CREAT | O_EXCL | O_WRONLY
+        let mode: mode_t = 0o644
 
-        // Ensure parent directory exists
-        if !fm.fileExists(atPath: dir) {
-            try fm.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        while true {
+            let fd = open(pidPath, flags, mode)
+
+            if fd != -1 {
+                // Successfully created file exclusively — write PID and lock
+                return try finalizePIDFileDescriptor(fd, at: pidPath)
+            }
+
+            guard errno == EEXIST else {
+                throw DaemonError.pidWriteFailed(pidPath)
+            }
+
+            // File already exists — read PID and check if that process is alive
+            guard let existingPID = readPID(from: pidPath) else {
+                // Corrupted PID file — remove and retry
+                unlink(pidPath)
+                continue
+            }
+
+            if kill(existingPID, 0) == 0 {
+                // Process is alive — another daemon is running
+                throw DaemonError.alreadyRunning(pid: existingPID)
+            }
+
+            // Stale PID file from a crashed daemon — remove and retry
+            unlink(pidPath)
+        }
+    }
+
+    /// Write PID and acquire `flock` on an already-created PID file descriptor.
+    ///
+    /// On failure the file descriptor is closed and the file is unlinked.
+    ///
+    /// - Parameters:
+    ///   - fd: File descriptor returned by `open(..., O_CREAT | O_EXCL)`.
+    ///   - path: Absolute path to the PID file (for cleanup on error).
+    /// - Returns: The same file descriptor, with PID written and lock held.
+    /// - Throws: `DaemonError.pidWriteFailed` on write or lock failure.
+    private static func finalizePIDFileDescriptor(_ fd: Int32, at path: String) throws -> Int32 {
+        func cleanup() {
+            close(fd)
+            unlink(path)
         }
 
+        let pid = ProcessInfo.processInfo.processIdentifier
         let pidString = "\(pid)\n"
         guard let data = pidString.data(using: .utf8) else {
-            throw DaemonError.pidWriteFailed(pidPath)
+            cleanup()
+            throw DaemonError.pidWriteFailed(path)
         }
 
-        do {
-            try data.write(to: URL(fileURLWithPath: pidPath), options: .atomic)
-        } catch {
-            throw DaemonError.pidWriteFailed(pidPath)
+        let written = data.withUnsafeBytes { write(fd, $0.baseAddress!, $0.count) }
+        guard written == data.count else {
+            cleanup()
+            throw DaemonError.pidWriteFailed(path)
         }
+
+        guard flock(fd, LOCK_EX | LOCK_NB) == 0 else {
+            cleanup()
+            throw DaemonError.pidWriteFailed(path)
+        }
+
+        return fd
     }
 
     /// Check whether another daemon instance is already running.
@@ -255,24 +338,19 @@ actor DaemonMain {
     /// waiting for a shutdown signal. It returns when shutdown is complete.
     ///
     /// - Throws: `DaemonError` on startup failures.
-    func run() async throws {
+    public func run() async throws {
         // 1. Ensure data directory
         try Self.ensureDataDir(dataDir)
 
-        // 2. Singleton check
-        guard !Self.checkExistingDaemon(pidPath: resolvedPidPath) else {
-            let pid = Self.readPID(from: resolvedPidPath) ?? -1
-            throw DaemonError.alreadyRunning(pid: pid)
-        }
+        // 2. Atomically acquire PID file (singleton check + write + flock)
+        let pidFD = try Self.acquirePIDFile(pidPath: resolvedPidPath)
+        self.pidFileDescriptor = pidFD
 
-        // 3. Write PID file
-        try Self.writePIDFile(pidPath: resolvedPidPath)
-
-        // 4. Load persistence layer
+        // 3. Load persistence layer
         let persistence = try IndexPersistence(dbPath: resolvedDbPath)
         self.persistence = persistence
 
-        // 5. Load records and rebuild in-memory index
+        // 4. Load records and rebuild in-memory index
         let index = InMemoryIndex()
         self.index = index
         let records = try await persistence.loadAllRecords()
@@ -280,13 +358,13 @@ actor DaemonMain {
             await index.insert(record)
         }
 
-        // 6. Create SearchCoordinator
+        // 5. Create SearchCoordinator
         let fileProvider = FileIndexProvider(index: index)
         await fileProvider.prepare()
         let coordinator = SearchCoordinator(providers: [fileProvider])
         self.coordinator = coordinator
 
-        // 7. Start IPCServer
+        // 6. Start IPCServer
         let startTime = Date()
         let statsProvider: @Sendable () -> DaemonStats = {
             DaemonStats(
@@ -307,7 +385,7 @@ actor DaemonMain {
 
         _state = .ready
 
-        // 8. Start FSEventWatcher (uses injected event stream)
+        // 7. Start FSEventWatcher (uses injected event stream)
         let eventStream = eventStreamProvider()
         let cursor = await persistence.loadEventCursor()
         let watcher = FSEventWatcher(
@@ -322,6 +400,40 @@ actor DaemonMain {
         )
 
         _state = .live
+
+        // 8. Background initial scan on first run (empty index)
+        if records.isEmpty {
+            let bgIndex = index
+            let bgPersistence = persistence
+            backgroundScanTask = Task.detached {
+                let scanner = FileScanner()
+                let homeDir = NSHomeDirectory()
+                let scanStream = await scanner.scan(
+                    rootPaths: [homeDir],
+                    config: ScanConfiguration(maxDepth: 8)
+                )
+                var scannedCount = 0
+                for await event in scanStream {
+                    // Respect cancellation (daemon shutting down)
+                    guard !Task.isCancelled else { return }
+                    switch event {
+                    case .fileFound(let record):
+                        await bgIndex.insert(record)
+                        scannedCount += 1
+                    case .scanComplete:
+                        let allRecords = await bgIndex.allRecords()
+                        await bgPersistence.saveRecords(allRecords)
+                        let log = Logger(subsystem: "com.nadav.deepfinder.daemon", category: "lifecycle")
+                        log.info("Initial scan complete: \(scannedCount) files indexed, \(allRecords.count) total")
+                    case .scanError(let error):
+                        let log = Logger(subsystem: "com.nadav.deepfinder.daemon", category: "lifecycle")
+                        log.warning("Background scan error at \(error.path, privacy: .public): \(error.reason, privacy: .public)")
+                    default:
+                        break
+                    }
+                }
+            }
+        }
 
         // 9. Register signal handlers (production only)
         if installSignals {
@@ -344,15 +456,24 @@ actor DaemonMain {
         await ipcServer?.stop()
         ipcServer = nil
 
+        // Cancel background initial scan if still running
+        backgroundScanTask?.cancel()
+        backgroundScanTask = nil
+
         // Stop file watcher (saves cursor)
         await watcher?.stopWatching()
         watcher = nil
 
         // Flush SQLite
-        try? await persistence?.flush()
+        do { try await persistence?.flush() }
+        catch { logger.warning("Failed to flush persistence during shutdown: \(error.localizedDescription, privacy: .public)") }
 
-        // Remove PID file
-        try? FileManager.default.removeItem(atPath: resolvedPidPath)
+        // Remove PID file (unlink first so path is freed, then close releases flock)
+        _ = unlink(resolvedPidPath)
+        if let fd = pidFileDescriptor {
+            close(fd)
+            pidFileDescriptor = nil
+        }
 
         // Socket file is already removed by IPCServer.stop()
 
@@ -361,6 +482,11 @@ actor DaemonMain {
         sigtermSource = nil
         sigintSource?.cancel()
         sigintSource = nil
+
+        // Signal the waitForShutdown() stream to wake and return
+        shutdownContinuation?.yield(())
+        shutdownContinuation?.finish()
+        shutdownContinuation = nil
     }
 
     // MARK: - Internal
@@ -408,14 +534,15 @@ actor DaemonMain {
         self.sigintSource = intSource
     }
 
-    /// Wait for the daemon to enter `shuttingDown` state.
+    /// Wait for the daemon to receive a shutdown signal.
     ///
-    /// Polls at a reasonable interval. In production, the daemon would use
-    /// `DispatchMain()` or `NSRunLoop`, but in our actor-based model we
-    /// use a simple async poll loop that yields to the cooperative thread pool.
+    /// Uses an AsyncStream continuation instead of a polling loop.
+    /// The continuation is stored in `shutdownContinuation`, yielded to from
+    /// `shutdown()`, and consumed here. This eliminates the 100ms polling
+    /// overhead and wakes immediately on shutdown.
     private func waitForShutdown() async {
-        while _state != .shuttingDown {
-            try? await Task.sleep(nanoseconds: 100_000_000) // 100ms
-        }
+        let (stream, continuation) = AsyncStream<Void>.makeStream()
+        self.shutdownContinuation = continuation
+        for await _ in stream {}
     }
 }

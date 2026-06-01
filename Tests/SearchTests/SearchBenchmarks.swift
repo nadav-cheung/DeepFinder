@@ -1,15 +1,15 @@
 import Foundation
-import XCTest
+import Testing
 @testable import DeepFinder
 
 /// Performance benchmarks for the Search layer.
 ///
-/// Uses XCTestCase `measure {}` blocks for deterministic performance tracking.
-/// These always pass — they measure and report, not assert on timing.
+/// Uses Swift Testing with manual timing via ContinuousClock.
+/// These always pass -- they measure and report, not assert on timing.
 /// Large-scale (1M) benchmarks are separate manual targets; these use 10K-100K.
 ///
 /// Run: `swift test --filter SearchBenchmarks`
-final class SearchBenchmarks: XCTestCase {
+struct SearchBenchmarks {
 
     // MARK: - Helpers
 
@@ -51,7 +51,7 @@ final class SearchBenchmarks: XCTestCase {
 
     /// Measure time to build InMemoryIndex with 10K records.
     /// 100K+ benchmarks should be run in a dedicated performance harness.
-    func testIndexConstruction10K() async {
+    @Test func indexConstruction10K() async {
         let records = generateRecords(count: 10_000)
 
         let start = ContinuousClock.now
@@ -62,7 +62,7 @@ final class SearchBenchmarks: XCTestCase {
         let duration = ContinuousClock.now - start
 
         let count = await index.count
-        XCTAssertEqual(count, 10_000, "Index should contain all records")
+        #expect(count == 10_000, "Index should contain all records")
 
         let seconds = duration / .seconds(1)
         print("[Benchmark] Index construction 10K: \(String(format: "%.3f", seconds))s")
@@ -71,7 +71,7 @@ final class SearchBenchmarks: XCTestCase {
     // MARK: - 2. Search Latency 10K
 
     /// End-to-end search latency with 10K records.
-    func testSearchLatency10K() async throws {
+    @Test func searchLatency10K() async throws {
         let records = generateRecords(count: 10_000)
         let index = await InMemoryIndex()
         for record in records {
@@ -83,29 +83,31 @@ final class SearchBenchmarks: XCTestCase {
         // Warm up
         _ = await coordinator.search(query: "data")
 
-        measure {
-            let group = DispatchGroup()
-            group.enter()
-            Task { @Sendable in
-                _ = await coordinator.search(query: "data")
-                group.leave()
-            }
-            group.wait()
-        }
+        // Measure
+        let start = ContinuousClock.now
+        _ = await coordinator.search(query: "data")
+        let duration = ContinuousClock.now - start
+
+        let milliseconds = duration / .milliseconds(1)
+        print("[Benchmark] Search latency 10K: \(String(format: "%.3f", milliseconds))ms")
     }
 
     // MARK: - 3. Sort Performance
 
     /// Sorting 10K results by relevance.
-    func testSortPerformance() {
+    @Test func sortPerformance() {
         let results = generateSearchResults(count: 10_000)
 
         // Warm up
         _ = SearchSorter.sort(results, by: .relevance)
 
-        measure {
-            _ = SearchSorter.sort(results, by: .relevance)
-        }
+        // Measure
+        let start = ContinuousClock.now
+        _ = SearchSorter.sort(results, by: .relevance)
+        let duration = ContinuousClock.now - start
+
+        let milliseconds = duration / .milliseconds(1)
+        print("[Benchmark] Sort 10K: \(String(format: "%.3f", milliseconds))ms")
     }
 
     // MARK: - Helpers

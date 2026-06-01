@@ -256,7 +256,40 @@ struct IPCServerTests {
         }
     }
 
-    // MARK: - 7. Double stop is safe
+    // MARK: - 7. Peer credential verification
+
+    @Test("Peer credential verification accepts same-user connections")
+    func testPeerCredentialVerificationPassesForSameUser() async throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let record = makeRecord(id: 1, name: "secure.txt", path: "/tmp/secure.txt")
+        let result = SearchResult(record: record, providerID: "test", score: 1.0, matchType: .exact)
+        let provider = MockSearchProvider(results: [result])
+        let coordinator = SearchCoordinator(providers: [provider])
+
+        let server = IPCServer(
+            socketPath: socketPath(in: dir),
+            coordinator: coordinator
+        )
+        try await server.start()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        // Connect from the same process (same UID). Credential verification must pass.
+        let response = try await sendRequest(.query("secure", limit: nil), to: socketPath(in: dir))
+        await server.stop()
+
+        switch response {
+        case .results(let results, _):
+            #expect(results.count == 1)
+            #expect(results[0].record.name == "secure.txt")
+            // Credential verification passed (same user)
+        default:
+            Issue.record("Expected results response, but got: \(response)")
+        }
+    }
+
+    // MARK: - 8. Double stop is safe
 
     @Test("Double stop does not crash")
     func testDoubleStopSafe() async throws {
@@ -279,7 +312,57 @@ struct IPCServerTests {
         #expect(!runningAfterSecond)
     }
 
-    // MARK: - 8. start() cleans up stale socket file
+    // MARK: - 9. Oversized query returns error over socket
+
+    @Test("Oversized query returns error response over socket")
+    func testOversizedQueryReturnsError() async throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let coordinator = SearchCoordinator(providers: [])
+        let server = IPCServer(
+            socketPath: socketPath(in: dir),
+            coordinator: coordinator
+        )
+        try await server.start()
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        // Build a query that exceeds maxQueryLength (barely over the limit)
+        let oversizedQuery = String(repeating: "a", count: maxQueryLength + 1)
+
+        // Encode the request manually as raw JSON to bypass the IPCRequest
+        // encoder (which doesn't validate length). This lets us send a query
+        // that will be rejected by the decoder on the server side.
+        let requestDict: [String: Any] = [
+            "ipcProtocolVersion": 1,
+            "kind": "query",
+            "query": oversizedQuery
+        ]
+        let jsonData = try JSONSerialization.data(withJSONObject: requestDict)
+        let framed = IPCFraming.addLengthPrefix(to: jsonData)
+
+        let socket = try TestSocket.connectUnix(path: socketPath(in: dir))
+        try socket.write(framed)
+
+        let responseData = try socket.readFramedMessage()
+        socket.close()
+        await server.stop()
+
+        let response = try JSONDecoder().decode(IPCResponse.self, from: responseData)
+
+        switch response {
+        case .error(let err):
+            if case .queryError(let msg) = err {
+                #expect(msg.contains("too long") || msg.contains("max"))
+            } else {
+                Issue.record("Expected .queryError but got: \(err)")
+            }
+        default:
+            Issue.record("Expected error response for oversized query, got: \(response)")
+        }
+    }
+
+    // MARK: - 10. start() cleans up stale socket file
 
     @Test("start() cleans up pre-existing stale socket file")
     func testStartCleansStaleSocket() async throws {
@@ -304,6 +387,11 @@ struct IPCServerTests {
 }
 
 // MARK: - TestSocket
+
+/// Errors thrown by ``TestSocket`` during test I/O operations.
+private enum TestSocketError: Error {
+    case connectionClosed
+}
 
 /// A simple blocking Unix domain socket client for tests.
 final class TestSocket: @unchecked Sendable {
@@ -355,7 +443,7 @@ final class TestSocket: @unchecked Sendable {
                 Darwin.write(fd, ptr.baseAddress!.advanced(by: offset), data.count - offset)
             }
             if written < 0 {
-                throw IPCServerError.connectionClosed
+                throw TestSocketError.connectionClosed
             }
             offset += written
         }
@@ -369,7 +457,7 @@ final class TestSocket: @unchecked Sendable {
             var buf = [UInt8](repeating: 0, count: 4 - header.count)
             let n = Darwin.read(fd, &buf, buf.count)
             if n <= 0 {
-                throw IPCServerError.connectionClosed
+                throw TestSocketError.connectionClosed
             }
             header.append(contentsOf: buf.prefix(n))
         }
@@ -383,7 +471,7 @@ final class TestSocket: @unchecked Sendable {
             var buf = [UInt8](repeating: 0, count: min(remaining, 8192))
             let n = Darwin.read(fd, &buf, buf.count)
             if n <= 0 {
-                throw IPCServerError.connectionClosed
+                throw TestSocketError.connectionClosed
             }
             payload.append(contentsOf: buf.prefix(n))
         }

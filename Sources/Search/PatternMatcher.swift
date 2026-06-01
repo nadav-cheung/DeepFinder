@@ -66,6 +66,9 @@ struct PatternMatcher: Sendable {
     /// options. The pattern is applied to the full input string.
     /// Returns `false` (never throws/crashes) for invalid regex patterns.
     static func matchRegex(pattern: String, input: String) -> Bool {
+        // Prevent ReDoS: reject excessively long patterns before compiling.
+        guard pattern.count <= 256 else { return false }
+
         guard let regex = try? NSRegularExpression(
             pattern: pattern,
             options: [.caseInsensitive, .anchorsMatchLines]

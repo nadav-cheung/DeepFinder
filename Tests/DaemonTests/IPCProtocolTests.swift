@@ -96,6 +96,7 @@ struct IPCProtocolTests {
             .queryError("bad syntax"),
             .invalidRequest("missing field"),
             .permissionDenied("no access"),
+            .incompatibleProtocolVersion,
         ]
         for err in errors {
             let original = IPCResponse.error(err)
@@ -177,6 +178,50 @@ struct IPCProtocolTests {
         let incomplete = framed.prefix(4 + 5)
         #expect(throws: IPCFramingError.self) {
             try IPCFraming.stripLengthPrefix(from: incomplete)
+        }
+    }
+
+    // MARK: - Protocol version
+
+    // MARK: - Query length validation
+
+    @Test("Query at exactly maxQueryLength decodes successfully")
+    func testQueryAtMaxLengthDecodes() throws {
+        let exactLengthQuery = String(repeating: "a", count: maxQueryLength)
+        let original = IPCRequest.query(exactLengthQuery, limit: nil)
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(IPCRequest.self, from: data)
+        #expect(decoded == original)
+    }
+
+    @Test("Query exceeding maxQueryLength is rejected on decode")
+    func testOversizedQueryRejected() throws {
+        let oversizedQuery = String(repeating: "x", count: maxQueryLength + 1)
+        let request = IPCRequest.query(oversizedQuery, limit: nil)
+        let data = try JSONEncoder().encode(request)
+
+        do {
+            _ = try JSONDecoder().decode(IPCRequest.self, from: data)
+            Issue.record("Expected decode to throw for oversized query, but it succeeded")
+        } catch let error as IPCError {
+            if case .queryError(let msg) = error {
+                #expect(msg.contains("too long") || msg.contains("max"))
+            } else {
+                Issue.record("Expected .queryError but got: \(error)")
+            }
+        } catch {
+            Issue.record("Expected IPCError.queryError but got: \(error)")
+        }
+    }
+
+    @Test("Very large query (100KB) is rejected on decode")
+    func testVeryLargeQueryRejected() throws {
+        let hugeQuery = String(repeating: "z", count: 100_000)
+        let request = IPCRequest.query(hugeQuery, limit: nil)
+        let data = try JSONEncoder().encode(request)
+
+        #expect(throws: IPCError.self) {
+            try JSONDecoder().decode(IPCRequest.self, from: data)
         }
     }
 

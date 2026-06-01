@@ -129,7 +129,8 @@ struct SearchSorter: Sendable {
     private static func extractNumber(_ s: String, from idx: inout String.Index) -> UInt64 {
         var value: UInt64 = 0
         while idx < s.endIndex, s[idx].isNumber {
-            value = value &* 10 &+ UInt64(s[idx].wholeNumberValue!)
+            guard let digit = s[idx].wholeNumberValue else { break }
+            value = value &* 10 &+ UInt64(digit)
             s.formIndex(after: &idx)
         }
         return value

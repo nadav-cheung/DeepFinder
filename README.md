@@ -1,5 +1,13 @@
 # DeepFinder
 
+```
+  ____                 _____  __         _
+ / __ \ ___   ___ ___ / __\ \/ /  ___ __| | ___  _ __
+/ / _ `/ -_) / -_|_-_| _| |\  /  / -_| _` |/ -_)| '__|
+\ \__/\ \__/ \___/___|_| |_|/__\ \___\__/_|\___/ |_|
+ \___/
+```
+
 A blazing-fast file search engine for macOS, inspired by [Everything](https://www.voidtools.com/) on Windows.
 
 Sub-millisecond queries against a full in-memory index. Background daemon architecture. CLI + Spotlight-like GUI. Privacy-first AI features. Zero external dependencies.

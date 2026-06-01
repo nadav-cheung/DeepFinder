@@ -57,22 +57,107 @@ struct DaemonMainTests {
         #expect(perms == 0o700)
     }
 
-    // MARK: - 3. PID file write and content
+    // MARK: - 3. acquirePIDFile creates file with current PID
 
-    @Test("writePIDFile writes current PID")
-    func testWritePIDFile() throws {
+    @Test("acquirePIDFile creates file with current PID and returns valid fd")
+    func testAcquirePIDFile() throws {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
 
         let pidPath = dir.appendingPathComponent("daemon.pid").path
-        try DaemonMain.writePIDFile(pidPath: pidPath)
+        let fd = try DaemonMain.acquirePIDFile(pidPath: pidPath)
+        defer {
+            close(fd)
+            unlink(pidPath)
+        }
 
+        // fd should be valid
+        #expect(fd >= 0)
+
+        // File should contain our PID
         let data = try Data(contentsOf: URL(fileURLWithPath: pidPath))
         let content = String(data: data, encoding: .utf8)?
             .trimmingCharacters(in: .whitespacesAndNewlines)
         let writtenPID = Int32(content ?? "")
 
         #expect(writtenPID == ProcessInfo.processInfo.processIdentifier)
+    }
+
+    // MARK: - 3b. acquirePIDFile succeeds with stale PID (auto-cleanup)
+
+    @Test("acquirePIDFile succeeds when stale PID file exists")
+    func testAcquirePIDFileStalePID() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let pidPath = dir.appendingPathComponent("daemon.pid").path
+
+        // Write a PID that definitely doesn't exist
+        try "99999999\n".write(toFile: pidPath, atomically: true, encoding: .utf8)
+        #expect(FileManager.default.fileExists(atPath: pidPath))
+
+        // acquirePIDFile should clean up the stale file and succeed
+        let fd = try DaemonMain.acquirePIDFile(pidPath: pidPath)
+        defer {
+            close(fd)
+            unlink(pidPath)
+        }
+
+        // Verify it wrote our PID
+        let data = try Data(contentsOf: URL(fileURLWithPath: pidPath))
+        let content = String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        #expect(Int32(content ?? "") == ProcessInfo.processInfo.processIdentifier)
+    }
+
+    // MARK: - 3c. acquirePIDFile succeeds with corrupted PID file (auto-cleanup)
+
+    @Test("acquirePIDFile succeeds when corrupted PID file exists")
+    func testAcquirePIDFileCorrupted() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let pidPath = dir.appendingPathComponent("daemon.pid").path
+        try "not a number\n".write(toFile: pidPath, atomically: true, encoding: .utf8)
+
+        let fd = try DaemonMain.acquirePIDFile(pidPath: pidPath)
+        defer {
+            close(fd)
+            unlink(pidPath)
+        }
+
+        // Should have succeeded and written our PID
+        let data = try Data(contentsOf: URL(fileURLWithPath: pidPath))
+        let content = String(data: data, encoding: .utf8)?
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        #expect(Int32(content ?? "") == ProcessInfo.processInfo.processIdentifier)
+    }
+
+    // MARK: - 3d. acquirePIDFile throws when live daemon owns PID file
+
+    @Test("acquirePIDFile throws alreadyRunning when PID file owned by live process")
+    func testAcquirePIDFileLiveProcess() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let pidPath = dir.appendingPathComponent("daemon.pid").path
+
+        // Write our own PID (simulating a live daemon)
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        try "\(ownPID)\n".write(toFile: pidPath, atomically: true, encoding: .utf8)
+
+        do {
+            _ = try DaemonMain.acquirePIDFile(pidPath: pidPath)
+            Issue.record("Expected DaemonError.alreadyRunning but no error was thrown")
+        } catch let error as DaemonError {
+            if case .alreadyRunning(let pid) = error {
+                #expect(pid == ownPID)
+            } else {
+                Issue.record("Expected alreadyRunning error, got: \(error)")
+            }
+        } catch {
+            Issue.record("Unexpected error type: \(error)")
+        }
     }
 
     // MARK: - 4. Stale PID file detection and cleanup

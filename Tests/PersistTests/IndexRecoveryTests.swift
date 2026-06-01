@@ -1,19 +1,16 @@
-import XCTest
+import Testing
 import Foundation
 @testable import DeepFinder
 
-final class IndexRecoveryTests: XCTestCase {
+struct IndexRecoveryTests {
 
     // MARK: - Helpers
 
-    /// Create a temporary directory for file-based tests. Automatically cleaned up.
+    /// Create a temporary directory for file-based tests.
     private func makeTempDir() throws -> URL {
         let tmpDir = FileManager.default.temporaryDirectory
             .appendingPathComponent("IndexRecoveryTests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
-        addTeardownBlock {
-            try? FileManager.default.removeItem(at: tmpDir)
-        }
         return tmpDir
     }
 
@@ -39,16 +36,6 @@ final class IndexRecoveryTests: XCTestCase {
         return try IndexPersistence(dbPath: dbPath)
     }
 
-    /// Create a WAL file and SHM file alongside the main DB to simulate WAL state.
-    private func createWALFiles(in dir: URL, dbName: String = "test.db") throws -> (walPath: String, shmPath: String) {
-        let walPath = dir.appendingPathComponent(dbName + "-wal").path
-        let shmPath = dir.appendingPathComponent(dbName + "-shm").path
-        let data = Data("corrupted wal data".utf8)
-        try data.write(to: URL(fileURLWithPath: walPath))
-        try data.write(to: URL(fileURLWithPath: shmPath))
-        return (walPath, shmPath)
-    }
-
     /// Create a corrupted (invalid SQLite) file at the given path.
     private func createCorruptedFile(at path: String) throws {
         let garbage = Data("this is not a valid sqlite database at all!!!!".utf8)
@@ -57,8 +44,10 @@ final class IndexRecoveryTests: XCTestCase {
 
     // MARK: - testDiagnoseHealthyDB
 
-    func testDiagnoseHealthyDB() async throws {
+    @Test func diagnoseHealthyDB() async throws {
         let tmpDir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
         let persistence = try makeFileDB(in: tmpDir)
         let record = makeRecord()
         await persistence.saveRecords([record])
@@ -68,15 +57,17 @@ final class IndexRecoveryTests: XCTestCase {
         let recovery = IndexRecovery(persistence: persistence, scanner: scanner, index: index)
 
         let result = try await recovery.diagnoseAndRecover()
-        XCTAssertEqual(result.action, .none)
-        XCTAssertEqual(result.recordsRecovered, 0)
-        XCTAssertFalse(result.message.isEmpty)
+        #expect(result.action == .none)
+        #expect(result.recordsRecovered == 0)
+        #expect(!result.message.isEmpty)
     }
 
     // MARK: - testRecoverFromWALCorruption
 
-    func testRecoverFromWALCorruption() async throws {
+    @Test func recoverFromWALCorruption() async throws {
         let tmpDir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
         let dbName = "recovery.db"
         let dbPath = tmpDir.appendingPathComponent(dbName).path
 
@@ -97,17 +88,18 @@ final class IndexRecoveryTests: XCTestCase {
         let recovery = IndexRecovery(persistence: persistence, scanner: scanner, index: index)
 
         let result = try await recovery.recoverFromWALCorruption()
-        XCTAssertEqual(result.action, .walCleanup)
+        #expect(result.action == .walCleanup)
 
         // WAL and SHM files should no longer exist
-        XCTAssertFalse(FileManager.default.fileExists(atPath: walPath))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: shmPath))
+        #expect(!FileManager.default.fileExists(atPath: walPath))
+        #expect(!FileManager.default.fileExists(atPath: shmPath))
     }
 
     // MARK: - testRecoverFromCheckpointFailure
 
-    func testRecoverFromCheckpointFailure() async throws {
+    @Test func recoverFromCheckpointFailure() async throws {
         let tmpDir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
 
         // Create a valid DB so the file exists on disk.
         let persistence = try makeFileDB(in: tmpDir, name: "checkpoint.db")
@@ -118,14 +110,16 @@ final class IndexRecoveryTests: XCTestCase {
 
         let result = try await recovery.recoverFromCheckpointFailure()
         // Since the DB file exists, recovery returns .rebuildFromDB
-        XCTAssertEqual(result.action, .rebuildFromDB)
-        XCTAssertFalse(result.message.isEmpty)
+        #expect(result.action == .rebuildFromDB)
+        #expect(!result.message.isEmpty)
     }
 
     // MARK: - testSchemaIncompatibilityTriggersMigration
 
-    func testSchemaIncompatibilityTriggersMigration() async throws {
+    @Test func schemaIncompatibilityTriggersMigration() async throws {
         let tmpDir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
         let persistence = try makeFileDB(in: tmpDir)
 
         let scanner = FileScanner()
@@ -134,14 +128,16 @@ final class IndexRecoveryTests: XCTestCase {
 
         // Simulate schema incompatibility: app version is newer than DB version
         let result = try await recovery.recoverFromSchemaIncompatibility(appVersion: 2, dbVersion: 1)
-        XCTAssertEqual(result.action, .rebuildFromDB)
-        XCTAssertTrue(result.message.contains("Schema"))
+        #expect(result.action == .rebuildFromDB)
+        #expect(result.message.contains("Schema"))
     }
 
     // MARK: - testMigrationFailureTriggersFullRebuild
 
-    func testMigrationFailureTriggersFullRebuild() async throws {
+    @Test func migrationFailureTriggersFullRebuild() async throws {
         let tmpDir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
         let dbName = "migrate_fail.db"
         let dbPath = tmpDir.appendingPathComponent(dbName).path
 
@@ -160,13 +156,15 @@ final class IndexRecoveryTests: XCTestCase {
         // When schema migration cannot proceed, fullRebuild is the fallback
         let result = try await recovery.recoverFromSchemaIncompatibility(appVersion: 99, dbVersion: 1)
         // Since the DB is valid but versions differ hugely, it should indicate rebuild
-        XCTAssertTrue(result.action == .fullRescan || result.action == .rebuildFromDB)
+        #expect(result.action == .fullRescan || result.action == .rebuildFromDB)
     }
 
     // MARK: - testFullRebuildScansAndReindexes
 
-    func testFullRebuildScansAndReindexes() async throws {
+    @Test func fullRebuildScansAndReindexes() async throws {
         let tmpDir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
         let persistence = try makeFileDB(in: tmpDir)
 
         // Create a real directory with files to scan
@@ -180,18 +178,20 @@ final class IndexRecoveryTests: XCTestCase {
         let recovery = IndexRecovery(persistence: persistence, scanner: scanner, index: index)
 
         let result = try await recovery.fullRebuild(rootPaths: [scanDir.path])
-        XCTAssertEqual(result.action, .fullRescan)
-        XCTAssertGreaterThan(result.recordsRecovered, 0)
+        #expect(result.action == .fullRescan)
+        #expect(result.recordsRecovered > 0)
 
         // Verify the index now contains the scanned files
         let searchResults = await index.search(query: ".txt")
-        XCTAssertGreaterThan(searchResults.count, 0)
+        #expect(searchResults.count > 0)
     }
 
     // MARK: - testDetectStaleLock
 
-    func testDetectStaleLock() async throws {
+    @Test func detectStaleLock() async throws {
         let tmpDir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
         let persistence = try makeFileDB(in: tmpDir)
 
         let scanner = FileScanner()
@@ -200,26 +200,26 @@ final class IndexRecoveryTests: XCTestCase {
 
         // No stale lock on a fresh DB
         let isStale = try await recovery.detectStaleLock(timeout: 5)
-        XCTAssertFalse(isStale)
+        #expect(!isStale)
     }
 
     // MARK: - testRecoveryResultHasCorrectMessage
 
-    func testRecoveryResultHasCorrectMessage() {
+    @Test func recoveryResultHasCorrectMessage() {
         let result1 = RecoveryResult(action: .none, recordsRecovered: 0, message: "Database is healthy")
-        XCTAssertEqual(result1.message, "Database is healthy")
-        XCTAssertEqual(result1.action, .none)
-        XCTAssertEqual(result1.recordsRecovered, 0)
+        #expect(result1.message == "Database is healthy")
+        #expect(result1.action == .none)
+        #expect(result1.recordsRecovered == 0)
 
         let result2 = RecoveryResult(action: .walCleanup, recordsRecovered: 42, message: "WAL files removed, recovered 42 records")
-        XCTAssertEqual(result2.action, .walCleanup)
-        XCTAssertEqual(result2.recordsRecovered, 42)
-        XCTAssertEqual(result2.message, "WAL files removed, recovered 42 records")
+        #expect(result2.action == .walCleanup)
+        #expect(result2.recordsRecovered == 42)
+        #expect(result2.message == "WAL files removed, recovered 42 records")
 
         let result3 = RecoveryResult(action: .fullRescan, recordsRecovered: 0, message: "Starting full rescan")
-        XCTAssertEqual(result3.action, .fullRescan)
+        #expect(result3.action == .fullRescan)
 
         let result4 = RecoveryResult(action: .rebuildFromDB, recordsRecovered: 100, message: "Rebuilt from main DB")
-        XCTAssertEqual(result4.action, .rebuildFromDB)
+        #expect(result4.action == .rebuildFromDB)
     }
 }

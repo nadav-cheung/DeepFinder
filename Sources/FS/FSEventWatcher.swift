@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 /// Index state machine for the file watcher.
 ///
@@ -66,6 +67,10 @@ private struct EventBatch: Sendable {
 /// event pipe. The synchronous handler enqueues event batches; a background processing
 /// loop drains them with proper async/await support.
 actor FSEventWatcher {
+
+    // MARK: - Logging
+
+    private let logger = Logger(subsystem: "com.nadav.deepfinder.daemon", category: "fswatcher")
 
     // MARK: - Configuration
 
@@ -158,7 +163,7 @@ actor FSEventWatcher {
     ///   - sinceEventID: The last FSEvent ID to resume from. Pass `0` to start from now.
     /// - Throws: `FSEventWatcherError.streamStartFailed` if the event stream cannot be created.
     ///   Note: most start failures are handled internally via retry with backoff rather than thrown.
-    func startWatching(paths: [String], sinceEventID: UInt64) throws {
+    func startWatching(paths: [String], sinceEventID: UInt64) async throws {
         watchedPaths = paths
         currentEventID = sinceEventID
         isStopped = false
@@ -169,7 +174,7 @@ actor FSEventWatcher {
         // Start the internal event processing loop
         startEventProcessingLoop()
 
-        attemptStartOrRetry()
+        await attemptStartOrRetry()
     }
 
     /// Stop watching. Saves cursor to persistence layer.
@@ -218,29 +223,40 @@ actor FSEventWatcher {
     // MARK: - Private: Start / Retry Logic
 
     /// Attempt to start the event stream, or retry with backoff if it fails.
-    private func attemptStartOrRetry() {
+    ///
+    /// Uses `Task.detached` to call `eventStream.start()` off the actor, avoiding
+    /// blocking the Swift concurrency cooperative thread pool with `queue.sync`
+    /// inside `FSEventStreamImpl`. The continuation is captured locally before
+    /// the detached task so no actor-isolated state is accessed from the callback.
+    private func attemptStartOrRetry() async {
         guard !isStopped else { return }
 
-        // The handler enqueues events into the AsyncStream pipe.
-        // The processing loop (running in a Task) drains them with proper async context.
+        // Capture values before hopping off the actor.
+        // AsyncStream.Continuation is Sendable — safe to pass across isolation.
         let continuation = eventContinuation
-        eventStream.start(paths: watchedPaths, sinceEventID: currentEventID) { events in
-            continuation?.yield(EventBatch(events: events))
-        }
+        let paths = watchedPaths
+        let eventID = currentEventID
+        let es = eventStream
 
-        // Check if the stream started successfully.
-        // Both MockEventStream and FSEventStreamImpl set isRunning synchronously.
-        if eventStream.isRunning {
+        // Run the blocking start() call outside the actor.
+        let running: Bool = await Task.detached {
+            es.start(paths: paths, sinceEventID: eventID) { events in
+                continuation?.yield(EventBatch(events: events))
+            }
+            return es.isRunning
+        }.value
+
+        if running {
             _indexState = .live
             retryAttemptCount = 0
             recordRestart()
         } else {
-            handleStreamStartFailure()
+            await handleStreamStartFailure()
         }
     }
 
     /// Handle a stream start failure.
-    private func handleStreamStartFailure() {
+    private func handleStreamStartFailure() async {
         retryAttemptCount += 1
 
         if retryAttemptCount >= Self.maxRetryAttempts {
@@ -302,7 +318,7 @@ actor FSEventWatcher {
             // Check for dropped events
             if flags & FSEventStreamEventFlags(kFSEventStreamEventFlagUserDropped) != 0 ||
                flags & FSEventStreamEventFlags(kFSEventStreamEventFlagKernelDropped) != 0 {
-                handleDroppedEvents()
+                await handleDroppedEvents()
                 continue
             }
 
@@ -330,7 +346,10 @@ actor FSEventWatcher {
             .fileSizeKey,
             .creationDateKey,
             .contentModificationDateKey,
-        ]) else { return }
+        ]) else {
+            logger.warning("handleFileCreated: failed to read resource values for \(path, privacy: .public) — file may have been deleted between event and processing")
+            return
+        }
 
         let isDirectory = resourceValues.isDirectory ?? false
         let isRegularFile = resourceValues.isRegularFile ?? false
@@ -389,13 +408,13 @@ actor FSEventWatcher {
     }
 
     /// Handle dropped events by restarting the stream.
-    private func handleDroppedEvents() {
+    private func handleDroppedEvents() async {
         if hasTooManyRestarts() {
             degradeToPolling()
             return
         }
         eventStream.stop()
-        attemptStartOrRetry()
+        await attemptStartOrRetry()
     }
 
     // MARK: - Private: Polling Fallback

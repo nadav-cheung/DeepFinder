@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import OSLog
 
 // MARK: - Notification Names
 
@@ -286,42 +287,61 @@ private final class DaemonSpawnerViaIPCClient: DaemonSpawner {
 /// `IPCRequest.configSet` messages and parses the daemon's responses.
 private final class IPCSettingsConfigProvider: SettingsConfigProvider {
     private let ipcClient: IPCClient
+    private let logger = Logger(subsystem: "com.nadav.deepfinder.daemon", category: "settings-ipc")
 
     init(ipcClient: IPCClient) {
         self.ipcClient = ipcClient
     }
 
     func getExcludedPaths() async -> [String] {
-        guard let response = try? await ipcClient.send(.configGet(key: "excludedPaths")) else { return [] }
-        if case .results(let results, _) = response {
-            return results.map { $0.record.originalName }
+        do {
+            let response = try await ipcClient.send(.configGet(key: "excludedPaths"))
+            if case .results(let results, _) = response {
+                return results.map { $0.record.originalName }
+            }
+        } catch {
+            logger.warning("Failed to get excluded paths from daemon: \(error.localizedDescription, privacy: .public)")
         }
         return []
     }
 
     func addExcludedPath(_ path: String) async {
-        _ = try? await ipcClient.send(.configSet(key: "addExcludedPath", value: path))
+        do {
+            _ = try await ipcClient.send(.configSet(key: "addExcludedPath", value: path))
+        } catch {
+            logger.warning("Failed to add excluded path '\(path, privacy: .public)': \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     func removeExcludedPath(_ path: String) async {
-        _ = try? await ipcClient.send(.configSet(key: "removeExcludedPath", value: path))
+        do {
+            _ = try await ipcClient.send(.configSet(key: "removeExcludedPath", value: path))
+        } catch {
+            logger.warning("Failed to remove excluded path '\(path, privacy: .public)': \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     func getIndexStats() async -> SettingsIndexStats {
-        guard let response = try? await ipcClient.send(.indexStatus) else {
-            return SettingsIndexStats(state: "unknown", filesIndexed: 0, lastScanDate: nil)
-        }
-        if case .indexStatus(let s) = response {
-            return SettingsIndexStats(
-                state: s.state,
-                filesIndexed: s.filesIndexed,
-                lastScanDate: s.lastScanDate
-            )
+        do {
+            let response = try await ipcClient.send(.indexStatus)
+            if case .indexStatus(let s) = response {
+                return SettingsIndexStats(
+                    state: s.state,
+                    filesIndexed: s.filesIndexed,
+                    lastScanDate: s.lastScanDate
+                )
+            }
+        } catch {
+            logger.warning("Failed to get index stats from daemon: \(error.localizedDescription, privacy: .public)")
         }
         return SettingsIndexStats(state: "unknown", filesIndexed: 0, lastScanDate: nil)
     }
 
     func triggerRebuildIndex() async {
-        _ = try? await ipcClient.send(.configSet(key: "rebuildIndex", value: "true"))
+        do {
+            _ = try await ipcClient.send(.configSet(key: "rebuildIndex", value: "true"))
+        } catch {
+            logger.warning("Failed to trigger index rebuild: \(error.localizedDescription, privacy: .public)")
+        }
     }
 }

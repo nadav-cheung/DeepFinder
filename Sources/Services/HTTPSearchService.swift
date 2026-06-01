@@ -19,6 +19,8 @@
 /// ## Security
 /// The HTTP server binds to 127.0.0.1 only -- not exposed to the network.
 /// Uses Network.framework `NWListener` with zero external dependencies.
+/// Token-based authentication: each start generates a random UUID token that
+/// must be supplied as a `token` query parameter or `Authorization: Bearer` header.
 import Foundation
 import Network
 
@@ -52,6 +54,13 @@ actor HTTPSearchService {
     private let statsHandler: StatsHandler
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "http-search-service", attributes: .concurrent)
+    private var handlerTasks: Set<Task<Void, Never>> = []
+
+    /// Random auth token generated on each start. Clients must supply this
+    /// as a `token` query parameter or `Authorization: Bearer <token>` header.
+    /// The token is also written to `~/.deep-finder/http-token` so local
+    /// trusted clients can read it from disk.
+    let authToken: String = UUID().uuidString
 
     /// The actual port the server is listening on. Nil if not started.
     var listeningPort: UInt16? {
@@ -105,6 +114,7 @@ actor HTTPSearchService {
         // the NWListener dispatch queue.
         let handler = searchHandler
         let stats = statsHandler
+        let token = authToken
 
         listener.newConnectionHandler = { connection in
             connection.start(queue: DispatchQueue(label: "http-conn", attributes: .concurrent))
@@ -118,14 +128,21 @@ actor HTTPSearchService {
                         return
                     }
                     buffer.append(data)
+                    // Guard against unbounded buffer growth from misbehaving clients
+                    let maxHeaderSize = 1_048_576 // 1 MB
+                    if buffer.count > maxHeaderSize {
+                        connection.cancel()
+                        return
+                    }
                     let headerEnd = Data("\r\n\r\n".utf8)
-                    if let range = buffer.range(of: headerEnd) {
+                    if buffer.range(of: headerEnd) != nil {
                         // We have the full header — use everything up to and including \r\n\r\n
                         HTTPRouter.handleRequest(
                             data: buffer,
                             connection: connection,
                             searchHandler: handler,
-                            statsHandler: stats
+                            statsHandler: stats,
+                            authToken: token
                         )
                     } else {
                         readNext()
@@ -138,14 +155,24 @@ actor HTTPSearchService {
         listener.start(queue: queue)
         self.listener = listener
 
+        // Write auth token to file so local trusted clients can read it
+        if let tokenDir = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".deep-finder").path as String?,
+           FileManager.default.fileExists(atPath: tokenDir) {
+            let tokenPath = tokenDir + "/http-token"
+            try? authToken.write(toFile: tokenPath, atomically: true, encoding: .utf8)
+        }
+
         // Wait for the listener to become ready (or fail)
         for await _ in readyContinuation.stream {
             break
         }
     }
 
-    /// Stop the HTTP server.
+    /// Stop the HTTP server and cancel all in-flight handler tasks.
     func stop() {
+        for task in handlerTasks { task.cancel() }
+        handlerTasks.removeAll()
         listener?.cancel()
         listener = nil
     }
@@ -163,12 +190,15 @@ enum HTTPRouter {
         let method: String
         let path: String
         let queryParams: [String: String]
+        /// Raw header lines (for extracting Authorization header).
+        let headers: [String: String]
     }
 
     /// Parse raw HTTP request data into an HTTPRequest.
     static func parseRequest(data: Data) -> HTTPRequest? {
         guard let requestString = String(data: data, encoding: .utf8) else { return nil }
-        let requestLine = requestString.split(separator: "\r\n").first ?? ""
+        let lines = requestString.split(separator: "\r\n")
+        let requestLine = lines.first ?? ""
         let parts = requestLine.split(separator: " ")
         guard parts.count == 3 else { return nil }
 
@@ -185,7 +215,16 @@ enum HTTPRouter {
         let queryString = urlComponents.count > 1 ? String(urlComponents[1]) : ""
         let queryParams = parseQueryParams(queryString)
 
-        return HTTPRequest(method: method, path: path, queryParams: queryParams)
+        // Parse headers from remaining lines
+        var headers: [String: String] = [:]
+        for line in lines.dropFirst() {
+            guard let colonIdx = line.firstIndex(of: ":") else { break }
+            let key = String(line[..<colonIdx]).trimmingCharacters(in: .whitespaces)
+            let value = String(line[line.index(after: colonIdx)...]).trimmingCharacters(in: .whitespaces)
+            headers[key.lowercased()] = value
+        }
+
+        return HTTPRequest(method: method, path: path, queryParams: queryParams, headers: headers)
     }
 
     /// Route a parsed request and produce a response body + status code.
@@ -223,16 +262,44 @@ enum HTTPRouter {
         }
     }
 
-    /// Handle a raw request: parse, route, and send response over the connection.
+    /// Check whether a request carries a valid auth token.
+    ///
+    /// Accepts the token via:
+    /// - `?token=<value>` query parameter
+    /// - `Authorization: Bearer <value>` header
+    static func hasValidToken(request: HTTPRequest, authToken: String) -> Bool {
+        // Check query parameter
+        if let tokenParam = request.queryParams["token"], tokenParam == authToken {
+            return true
+        }
+        // Check Authorization header
+        if let authHeader = request.headers["authorization"],
+           authHeader.hasPrefix("Bearer ") {
+            let token = String(authHeader.dropFirst(7))
+            return token == authToken
+        }
+        return false
+    }
+
+    /// Handle a raw request: parse, authenticate, route, and send response over the connection.
     static func handleRequest(
         data: Data,
         connection: NWConnection,
         searchHandler: @escaping HTTPSearchService.SearchHandler,
-        statsHandler: @escaping HTTPSearchService.StatsHandler
+        statsHandler: @escaping HTTPSearchService.StatsHandler,
+        authToken: String
     ) {
         guard let request = parseRequest(data: data) else {
             sendResponse(connection: connection, statusCode: 400, body: "{\"error\":\"Bad request\"}")
             return
+        }
+
+        // Auth check — /health is unauthenticated for liveness probes
+        if request.path != "/health" {
+            guard hasValidToken(request: request, authToken: authToken) else {
+                sendResponse(connection: connection, statusCode: 401, body: "{\"error\":\"Unauthorized\"}")
+                return
+            }
         }
 
         switch request.path {
@@ -274,6 +341,7 @@ enum HTTPRouter {
         switch statusCode {
         case 200: statusText = "OK"
         case 400: statusText = "Bad Request"
+        case 401: statusText = "Unauthorized"
         case 404: statusText = "Not Found"
         case 405: statusText = "Method Not Allowed"
         default: statusText = "Unknown"
@@ -322,6 +390,7 @@ enum HTTPRouter {
         switch statusCode {
         case 200: statusText = "OK"
         case 400: statusText = "Bad Request"
+        case 401: statusText = "Unauthorized"
         case 404: statusText = "Not Found"
         case 405: statusText = "Method Not Allowed"
         default: statusText = "Unknown"

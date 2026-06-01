@@ -1,0 +1,44 @@
+{
+    "configurations": [
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:DeepFinder}",
+            "name": "Debug deepfinder",
+            "target": "deepfinder",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug deepfinder"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:DeepFinder}",
+            "name": "Release deepfinder",
+            "target": "deepfinder",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release deepfinder"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:DeepFinder}",
+            "name": "Debug deepfinder-daemon",
+            "target": "deepfinder-daemon",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug deepfinder-daemon"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:DeepFinder}",
+            "name": "Release deepfinder-daemon",
+            "target": "deepfinder-daemon",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release deepfinder-daemon"
+        }
+    ]
+}

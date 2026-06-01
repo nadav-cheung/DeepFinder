@@ -10,7 +10,7 @@ DeepFinder — a macOS file search app rivaling Windows Everything. **v1.0 = CLI
 
 **产品名配置**：`PRODUCT.toml` 是产品名的唯一来源。代码中通过 `Product` enum（`Sources/Index/ProductConfig.swift`）引用。改产品名只改 `PRODUCT.toml` + `ProductConfig.swift`，不散落到其他文件。文档中用显示名 "DeepFinder" 即可。
 
-**Status**: `v0.1.0` ✅ **完成** — FileRecord, Trie, FullSubstringMap, TrigramIndex, PinyinIndex, InMemoryIndex (76 tests passing). Next: v0.2 File system. Spec: `docs/superpowers/specs/`.
+**Status**: `v3.0.0` ✅ **完成** — CLI + daemon + GUI + AI semantic search + media metadata + services (973 tests passing). Full roadmap v0.1 through v3.0 complete. Spec: `docs/superpowers/specs/`. OSS readiness assessment: `docs/superpowers/plans/2026-05-31-oss-readiness-assessment.md`.
 
 Zero external dependencies — pure Swift + Apple frameworks only (Foundation, CoreServices, Carbon, SQLite3). CLI via Darwin.readline + ANSI escape codes.
 
@@ -129,21 +129,23 @@ When subagents (Agent tool, Workflow agents) encounter API rate limits (HTTP 429
 
 ```
 Sources/
-  DeepFinderIndex/            # Shared library: index + search + filesystem + persist
-    Index/                    # FileRecord, Trie, FullSubstringMap, TrigramIndex, PinyinIndex, InMemoryIndex
-    Search/                   # SearchProvider, SearchCoordinator, SearchQuery, SearchResult
-    FS/                       # FileSystemEventStream, FileScanner, FSEventWatcher, IndexingEngine
-    Persist/                  # IndexPersistence (SQLite WAL), ConfigStore
-  DeepFinderDaemon/           # Executable: long-running background process (v0.4+)
-    DaemonMain.swift, IPCServer.swift, IPCProtocol.swift
-  DeepFinderCLI/              # Executable: user-facing CLI tool (v0.5+)
-    CLIMain.swift, SingleShot.swift, REPL.swift, TerminalFormatter.swift, IPCClient.swift
+  Index/                      # FileRecord, Trie, FullSubstringMap, TrigramIndex, PinyinIndex, InMemoryIndex
+  Search/                     # SearchProvider, SearchCoordinator, SearchQuery, SearchResult, FilterPipeline, SearchSorter, ContentScanner
+  FS/                         # FileSystemEventStream, FileScanner, FSEventWatcher, MockEventStream, VolumeManager
+  Persist/                    # IndexPersistence (SQLite WAL), IndexRecovery
+  Daemon/                     # DaemonMain, IPCServer, IPCProtocol, IPCClient, ConfigStore, LaunchAgent
+  CLI/                        # CLIMain, ArgParser, SingleShot, REPL, TerminalFormatter, ConfigCommands, DaemonCommands, InstallCommands
+  GUI/                        # SearchPanelView, SearchBarView, ResultsListView, SearchViewModel, AppDelegate, GlobalHotkey, IntelligenceGlow
+  AI/                         # NLSearchTranslator, AIConfig, AIModelProvider, DeepSeekProvider, QwenProvider, SemanticGrouper, VisionTaggingCoordinator
+  Media/                      # ImageMetadataExtractor, AudioMetadataExtractor, VideoMetadataExtractor, PDFMetadataExtractor, MediaMetadataIndex
+  Services/                   # HTTPSearchService, URLSchemeHandler, SearchIntent, SearchScriptCommand
 Tests/
-  IndexTests/                 # FileRecordTests.swift (5 tests passing)
+  IndexTests/ SearchTests/ FSTests/ PersistTests/ DaemonTests/ CLITests/ GUITests/ AITests/ MediaTests/ ServicesTests/
 docs/
   superpowers/specs/          # requirements.md (index → reqs/), architecture design doc
-Package.swift                 # DeepFinderIndex (lib) + DeepFinderDaemon (exe) + DeepFinderCLI (exe), macOS .v26
-VERSION                       # Current: 0.1.0-dev
+  superpowers/plans/          # implementation plans, OSS readiness assessment
+Package.swift                 # Single monolithic DeepFinder library target (split into sub-libraries planned)
+VERSION                       # Current: 3.0.0
 ```
 
 ## Architecture
@@ -162,10 +164,8 @@ CLI/Daemon → Search → Index
 Index layer has zero UI/CLI dependencies and can be tested in isolation.
 
 **Package.swift targets:**
-- `DeepFinderIndex` (library) — Index + Search + FS + Persist, shared by daemon and CLI
-- `DeepFinderDaemon` (executable) — daemon process, depends on DeepFinderIndex
-- `DeepFinderCLI` (executable) — user-facing CLI, depends on DeepFinderIndex (shared types only)
-- `DeepFinderIndexTests` / `DaemonTests` / `CLITests`
+- `DeepFinder` (library) — single monolithic target at path `Sources/`, covering all modules (Index, Search, FS, Persist, Daemon, CLI, GUI, AI, Media, Services). Split into sub-libraries is planned to improve build parallelism and enforce module boundaries.
+- `DeepFinderTests` (test target) — depends on `DeepFinder`, path `Tests/`
 
 **Concurrency model:**
 - `InMemoryIndex`: actor — all read/write via actor isolation
@@ -230,7 +230,7 @@ Agent("实现 FSEventWatcher", subagent_type="general-purpose", name="macos-dev"
 Agent("实现 REPL 交互循环", subagent_type="general-purpose", name="cli-dev")
 ```
 
-当前阶段（v0.1）主要激活 **algo-dev**、**architect** 和 **researcher**。v0.4 起加入 **macos-dev**（daemon），v0.5 起加入 **cli-dev**。
+当前阶段（v3.0）所有团队角色均已激活：**algo-dev**、**architect**、**researcher**、**macos-dev**、**cli-dev**、**ui-dev**、**ai-dev**、**qa-dev**。新功能按模块分配给对应角色的 subagent。
 
 ### 信息顾问使用场景
 

@@ -29,8 +29,8 @@ struct SingleShot {
         let response: IPCResponse
         do {
             response = try await client.send(request)
-        } catch is IPCClientError {
-            return (CLIOutput(stderr: "Error: could not reach daemon\n"), .daemonError)
+        } catch let error as IPCClientError {
+            return (CLIOutput(stderr: "Error: could not reach daemon — \(error.description)\n"), .daemonError)
         } catch {
             return (CLIOutput(stderr: "Error: could not reach daemon — \(error.localizedDescription)\n"), .daemonError)
         }
@@ -81,6 +81,8 @@ struct SingleShot {
                 return (CLIOutput(stderr: "Error: \(message)\n"), .queryError)
             case .permissionDenied(let message):
                 return (CLIOutput(stderr: "Error: \(message)\n"), .queryError)
+            case .incompatibleProtocolVersion:
+                return (CLIOutput(stderr: "Error: Protocol version mismatch — your client is newer than the daemon. Please update the daemon.\n"), .daemonError)
             }
 
         default:

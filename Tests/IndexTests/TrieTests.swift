@@ -180,4 +180,32 @@ struct TrieTests {
         _ = trie.remove(Array("x".unicodeScalars))
         #expect(trie.isEmpty)
     }
+
+    // MARK: - Exact-Key Lookup (get)
+
+    @Test("get 返回精确键的值")
+    func getReturnsExactKeyValue() {
+        var trie = Trie<UnicodeScalar, Set<UInt32>>()
+        trie.insert(Array("ab".unicodeScalars), value: [1, 2])
+        trie.insert(Array("a".unicodeScalars), value: [3, 4])
+
+        #expect(trie.get(key: Array("ab".unicodeScalars)) == [1, 2])
+        #expect(trie.get(key: Array("a".unicodeScalars)) == [3, 4])
+        #expect(trie.get(key: Array("abc".unicodeScalars)) == nil)
+    }
+
+    @Test("get 区分前缀关系：删除长键不影响短键")
+    func getDistinguishesPrefixRelationships() {
+        var trie = Trie<UnicodeScalar, Set<UInt32>>()
+        let abScalars = Array("ab".unicodeScalars)
+        let aScalars = Array("a".unicodeScalars)
+
+        trie.insert(abScalars, value: [10])
+        trie.insert(aScalars, value: [20])
+
+        // Remove "ab" should NOT affect "a"
+        _ = trie.remove(abScalars)
+        #expect(trie.get(key: aScalars) == [20])
+        #expect(trie.get(key: abScalars) == nil)
+    }
 }

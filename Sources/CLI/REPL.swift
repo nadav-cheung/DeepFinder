@@ -228,6 +228,8 @@ actor REPL {
                 output.writeError("Error: \(message)\n")
             case .permissionDenied(let message):
                 output.writeError("Error: \(message)\n")
+            case .incompatibleProtocolVersion:
+                output.writeError("Error: Protocol version mismatch — your client is newer than the daemon. Please update the daemon.\n")
             }
 
         default:
@@ -386,7 +388,8 @@ actor REPL {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         process.arguments = [path]
-        try? process.run()
+        do { try process.run() }
+        catch { output.writeError("Error: failed to launch open command — \(error.localizedDescription)\n") }
     }
 
     /// Reveal a file in Finder via `/usr/bin/open -R`.
@@ -394,7 +397,8 @@ actor REPL {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         process.arguments = ["-R", path]
-        try? process.run()
+        do { try process.run() }
+        catch { output.writeError("Error: failed to launch open command — \(error.localizedDescription)\n") }
     }
 
     private func handleDaemon() async -> Bool {

@@ -83,11 +83,7 @@ struct SearchPanelView: View {
                     .padding(20)
                     .frame(maxWidth: .infinity)
             } else if viewModel.hasSearched && viewModel.results.isEmpty {
-                Text("未找到匹配文件")
-                    .foregroundStyle(.secondary)
-                    .font(.system(size: 14))
-                    .padding(20)
-                    .frame(maxWidth: .infinity)
+                errorStateView
             } else if !viewModel.results.isEmpty {
                 ScrollView {
                     LazyVStack(spacing: 0) {
@@ -108,6 +104,93 @@ struct SearchPanelView: View {
         }
         .frame(minWidth: 480, maxWidth: 800)
         .glassEffect(.regular, in: .rect(cornerRadius: 24))
+    }
+
+    // MARK: - Error State View
+
+    /// Displays an appropriate error message based on the current `errorState`.
+    ///
+    /// - `.noResults`: simple "no matching files" message.
+    /// - `.daemonDisconnected`: warning with a Retry button that re-runs the search.
+    /// - `.searchError`: error message from the daemon with a Retry button.
+    @ViewBuilder
+    private var errorStateView: some View {
+        if let errorState = viewModel.errorState {
+            switch errorState {
+            case .noResults:
+                noResultsView
+            case .daemonDisconnected:
+                daemonDisconnectedView
+            case .searchError(let message):
+                searchErrorView(message: message)
+            }
+        } else {
+            // Fallback: empty results without a typed error state
+            noResultsView
+        }
+    }
+
+    private var noResultsView: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 24))
+                .foregroundStyle(.secondary)
+            Text("未找到匹配文件")
+                .foregroundStyle(.secondary)
+                .font(.system(size: 14))
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity)
+    }
+
+    private var daemonDisconnectedView: some View {
+        VStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 24))
+                .foregroundStyle(.orange)
+
+            VStack(spacing: 4) {
+                Text("Daemon not connected")
+                    .font(.system(size: 14, weight: .semibold))
+                Text("The search daemon is not running. Start it from the menu bar or wait for it to auto-start.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            Button("Retry") {
+                Task { await viewModel.search() }
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity)
+    }
+
+    private func searchErrorView(message: String) -> some View {
+        VStack(spacing: 12) {
+            Image(systemName: "xmark.circle.fill")
+                .font(.system(size: 24))
+                .foregroundStyle(.red)
+
+            VStack(spacing: 4) {
+                Text("Search Error")
+                    .font(.system(size: 14, weight: .semibold))
+                Text(message)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            Button("Retry") {
+                Task { await viewModel.search() }
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.small)
+        }
+        .padding(20)
+        .frame(maxWidth: .infinity)
     }
 }
 

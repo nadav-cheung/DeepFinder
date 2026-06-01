@@ -31,7 +31,7 @@ enum IPCClientError: Error, CustomStringConvertible, Equatable {
 // MARK: - SpawnError
 
 /// Error wrapper for daemon spawn failures.
-private struct SpawnError: Error, CustomStringConvertible {
+struct SpawnError: Error, CustomStringConvertible {
     let message: String
     var description: String { message }
 }
@@ -66,9 +66,9 @@ actor IPCClient {
     ///
     /// Does not connect automatically — call `connect()` to establish the connection.
     ///
-    /// - Parameter socketPath: Absolute path to the Unix domain socket.
+    /// - Parameter socketPath: Path to the Unix domain socket. Supports `~` expansion.
     init(socketPath: String) {
-        self.socketPath = socketPath
+        self.socketPath = Self.expandTilde(socketPath)
     }
 
     deinit {
@@ -147,7 +147,7 @@ actor IPCClient {
         }
 
         do {
-            try writeAll(data: encoded)
+            try IPCFramingIO.writeAll(to: fd, data: encoded)
         } catch {
             throw IPCClientError.sendFailed(error.localizedDescription)
         }
@@ -155,7 +155,7 @@ actor IPCClient {
         // Read response
         let responseData: Data
         do {
-            responseData = try readFramedMessage()
+            responseData = try IPCFramingIO.readFramedMessage(from: fd)
         } catch {
             throw IPCClientError.receiveFailed(error.localizedDescription)
         }
@@ -183,7 +183,7 @@ actor IPCClient {
     /// - Throws: `IPCClientError.daemonSpawnFailed` or `IPCClientError.daemonStartupTimedOut`.
     func ensureDaemonRunning(
         pidPath: String = Product.pidPath,
-        daemonBinaryPath: String = Product.command,
+        daemonBinaryPath: String = Product.daemonCommand,
         timeout: TimeInterval = 10.0,
         pollInterval: TimeInterval = 0.5,
         maxRetries: Int = 3
@@ -313,11 +313,93 @@ actor IPCClient {
     }
 
     /// Spawn the daemon process.
-    private static func spawnDaemon(binaryPath: String) -> Result<Void, SpawnError> {
-        // Use Process to launch the daemon in the background
+    ///
+    /// Resolves the daemon binary from fixed, absolute locations only. Never uses
+    /// PATH lookup or CWD-relative resolution, which would allow an attacker to
+    /// substitute a malicious binary.
+    static func spawnDaemon(binaryPath: String) -> Result<Void, SpawnError> {
+        // Resolve the daemon binary path from absolute locations only.
+        // Each candidate must be an absolute path (starts with "/") to prevent
+        // CWD-relative attacks where a malicious binary could shadow the real one.
+        // Build candidate absolute paths to search.
+        // Use only the last path component to prevent path traversal attacks
+        // (e.g. binaryPath = "../../malicious" should not resolve to cliDir/../../malicious).
+        let binaryName = (binaryPath as NSString).lastPathComponent
+        let cliDir = (Bundle.main.executablePath as NSString?)?.deletingLastPathComponent
+        let candidates: [String] = [
+            // 1. Next to the current CLI executable (SPM .build/debug/ or install dir)
+            cliDir.map { ($0 as NSString).appendingPathComponent(binaryName) },
+            // 2. Standard Homebrew / Unix install location
+            "/usr/local/bin/\(binaryName)",
+        ].compactMap { $0 }
+
+        let resolvedPath: String
+        // If binaryPath is already absolute, use it directly
+        if binaryPath.hasPrefix("/") {
+            resolvedPath = binaryPath
+        } else {
+            guard let found = candidates.first(where: { FileManager.default.fileExists(atPath: $0) }) else {
+                let searched = ["<provided path>"] + candidates
+                return .failure(SpawnError(message:
+                    "Daemon binary '\(binaryPath)' not found. " +
+                    "Searched absolute locations: \(searched.joined(separator: ", ")). " +
+                    "Install the daemon or provide an absolute path."
+                ))
+            }
+            resolvedPath = found
+        }
+
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: binaryPath)
-        process.arguments = ["--daemon"]
+        process.executableURL = URL(fileURLWithPath: resolvedPath)
+        process.arguments = []
+
+        // ── Security hardening ──────────────────────────────────────
+        // Prevent daemon from inheriting parent cwd, stdio, or env.
+
+        // Working directory: use data directory; fall back to root.
+        let dataDir = Self.expandTilde(Product.dataDir)
+        if FileManager.default.fileExists(atPath: dataDir) {
+            process.currentDirectoryURL = URL(fileURLWithPath: dataDir)
+        } else {
+            process.currentDirectoryURL = URL(fileURLWithPath: "/")
+        }
+
+        // Stdio: detach from parent terminal.
+        //   stdin  → /dev/null (daemon is non-interactive)
+        //   stdout → daemon log file
+        //   stderr → same log file
+        let nullHandle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: "/dev/null"))
+        process.standardInput = nullHandle
+
+        let logDir = (dataDir as NSString).appendingPathComponent("logs")
+        let logPath: String
+        if FileManager.default.fileExists(atPath: logDir) {
+            logPath = (logDir as NSString).appendingPathComponent("daemon.log")
+        } else {
+            logPath = (dataDir as NSString).appendingPathComponent("daemon.log")
+        }
+        // Create the log file if it doesn't exist, then open for append.
+        // We preserve existing log contents (crash diagnostics from previous runs).
+        if !FileManager.default.fileExists(atPath: logPath) {
+            FileManager.default.createFile(atPath: logPath, contents: nil, attributes: nil)
+        }
+        if let logHandle = try? FileHandle(forWritingTo: URL(fileURLWithPath: logPath)) {
+            _ = try? logHandle.seekToEnd()
+            process.standardOutput = logHandle
+            process.standardError = logHandle
+        }
+
+        // Environment: pass only the minimal set the daemon needs.
+        // PATH is intentionally excluded — the daemon is launched from a fixed
+        // absolute path and should not inherit an attacker-controlled PATH.
+        let env = ProcessInfo.processInfo.environment
+        var minimalEnv: [String: String] = [:]
+        for key in ["HOME", "TMPDIR"] {
+            if let value = env[key] {
+                minimalEnv[key] = value
+            }
+        }
+        process.environment = minimalEnv
 
         do {
             try process.run()
@@ -325,56 +407,5 @@ actor IPCClient {
         } catch {
             return .failure(SpawnError(message: "Failed to launch daemon: \(error.localizedDescription)"))
         }
-    }
-
-    /// Write all data to the connected socket.
-    private func writeAll(data: Data) throws {
-        var offset = 0
-        while offset < data.count {
-            let written = data.withUnsafeBytes { ptr in
-                Darwin.write(fd, ptr.baseAddress!.advanced(by: offset), data.count - offset)
-            }
-            if written < 0 {
-                throw IPCClientError.sendFailed(String(cString: strerror(errno)))
-            }
-            offset += written
-        }
-    }
-
-    /// Read a 4-byte-length-prefixed framed message from the connected socket.
-    private func readFramedMessage() throws -> Data {
-        // Read 4-byte header
-        var header = Data(capacity: 4)
-        while header.count < 4 {
-            var buf = [UInt8](repeating: 0, count: 4 - header.count)
-            let n = Darwin.read(fd, &buf, buf.count)
-            if n <= 0 {
-                throw IPCClientError.receiveFailed("Connection closed while reading header")
-            }
-            header.append(contentsOf: buf.prefix(n))
-        }
-
-        let length = Int(UInt32(bigEndian: header.withUnsafeBytes { $0.load(as: UInt32.self) }))
-        guard length > 0 else { return Data() }
-
-        // Sanity check
-        let maxMessageSize = 16 * 1024 * 1024 // 16 MB
-        guard length <= maxMessageSize else {
-            throw IPCClientError.receiveFailed("Message too large: \(length) bytes")
-        }
-
-        // Read payload
-        var payload = Data(capacity: length)
-        while payload.count < length {
-            let remaining = length - payload.count
-            var buf = [UInt8](repeating: 0, count: min(remaining, 8192))
-            let n = Darwin.read(fd, &buf, buf.count)
-            if n <= 0 {
-                throw IPCClientError.receiveFailed("Connection closed while reading payload")
-            }
-            payload.append(contentsOf: buf.prefix(n))
-        }
-
-        return payload
     }
 }

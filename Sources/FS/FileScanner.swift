@@ -117,10 +117,18 @@ actor FileScanner {
     /// Sequential ID counter for auto-assigning FileRecord IDs.
     private var nextID: UInt32 = 1
 
+    /// Guard to prevent overlapping scans from producing colliding IDs.
+    private var isScanning = false
+
     private func takeNextID() -> UInt32 {
         let id = nextID
         nextID += 1
         return id
+    }
+
+    /// Reset the scanning guard. Called when a scan stream terminates.
+    func resetScanGuard() {
+        isScanning = false
     }
 
     // MARK: - Public API
@@ -131,11 +139,25 @@ actor FileScanner {
     ///   - rootPaths: Top-level directory paths to scan.
     ///   - config: Scan configuration controlling skip behavior, depth, symlinks.
     /// - Returns: An `AsyncStream<ScanEvent>` that produces events until the scan completes.
+    ///   Returns an empty stream if a scan is already in progress.
     func scan(rootPaths: [String], config: ScanConfiguration) -> AsyncStream<ScanEvent> {
+        // Enforce single-scan-at-a-time to prevent overlapping ID ranges.
+        guard !isScanning else {
+            return AsyncStream { $0.finish() }
+        }
+        isScanning = true
+
         // Grab starting ID on the actor, then do enumeration off-actor.
         let startID = takeNextID() - 1  // will be incremented before first use
+        // Reserve a large ID range by bumping nextID far ahead to prevent overlap
+        // even if another scan somehow starts (defense in depth).
+        _ = takeNextID()
 
+        let scanner = self
         return AsyncStream { continuation in
+            continuation.onTermination = { @Sendable _ in
+                Task { await scanner.resetScanGuard() }
+            }
             Task.detached {
                 // Mutable ID counter local to this scan — no actor isolation needed.
                 var localNextID: UInt32 = startID
@@ -267,6 +289,8 @@ actor FileScanner {
                             }
                         }
                     }
+
+                    if Task.isCancelled { break }
                 }
 
                 // Final progress event with total count
@@ -280,6 +304,9 @@ actor FileScanner {
                     errorCount: errorCount,
                     duration: duration
                 )))
+                // Reset the scanning guard so the next scan can proceed.
+                // This must happen before finish() to allow sequential scans on the same scanner.
+                await scanner.resetScanGuard()
                 continuation.finish()
             }
         }

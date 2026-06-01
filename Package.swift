@@ -6,14 +6,27 @@ let package = Package(
     platforms: [.macOS(.v26)],
     products: [
         .library(name: "DeepFinder", targets: ["DeepFinder"]),
+        .executable(name: "deepfinder", targets: ["DeepFinderCLI"]),
+        .executable(name: "deepfinder-daemon", targets: ["DeepFinderDaemon"]),
     ],
     targets: [
         .target(
             name: "DeepFinder",
             path: "Sources",
+            exclude: ["CLIEntry", "DaemonEntry"],
             linkerSettings: [
                 .linkedLibrary("edit")
             ]
+        ),
+        .executableTarget(
+            name: "DeepFinderCLI",
+            dependencies: ["DeepFinder"],
+            path: "Sources/CLIEntry"
+        ),
+        .executableTarget(
+            name: "DeepFinderDaemon",
+            dependencies: ["DeepFinder"],
+            path: "Sources/DaemonEntry"
         ),
         .testTarget(
             name: "DeepFinderTests",

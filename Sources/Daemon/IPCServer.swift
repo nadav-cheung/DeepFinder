@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 // MARK: - IPCServerError
 
@@ -8,10 +9,11 @@ enum IPCServerError: Error, Sendable, Equatable {
     case socketCreationFailed(String)
     case bindFailed(String)
     case listenFailed(String)
-    case connectionClosed
     case notRunning
     case alreadyRunning
-    case messageTooLarge(Int)
+    /// Peer credential verification failed (uid mismatch, invalid pid, etc.).
+    /// The associated value is the client file descriptor that was rejected.
+    case peerVerificationFailed(Int32)
 }
 
 // MARK: - IPCServer
@@ -33,6 +35,11 @@ enum IPCServerError: Error, Sendable, Equatable {
 /// Thread-safe via actor isolation.
 actor IPCServer {
 
+    // MARK: - Logging
+
+    /// Structured logger for IPC server events.
+    private let logger = Logger(subsystem: "com.nadav.deepfinder.daemon", category: "ipc")
+
     // MARK: - Properties
 
     private let socketPath: String
@@ -44,8 +51,22 @@ actor IPCServer {
     private var clientTasks: [Task<Void, Never>] = []
     private var startTime: Date?
 
-    /// Maximum allowed message size (16 MB).
-    private let maxMessageSize = 16 * 1024 * 1024
+    // MARK: Rate Limiting
+
+    /// Sliding-window timestamps of recent connections for rate-limit decisions.
+    /// Never grows beyond `maxConnsPerSecond` because entries older than 1 s
+    /// are purged on each check.
+    /// Actor isolation serializes all access — no lock needed.
+    private var connectionTimestamps: [Date] = []
+
+    /// Maximum new connections allowed within a 1-second sliding window.
+    private let maxConnsPerSecond: Int
+
+    /// Maximum number of concurrently handled client connections.
+    private let maxConcurrentClients: Int
+
+    /// Count of currently in-flight client-handling tasks.
+    private var activeClientCount: Int = 0
 
     /// Whether the server is currently listening for connections.
     var isRunning: Bool {
@@ -60,16 +81,22 @@ actor IPCServer {
     ///   - socketPath: File path for the Unix domain socket (e.g. `~/.deep-finder/ipc.sock`).
     ///   - coordinator: The search coordinator that processes queries.
     ///   - statsProvider: Closure that returns current daemon statistics when called.
+    ///   - maxConnsPerSecond: Maximum new connections allowed per second (default 10).
+    ///   - maxConcurrentClients: Maximum concurrent client connections (default 50).
     init(
         socketPath: String,
         coordinator: SearchCoordinator,
         statsProvider: @escaping @Sendable () -> DaemonStats = {
             DaemonStats(totalFiles: 0, indexState: "unknown", uptimeSeconds: 0, memoryUsageMB: 0)
-        }
+        },
+        maxConnsPerSecond: Int = 10,
+        maxConcurrentClients: Int = 50
     ) {
         self.socketPath = socketPath
         self.coordinator = coordinator
         self.statsProvider = statsProvider
+        self.maxConnsPerSecond = maxConnsPerSecond
+        self.maxConcurrentClients = maxConcurrentClients
     }
 
     // MARK: - Lifecycle
@@ -83,9 +110,12 @@ actor IPCServer {
             throw IPCServerError.alreadyRunning
         }
 
+        logger.info("Starting IPC server on \(self.socketPath, privacy: .public)")
+
         // Validate path fits in sockaddr_un.sun_path (104 bytes including null terminator)
         let maxPathLength = MemoryLayout<sockaddr_un>.size - MemoryLayout<sa_family_t>.size - 1
         guard socketPath.utf8.count <= maxPathLength else {
+            logger.error("Socket path too long: \(self.socketPath.utf8.count) bytes (max \(maxPathLength))")
             throw IPCServerError.socketCreationFailed(
                 "Socket path too long (\(socketPath.utf8.count) bytes, max \(maxPathLength))"
             )
@@ -93,6 +123,7 @@ actor IPCServer {
 
         // Clean up stale socket file
         unlink(socketPath)
+        logger.debug("Cleaned up stale socket file: \(self.socketPath, privacy: .public)")
 
         // Ensure parent directory exists
         let parentDir = (socketPath as NSString).deletingLastPathComponent
@@ -104,18 +135,24 @@ actor IPCServer {
         // Create Unix domain socket
         let fd = socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else {
-            throw IPCServerError.socketCreationFailed(String(cString: strerror(errno)))
+            let errMsg = String(cString: strerror(errno))
+            logger.error("Socket creation failed: \(errMsg, privacy: .public)")
+            throw IPCServerError.socketCreationFailed(errMsg)
         }
 
         // Set non-blocking mode on listen socket so accept() doesn't block threads
         let flags = fcntl(fd, F_GETFL, 0)
         guard flags >= 0 else {
+            let errMsg = String(cString: strerror(errno))
+            logger.error("fcntl F_GETFL failed: \(errMsg, privacy: .public)")
             close(fd)
-            throw IPCServerError.socketCreationFailed(String(cString: strerror(errno)))
+            throw IPCServerError.socketCreationFailed(errMsg)
         }
         guard fcntl(fd, F_SETFL, flags | O_NONBLOCK) >= 0 else {
+            let errMsg = String(cString: strerror(errno))
+            logger.error("fcntl F_SETFL O_NONBLOCK failed: \(errMsg, privacy: .public)")
             close(fd)
-            throw IPCServerError.socketCreationFailed(String(cString: strerror(errno)))
+            throw IPCServerError.socketCreationFailed(errMsg)
         }
 
         // Bind
@@ -135,6 +172,7 @@ actor IPCServer {
         }
         guard bindResult == 0 else {
             let err = String(cString: strerror(errno))
+            logger.error("Socket bind failed: \(err, privacy: .public)")
             close(fd)
             throw IPCServerError.bindFailed(err)
         }
@@ -142,6 +180,7 @@ actor IPCServer {
         // Listen (backlog of 16)
         guard listen(fd, 16) == 0 else {
             let err = String(cString: strerror(errno))
+            logger.error("Socket listen failed: \(err, privacy: .public)")
             close(fd)
             throw IPCServerError.listenFailed(err)
         }
@@ -151,6 +190,8 @@ actor IPCServer {
 
         // Ignore SIGPIPE — handle write errors explicitly
         signal(SIGPIPE, SIG_IGN)
+
+        logger.debug("Socket fd \(fd) bound and listening, backlog 16")
 
         // Accept loop runs in background Task
         let capturedFD = fd
@@ -172,25 +213,70 @@ actor IPCServer {
     func stop() {
         guard listenFD >= 0 else { return }
 
+        logger.info("Stopping IPC server on \(self.socketPath, privacy: .public)")
+
         // Cancel accept loop
         acceptTask?.cancel()
         acceptTask = nil
 
         // Cancel all client tasks
+        let clientCount = clientTasks.count
         for task in clientTasks {
             task.cancel()
         }
         clientTasks.removeAll()
+        logger.debug("Cancelled \(clientCount) in-flight client tasks")
 
         // Close listen socket (unblocks non-blocking accept if still polling)
         let fd = listenFD
         listenFD = -1
         close(fd)
+        logger.debug("Closed listen socket fd \(fd)")
 
         // Remove socket file
         unlink(socketPath)
 
         startTime = nil
+        logger.info("IPC server stopped")
+    }
+
+    // MARK: - Rate Limiting
+
+    /// Check whether accepting a new connection would exceed rate or concurrency limits.
+    ///
+    /// Side effect: records the current timestamp in the sliding window when the
+    /// connection is allowed, so call this only when actually about to accept.
+    ///
+    /// - Returns: A tuple `(limited, reason)` — `limited` is `true` when the
+    ///   connection should be rejected, with `reason` describing which limit fired.
+    private func recordConnectionAndCheckRateLimit() -> (limited: Bool, reason: String?) {
+        // 1. Concurrency cap
+        if activeClientCount >= maxConcurrentClients {
+            return (true, "Max concurrent clients (\(maxConcurrentClients)) reached (\(activeClientCount) active)")
+        }
+
+        // 2. Rate cap — sliding 1-second window
+        let now = Date()
+        let oneSecondAgo = now.addingTimeInterval(-1.0)
+
+        // Purge timestamps outside the window
+        connectionTimestamps.removeAll { $0 <= oneSecondAgo }
+
+        if connectionTimestamps.count >= maxConnsPerSecond {
+            return (true,
+                "Rate limit: \(connectionTimestamps.count) connections in last second (max \(maxConnsPerSecond))")
+        }
+
+        // Allow — record this connection and increment the active-client counter
+        connectionTimestamps.append(now)
+        activeClientCount += 1
+        return (false, nil)
+    }
+
+    /// Decrement the active-client counter. Called by each client-handling task
+    /// after `handleClient(fd:)` returns.
+    private func clientDidFinish() {
+        if activeClientCount > 0 { activeClientCount -= 1 }
     }
 
     // MARK: - Accept Loop
@@ -222,12 +308,110 @@ actor IPCServer {
                 continue
             }
 
+            // Clear O_NONBLOCK — macOS accept() inherits the non-blocking flag
+            // from the listen socket, but client sockets must be blocking for
+            // SO_RCVTIMEO to work correctly. Without this, read() returns
+            // EAGAIN immediately instead of blocking up to the timeout.
+            let clientFlags = fcntl(clientFD, F_GETFL, 0)
+            if clientFlags >= 0 {
+                _ = fcntl(clientFD, F_SETFL, clientFlags & ~O_NONBLOCK)
+            }
+
+            // Verify peer credentials — reject connections from other users
+            guard verifyPeerCredential(fd: clientFD) else {
+                logger.warning("Security: Rejecting connection on fd \(clientFD) — peer credential verification failed")
+                close(clientFD)
+                continue
+            }
+
+            // Rate limiting — reject if over concurrency or rate cap
+            let (limited, reason) = recordConnectionAndCheckRateLimit()
+            if limited {
+                logger.warning(
+                    "Rate limit: Rejecting connection on fd \(clientFD) — \(reason ?? "unknown", privacy: .public)")
+                close(clientFD)
+                // Brief back-off to slow down a flooder
+                try? await Task.sleep(nanoseconds: 100_000_000) // 100 ms
+                continue
+            }
+
+            // Prune cancelled tasks so the array does not grow without bound
+            clientTasks.removeAll(where: \.isCancelled)
+            if clientTasks.count > 200 {
+                // Safety cap: if >200 tasks remain after pruning cancelled ones,
+                // something is wrong — clear the array to prevent unbounded growth.
+                logger.warning("clientTasks exceeded 200 entries (\(self.clientTasks.count)), forcing prune")
+                clientTasks.removeAll()
+            }
+
+            // Note: handleClient performs blocking read() on the actor's executor.
+            // This is acceptable because: (1) SO_RCVTIMEO bounds each read to 30 seconds,
+            // (2) maxConcurrentClients limits concurrent blocking threads to 50,
+            // (3) all clients are local Unix domain socket connections from the same user.
+            // For a multi-user or network-facing server, non-blocking I/O would be required.
             let task = Task { [weak self = self] in
                 guard let self else { return }
                 await self.handleClient(fd: clientFD)
+                await self.clientDidFinish()
             }
             clientTasks.append(task)
         }
+    }
+
+    // MARK: - Peer Credential Verification
+
+    /// Verify that the peer process on the given socket file descriptor
+    /// is running as the same user as this daemon process.
+    ///
+    /// Uses `getsockopt(fd, SOL_LOCAL, LOCAL_PEERCRED, ...)` to retrieve
+    /// the peer's credentials (`xucred`) and compares the effective UID
+    /// with `getuid()`. Also retrieves the peer PID via `LOCAL_PEERPID`
+    /// and validates it is positive.
+    ///
+    /// - Parameter fd: The client socket file descriptor returned by `accept()`.
+    /// - Returns: `true` if the peer is a valid process belonging to the same user.
+    private func verifyPeerCredential(fd: Int32) -> Bool {
+        // 1. Retrieve peer credentials (xucred: uid + groups)
+        var peerCred = xucred()
+        var peerCredLen = socklen_t(MemoryLayout<xucred>.size)
+        let credResult = withUnsafeMutablePointer(to: &peerCred) { ptr in
+            getsockopt(fd, SOL_LOCAL, LOCAL_PEERCRED, ptr, &peerCredLen)
+        }
+
+        guard credResult == 0 else {
+            let errMsg = String(cString: strerror(errno))
+            logger.warning("Security: getsockopt LOCAL_PEERCRED failed for fd \(fd): \(errMsg, privacy: .public)")
+            return false
+        }
+
+        // 2. Retrieve peer PID
+        var peerPID: pid_t = 0
+        var peerPIDLen = socklen_t(MemoryLayout<pid_t>.size)
+        let pidResult = withUnsafeMutablePointer(to: &peerPID) { ptr in
+            getsockopt(fd, SOL_LOCAL, LOCAL_PEERPID, ptr, &peerPIDLen)
+        }
+
+        guard pidResult == 0 else {
+            let errMsg = String(cString: strerror(errno))
+            logger.warning("Security: getsockopt LOCAL_PEERPID failed for fd \(fd): \(errMsg, privacy: .public)")
+            return false
+        }
+
+        // 3. Verify PID is valid
+        guard peerPID > 0 else {
+            logger.warning("Security: Invalid peer PID (\(peerPID)) for fd \(fd)")
+            return false
+        }
+
+        // 4. Verify same user
+        let myUID = getuid()
+        guard peerCred.cr_uid == myUID else {
+            logger.warning("Security: Peer UID mismatch (peer=\(peerCred.cr_uid), self=\(myUID)) for fd \(fd)")
+            return false
+        }
+
+        logger.debug("Security: Peer credential verified for fd \(fd): pid=\(peerPID), uid=\(peerCred.cr_uid)")
+        return true
     }
 
     // MARK: - Client Handling
@@ -236,24 +420,43 @@ actor IPCServer {
     private func handleClient(fd: Int32) async {
         defer { close(fd) }
 
+        // Set receive timeout to prevent slowloris-style DoS: a malicious
+        // client can otherwise send data one byte at a time to keep the
+        // connection open indefinitely, consuming a slot in the concurrent-
+        // client limit (default 50) and blocking legitimate clients.
+        var rcvTimeout = timeval(tv_sec: 30, tv_usec: 0)
+        setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO,
+                   &rcvTimeout, socklen_t(MemoryLayout<timeval>.size))
+
+        logger.debug("New client connection accepted on fd \(fd)")
+
         do {
             // Read framed request
-            let requestData = try readFramedMessage(fd: fd)
+            let requestData = try IPCFramingIO.readFramedMessage(from: fd)
             let request = try JSONDecoder().decode(IPCRequest.self, from: requestData)
+            logger.debug("Received IPC request: \(String(describing: request), privacy: .public)")
 
             // Dispatch
             let response = await dispatchRequest(request)
 
             // Write framed response
             let responseData = try IPCFraming.encode(response)
-            try writeAll(fd: fd, data: responseData)
+            try IPCFramingIO.writeAll(to: fd, data: responseData)
+            logger.debug("Sent IPC response to fd \(fd)")
+        } catch let ipcError as IPCError {
+            logger.error("Client fd \(fd) IPC error: \(String(describing: ipcError), privacy: .public)")
+            let errorResponse = IPCResponse.error(ipcError)
+            if let data = try? IPCFraming.encode(errorResponse) {
+                try? IPCFramingIO.writeAll(to: fd, data: data)
+            }
         } catch {
+            logger.error("Client fd \(fd) error: \(error.localizedDescription, privacy: .public)")
             // Send error response if possible
             let errorResponse = IPCResponse.error(
                 .invalidRequest(error.localizedDescription)
             )
             if let data = try? IPCFraming.encode(errorResponse) {
-                try? writeAll(fd: fd, data: data)
+                try? IPCFramingIO.writeAll(to: fd, data: data)
             }
         }
     }
@@ -262,7 +465,22 @@ actor IPCServer {
     func dispatchRequest(_ request: IPCRequest) async -> IPCResponse {
         switch request {
         case .query(let query, let limit):
-            var results = await coordinator.search(query: query)
+            // Defense-in-depth: reject oversized queries even if the decoder
+            // check was somehow bypassed (e.g. future protocol change).
+            guard query.count <= maxQueryLength else {
+                return .error(.queryError(
+                    "Query too long (\(query.count) chars, max \(maxQueryLength))"
+                ))
+            }
+            // Extract modifier pairs from the query and build filters
+            let parsed = QueryParser.parse(query)
+            let modifierPairs = parsed.modifierPairs
+            let filters = modifierPairs.isEmpty
+                ? []
+                : FilterPipeline.parse(from: modifierPairs).filters
+            let cleanQuery = parsed.textOnlyQuery
+
+            var results = await coordinator.search(query: cleanQuery, filters: filters)
             if let limit {
                 results = Array(results.prefix(limit))
             }
@@ -292,61 +510,4 @@ actor IPCServer {
         }
     }
 
-    // MARK: - I/O Helpers
-
-    /// Read a 4-byte-length-prefixed message from a file descriptor.
-    private func readFramedMessage(fd: Int32) throws -> Data {
-        // Read 4-byte header
-        var header = Data(capacity: 4)
-        while header.count < 4 {
-            var buf = [UInt8](repeating: 0, count: 4 - header.count)
-            let n = read(fd, &buf, buf.count)
-            if n <= 0 {
-                throw IPCServerError.connectionClosed
-            }
-            header.append(contentsOf: buf.prefix(n))
-        }
-
-        // Parse length
-        let length = Int(UInt32(bigEndian: header.withUnsafeBytes { $0.load(as: UInt32.self) }))
-
-        // Sanity check: reject unreasonably large messages
-        guard length <= maxMessageSize else {
-            throw IPCServerError.messageTooLarge(length)
-        }
-        guard length > 0 else {
-            return Data()
-        }
-
-        // Read payload
-        var payload = Data(capacity: length)
-        while payload.count < length {
-            let remaining = length - payload.count
-            var buf = [UInt8](repeating: 0, count: min(remaining, 8192))
-            let n = read(fd, &buf, buf.count)
-            if n <= 0 {
-                throw IPCServerError.connectionClosed
-            }
-            payload.append(contentsOf: buf.prefix(n))
-        }
-
-        return payload
-    }
-
-    /// Write all data to a file descriptor.
-    ///
-    /// Loops until all bytes are written or an error occurs. Handles partial writes
-    /// by advancing the offset and retrying.
-    private func writeAll(fd: Int32, data: Data) throws {
-        var offset = 0
-        while offset < data.count {
-            let written = data.withUnsafeBytes { ptr in
-                write(fd, ptr.baseAddress!.advanced(by: offset), data.count - offset)
-            }
-            if written <= 0 {
-                throw IPCServerError.connectionClosed
-            }
-            offset += written
-        }
-    }
 }

@@ -98,7 +98,7 @@ struct HTTPSearchServiceTests {
 
     @Test("GET /health returns 200 with status ok")
     func healthRoute() {
-        let request = HTTPRouter.HTTPRequest(method: "GET", path: "/health", queryParams: [:])
+        let request = HTTPRouter.HTTPRequest(method: "GET", path: "/health", queryParams: [:], headers: [:])
         let (statusCode, body) = HTTPRouter.route(request: request)
         #expect(statusCode == 200)
 
@@ -111,7 +111,8 @@ struct HTTPSearchServiceTests {
         let request = HTTPRouter.HTTPRequest(
             method: "GET",
             path: "/search",
-            queryParams: ["q": "test", "limit": "10", "offset": "0"]
+            queryParams: ["q": "test", "limit": "10", "offset": "0"],
+            headers: [:]
         )
         let (statusCode, body) = HTTPRouter.route(
             request: request,
@@ -133,7 +134,7 @@ struct HTTPSearchServiceTests {
 
     @Test("GET /search with missing q defaults to empty query")
     func searchRouteMissingQuery() {
-        let request = HTTPRouter.HTTPRequest(method: "GET", path: "/search", queryParams: [:])
+        let request = HTTPRouter.HTTPRequest(method: "GET", path: "/search", queryParams: [:], headers: [:])
         let (statusCode, body) = HTTPRouter.route(request: request)
         #expect(statusCode == 200)
 
@@ -146,7 +147,8 @@ struct HTTPSearchServiceTests {
         let request = HTTPRouter.HTTPRequest(
             method: "GET",
             path: "/search",
-            queryParams: ["q": "test", "limit": "abc", "offset": "-1"]
+            queryParams: ["q": "test", "limit": "abc", "offset": "-1"],
+            headers: [:]
         )
         let (statusCode, body) = HTTPRouter.route(request: request)
         #expect(statusCode == 200)
@@ -159,7 +161,7 @@ struct HTTPSearchServiceTests {
 
     @Test("GET /stats returns JSON stats")
     func statsRoute() {
-        let request = HTTPRouter.HTTPRequest(method: "GET", path: "/stats", queryParams: [:])
+        let request = HTTPRouter.HTTPRequest(method: "GET", path: "/stats", queryParams: [:], headers: [:])
         let (statusCode, body) = HTTPRouter.route(request: request, stats: makeMockStats())
         #expect(statusCode == 200)
 
@@ -170,7 +172,7 @@ struct HTTPSearchServiceTests {
 
     @Test("GET /unknown returns 404")
     func unknownRouteReturns404() {
-        let request = HTTPRouter.HTTPRequest(method: "GET", path: "/nonexistent", queryParams: [:])
+        let request = HTTPRouter.HTTPRequest(method: "GET", path: "/nonexistent", queryParams: [:], headers: [:])
         let (statusCode, body) = HTTPRouter.route(request: request)
         #expect(statusCode == 404)
 
@@ -180,7 +182,7 @@ struct HTTPSearchServiceTests {
 
     @Test("Non-GET method returns 405")
     func nonGetReturns405() {
-        let request = HTTPRouter.HTTPRequest(method: "POST", path: "/health", queryParams: [:])
+        let request = HTTPRouter.HTTPRequest(method: "POST", path: "/health", queryParams: [:], headers: [:])
         let (statusCode, body) = HTTPRouter.route(request: request)
         #expect(statusCode == 405)
 

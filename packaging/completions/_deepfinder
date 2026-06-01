@@ -1,0 +1,81 @@
+#compdef deepfinder
+
+# Zsh completion for deepfinder
+#
+# Installation:
+#   fpath=(packaging/completions $fpath)
+#   compinit
+#   or copy to: /usr/local/share/zsh/site-functions/_deepfinder
+
+_deepfinder() {
+    local context state state_descr line
+    typeset -A opt_args
+
+    _arguments -C \
+        '--json[Output results as JSON]' \
+        '--0[Output results separated by null bytes (for xargs -0)]' \
+        '--sort[Sort results by field]:sort field:(name size date)' \
+        '--limit[Maximum number of results]:number:' \
+        '--offset[Number of results to skip]:number:' \
+        '--reverse[Reverse sort order]' \
+        '--verbose[Show match type and relevance score per result]' \
+        '--serve[Start HTTP search service]' \
+        '--port[Port for --serve mode]:port number:' \
+        '--help[Show help text and exit]' \
+        '--version[Show version and exit]' \
+        '1: :->first_arg' \
+        '*:: :->rest_args'
+
+    case "$state" in
+        first_arg)
+            local -a commands
+            commands=(
+                'daemon:Manage the background daemon'
+                'config:View and modify configuration'
+                'install:Install LaunchAgent for auto-start on login'
+                'uninstall:Remove LaunchAgent'
+            )
+            _describe -t commands 'subcommand' commands
+            ;;
+        rest_args)
+            case "$words[1]" in
+                daemon)
+                    _deepfinder_daemon
+                    ;;
+                config)
+                    _deepfinder_config
+                    ;;
+                *)
+                    # After a query, no further completion
+                    ;;
+            esac
+            ;;
+    esac
+}
+
+_deepfinder_daemon() {
+    local curcontext="$curcontext" state line
+    typeset -A opt_args
+
+    _arguments \
+        '1:daemon action:(start stop restart status)'
+}
+
+_deepfinder_config() {
+    local curcontext="$curcontext" state line
+    typeset -A opt_args
+
+    _arguments \
+        '1:config action:(get set list reset)' \
+        '2:config key:(excludedPaths excludedVolumes indexBatchSize maxResults configVersion)' \
+        '*::config value:'
+}
+
+# Associate completion functions
+_DeepFinder() {
+    _deepfinder
+}
+
+compdef _DeepFinder deepfinder
+
+# vim: set ft=zsh ts=4 sw=4 et:

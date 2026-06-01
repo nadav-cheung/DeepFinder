@@ -1,16 +1,14 @@
-import XCTest
+import Testing
 import SwiftUI
 @testable import DeepFinder
 
-final class SettingsTests: XCTestCase {
+struct SettingsTests {
 
     // MARK: - Helpers
 
     /// Mock config provider that stores state in memory, no IPC.
     private final class MockConfigProvider: SettingsConfigProvider, @unchecked Sendable {
         var excludedPaths: [String] = ["/System", "/Library"]
-        var onAddPath: ((String) -> Void)?
-        var onRemovePath: ((String) -> Void)?
         var rebuildTriggered = false
 
         func getExcludedPaths() async -> [String] {
@@ -19,12 +17,10 @@ final class SettingsTests: XCTestCase {
 
         func addExcludedPath(_ path: String) async {
             excludedPaths.append(path)
-            onAddPath?(path)
         }
 
         func removeExcludedPath(_ path: String) async {
             excludedPaths.removeAll { $0 == path }
-            onRemovePath?(path)
         }
 
         func getIndexStats() async -> SettingsIndexStats {
@@ -93,132 +89,110 @@ final class SettingsTests: XCTestCase {
 
     // MARK: - 1. Settings view renders tabs
 
-    @MainActor
-    func testSettingsViewRendersTabs() async {
+    @Test @MainActor func settingsViewRendersTabs() async {
         let vm = makeViewModel()
-        let _ = SettingsView(viewModel: vm)
 
         // Verify the view model tab state works correctly.
-        XCTAssertEqual(vm.selectedTab, .general)
+        #expect(vm.selectedTab == .general)
         vm.selectedTab = .index
-        XCTAssertEqual(vm.selectedTab, .index)
+        #expect(vm.selectedTab == .index)
         vm.selectedTab = .ai
-        XCTAssertEqual(vm.selectedTab, .ai)
+        #expect(vm.selectedTab == .ai)
         vm.selectedTab = .about
-        XCTAssertEqual(vm.selectedTab, .about)
+        #expect(vm.selectedTab == .about)
     }
 
     // MARK: - 2. Excluded paths list displays correctly
 
-    @MainActor
-    func testExcludedPathsListDisplaysCorrectly() async {
+    @Test @MainActor func excludedPathsListDisplaysCorrectly() async {
         let provider = MockConfigProvider()
         provider.excludedPaths = ["/System", "/Library", "/private/var"]
         let vm = makeViewModel(provider: provider)
 
         await vm.loadConfig()
-        XCTAssertEqual(vm.excludedPaths, ["/System", "/Library", "/private/var"])
+        #expect(vm.excludedPaths == ["/System", "/Library", "/private/var"])
     }
 
     // MARK: - 3. Add path updates config
 
-    @MainActor
-    func testAddPathUpdatesConfig() async {
+    @Test @MainActor func addPathUpdatesConfig() async {
         let provider = MockConfigProvider()
         provider.excludedPaths = ["/System"]
         let vm = makeViewModel(provider: provider)
         await vm.loadConfig()
 
-        let expectation = expectation(description: "addExcludedPath called")
-        provider.onAddPath = { path in
-            if path == "/tmp/test" {
-                expectation.fulfill()
-            }
-        }
-
         await vm.addPath("/tmp/test")
-        XCTAssertTrue(vm.excludedPaths.contains("/tmp/test"))
-        await fulfillment(of: [expectation], timeout: 2.0)
+        #expect(vm.excludedPaths.contains("/tmp/test"))
+        // Verify provider was also updated
+        #expect(provider.excludedPaths.contains("/tmp/test"))
     }
 
     // MARK: - 4. Remove path updates config
 
-    @MainActor
-    func testRemovePathUpdatesConfig() async {
+    @Test @MainActor func removePathUpdatesConfig() async {
         let provider = MockConfigProvider()
         provider.excludedPaths = ["/System", "/Library"]
         let vm = makeViewModel(provider: provider)
         await vm.loadConfig()
 
-        let expectation = expectation(description: "removeExcludedPath called")
-        provider.onRemovePath = { path in
-            if path == "/Library" {
-                expectation.fulfill()
-            }
-        }
-
         await vm.removePath("/Library")
-        XCTAssertFalse(vm.excludedPaths.contains("/Library"))
-        XCTAssertTrue(vm.excludedPaths.contains("/System"))
-        await fulfillment(of: [expectation], timeout: 2.0)
+        #expect(!vm.excludedPaths.contains("/Library"))
+        #expect(vm.excludedPaths.contains("/System"))
+        // Verify provider was also updated
+        #expect(!provider.excludedPaths.contains("/Library"))
     }
 
     // MARK: - 5. Index stats display
 
-    @MainActor
-    func testIndexStatsDisplay() async {
+    @Test @MainActor func indexStatsDisplay() async {
         let provider = MockConfigProvider()
         let vm = makeViewModel(provider: provider)
 
         await vm.loadIndexStats()
-        XCTAssertNotNil(vm.indexStats)
-        XCTAssertEqual(vm.indexStats?.state, "live")
-        XCTAssertEqual(vm.indexStats?.filesIndexed, 12345)
+        #expect(vm.indexStats != nil)
+        #expect(vm.indexStats?.state == "live")
+        #expect(vm.indexStats?.filesIndexed == 12345)
     }
 
     // MARK: - 6. Version displays from VERSION constant
 
-    @MainActor
-    func testVersionDisplaysFromConstant() {
+    @Test @MainActor func versionDisplaysFromConstant() {
         let vm = makeViewModel()
-        XCTAssertEqual(vm.version, Product.version)
-        XCTAssertFalse(vm.version.isEmpty)
+        #expect(vm.version == Product.version)
+        #expect(!vm.version.isEmpty)
     }
 
     // MARK: - 7. Rebuild index triggers provider
 
-    @MainActor
-    func testRebuildIndexTriggersProvider() async {
+    @Test @MainActor func rebuildIndexTriggersProvider() async {
         let provider = MockConfigProvider()
         let vm = makeViewModel(provider: provider)
 
-        XCTAssertFalse(provider.rebuildTriggered)
-        XCTAssertFalse(vm.isRebuilding)
+        #expect(!provider.rebuildTriggered)
+        #expect(!vm.isRebuilding)
 
         await vm.rebuildIndex()
 
-        XCTAssertTrue(provider.rebuildTriggered)
-        XCTAssertFalse(vm.isRebuilding)
+        #expect(provider.rebuildTriggered)
+        #expect(!vm.isRebuilding)
     }
 
     // MARK: - 8. Hotkey display defaults and resets
 
-    @MainActor
-    func testHotkeyDisplayDefaultsAndResets() {
+    @Test @MainActor func hotkeyDisplayDefaultsAndResets() {
         let vm = makeViewModel()
-        XCTAssertEqual(vm.hotkeyDisplay, "⌃⌘K")
+        #expect(vm.hotkeyDisplay == "\u{2303}\u{2318}K")
 
-        vm.hotkeyDisplay = "⌥⌘F"
-        XCTAssertEqual(vm.hotkeyDisplay, "⌥⌘F")
+        vm.hotkeyDisplay = "\u{2325}\u{2318}F"
+        #expect(vm.hotkeyDisplay == "\u{2325}\u{2318}F")
 
         vm.resetHotkeyDisplay()
-        XCTAssertEqual(vm.hotkeyDisplay, "⌃⌘K")
+        #expect(vm.hotkeyDisplay == "\u{2303}\u{2318}K")
     }
 
     // MARK: - 9. AI config loads from provider
 
-    @MainActor
-    func testAIConfigLoadsFromProvider() async {
+    @Test @MainActor func aiConfigLoadsFromProvider() async {
         let aiProvider = MockAIProvider()
         aiProvider.enabled = true
         aiProvider.model = "deepseek"
@@ -230,271 +204,256 @@ final class SettingsTests: XCTestCase {
         let vm = makeViewModel(aiProvider: aiProvider)
         await vm.loadAIConfig()
 
-        XCTAssertTrue(vm.aiEnabled)
-        XCTAssertEqual(vm.aiModel, .deepseek)
-        XCTAssertEqual(vm.aiAPIKeyText, "sk-test-123")
-        XCTAssertTrue(vm.aiSendMetadata)
-        XCTAssertFalse(vm.aiPathAnonymization)
-        XCTAssertFalse(vm.aiLocalVision)
+        #expect(vm.aiEnabled)
+        #expect(vm.aiModel == .deepseek)
+        #expect(vm.aiAPIKeyText == "sk-test-123")
+        #expect(vm.aiSendMetadata)
+        #expect(!vm.aiPathAnonymization)
+        #expect(!vm.aiLocalVision)
     }
 
     // MARK: - 10. AI config defaults when no provider
 
-    @MainActor
-    func testAIConfigDefaultsWhenNoProvider() async {
+    @Test @MainActor func aiConfigDefaultsWhenNoProvider() async {
         let vm = SettingsViewModel(configProvider: MockConfigProvider(), aiProvider: nil, launchProvider: MockLaunchAtLoginProvider())
         await vm.loadAIConfig()
 
-        XCTAssertFalse(vm.aiEnabled)
-        XCTAssertEqual(vm.aiModel, .off)
-        XCTAssertEqual(vm.aiAPIKeyText, "")
-        XCTAssertFalse(vm.aiSendMetadata)
-        XCTAssertTrue(vm.aiPathAnonymization)
-        XCTAssertTrue(vm.aiLocalVision)
+        #expect(!vm.aiEnabled)
+        #expect(vm.aiModel == .off)
+        #expect(vm.aiAPIKeyText == "")
+        #expect(!vm.aiSendMetadata)
+        #expect(vm.aiPathAnonymization)
+        #expect(vm.aiLocalVision)
     }
 
     // MARK: - 11. AI enabled toggle persists
 
-    @MainActor
-    func testAIEnabledTogglePersists() async {
+    @Test @MainActor func aiEnabledTogglePersists() async {
         let aiProvider = MockAIProvider()
         let vm = makeViewModel(aiProvider: aiProvider)
 
-        XCTAssertFalse(aiProvider.enabled)
+        #expect(!aiProvider.enabled)
         await vm.setAIEnabled(true)
-        XCTAssertTrue(vm.aiEnabled)
-        XCTAssertTrue(aiProvider.enabled)
+        #expect(vm.aiEnabled)
+        #expect(aiProvider.enabled)
 
         await vm.setAIEnabled(false)
-        XCTAssertFalse(vm.aiEnabled)
-        XCTAssertFalse(aiProvider.enabled)
+        #expect(!vm.aiEnabled)
+        #expect(!aiProvider.enabled)
     }
 
     // MARK: - 12. AI model selection persists
 
-    @MainActor
-    func testAIModelSelectionPersists() async {
+    @Test @MainActor func aiModelSelectionPersists() async {
         let aiProvider = MockAIProvider()
         let vm = makeViewModel(aiProvider: aiProvider)
 
-        XCTAssertEqual(vm.aiModel, .off)
+        #expect(vm.aiModel == .off)
 
         await vm.setAIModel(.qwen)
-        XCTAssertEqual(vm.aiModel, .qwen)
-        XCTAssertEqual(aiProvider.model, "qwen")
+        #expect(vm.aiModel == .qwen)
+        #expect(aiProvider.model == "qwen")
 
         await vm.setAIModel(.deepseek)
-        XCTAssertEqual(vm.aiModel, .deepseek)
-        XCTAssertEqual(aiProvider.model, "deepseek")
+        #expect(vm.aiModel == .deepseek)
+        #expect(aiProvider.model == "deepseek")
     }
 
     // MARK: - 13. AI API key persists
 
-    @MainActor
-    func testAIAPIKeyPersists() async throws {
+    @Test @MainActor func aiAPIKeyPersists() async throws {
         let aiProvider = MockAIProvider()
         let vm = makeViewModel(aiProvider: aiProvider)
 
-        try await vm.setAIKey("sk-new-key")
-        XCTAssertEqual(vm.aiAPIKeyText, "sk-new-key")
-        XCTAssertEqual(aiProvider.apiKey, "sk-new-key")
+        await vm.setAIKey("sk-new-key")
+        #expect(vm.aiAPIKeyText == "sk-new-key")
+        #expect(aiProvider.apiKey == "sk-new-key")
     }
 
     // MARK: - 14. AI send metadata toggle persists
 
-    @MainActor
-    func testAISendMetadataTogglePersists() async {
+    @Test @MainActor func aiSendMetadataTogglePersists() async {
         let aiProvider = MockAIProvider()
         let vm = makeViewModel(aiProvider: aiProvider)
 
-        XCTAssertFalse(vm.aiSendMetadata)
+        #expect(!vm.aiSendMetadata)
         await vm.setAISendMetadata(true)
-        XCTAssertTrue(vm.aiSendMetadata)
-        XCTAssertTrue(aiProvider.sendMetadata)
+        #expect(vm.aiSendMetadata)
+        #expect(aiProvider.sendMetadata)
     }
 
     // MARK: - 15. AI path anonymization toggle persists
 
-    @MainActor
-    func testAIPathAnonymizationTogglePersists() async {
+    @Test @MainActor func aiPathAnonymizationTogglePersists() async {
         let aiProvider = MockAIProvider()
         let vm = makeViewModel(aiProvider: aiProvider)
 
-        XCTAssertTrue(vm.aiPathAnonymization)
+        #expect(vm.aiPathAnonymization)
         await vm.setAIPathAnonymization(false)
-        XCTAssertFalse(vm.aiPathAnonymization)
-        XCTAssertFalse(aiProvider.pathAnonymization)
+        #expect(!vm.aiPathAnonymization)
+        #expect(!aiProvider.pathAnonymization)
     }
 
     // MARK: - 16. AI local vision toggle persists
 
-    @MainActor
-    func testAILocalVisionTogglePersists() async {
+    @Test @MainActor func aiLocalVisionTogglePersists() async {
         let aiProvider = MockAIProvider()
         let vm = makeViewModel(aiProvider: aiProvider)
 
-        XCTAssertTrue(vm.aiLocalVision)
+        #expect(vm.aiLocalVision)
         await vm.setAILocalVision(false)
-        XCTAssertFalse(vm.aiLocalVision)
-        XCTAssertFalse(aiProvider.localVision)
+        #expect(!vm.aiLocalVision)
+        #expect(!aiProvider.localVision)
     }
 
     // MARK: - 17. AI data preview loads
 
-    @MainActor
-    func testAIDataPreviewLoads() async {
+    @Test @MainActor func aiDataPreviewLoads() async {
         let aiProvider = MockAIProvider()
         let vm = makeViewModel(aiProvider: aiProvider)
 
-        XCTAssertTrue(vm.aiPreviewData.isEmpty)
+        #expect(vm.aiPreviewData.isEmpty)
         await vm.loadAIPreview()
-        XCTAssertFalse(vm.aiPreviewData.isEmpty)
-        XCTAssertTrue(vm.aiPreviewData.contains("name"))
-        XCTAssertTrue(vm.aiPreviewData.contains("path"))
+        #expect(!vm.aiPreviewData.isEmpty)
+        #expect(vm.aiPreviewData.contains("name"))
+        #expect(vm.aiPreviewData.contains("path"))
     }
 
     // MARK: - 18. AI data preview fallback without provider
 
-    @MainActor
-    func testAIDataPreviewFallbackWithoutProvider() async {
+    @Test @MainActor func aiDataPreviewFallbackWithoutProvider() async {
         let vm = SettingsViewModel(configProvider: MockConfigProvider(), aiProvider: nil, launchProvider: MockLaunchAtLoginProvider())
 
         await vm.loadAIPreview()
-        XCTAssertFalse(vm.aiPreviewData.isEmpty)
+        #expect(!vm.aiPreviewData.isEmpty)
         // Should fall back to AIConfig.dataPreview()
-        XCTAssertTrue(vm.aiPreviewData.contains("example.pdf"))
+        #expect(vm.aiPreviewData.contains("example.pdf"))
     }
 
     // MARK: - 19. AIModelOption all cases
 
-    func testAIModelOptionAllCases() {
+    @Test func aiModelOptionAllCases() {
         let allRaw = Set(AIModelOption.allCases.map(\.rawValue))
-        XCTAssertEqual(allRaw, Set(["off", "deepseek", "qwen"]))
+        #expect(allRaw == Set(["off", "deepseek", "qwen"]))
     }
 
     // MARK: - 20. AIModelOption display names
 
-    func testAIModelOptionDisplayNames() {
-        XCTAssertEqual(AIModelOption.off.displayName, "Off")
-        XCTAssertEqual(AIModelOption.deepseek.displayName, "DeepSeek")
-        XCTAssertEqual(AIModelOption.qwen.displayName, "Qwen")
+    @Test func aiModelOptionDisplayNames() {
+        #expect(AIModelOption.off.displayName == "Off")
+        #expect(AIModelOption.deepseek.displayName == "DeepSeek")
+        #expect(AIModelOption.qwen.displayName == "Qwen")
     }
 
     // MARK: - 21. SettingsTab includes ai
 
-    func testSettingsTabIncludesAI() {
+    @Test func settingsTabIncludesAI() {
         let allTabs = Set(SettingsTab.allCases)
-        XCTAssertTrue(allTabs.contains(.ai))
-        XCTAssertEqual(SettingsTab.allCases.count, 4)
+        #expect(allTabs.contains(.ai))
+        #expect(SettingsTab.allCases.count == 4)
     }
 
     // MARK: - 22. AI config load then mutate round-trips correctly
 
-    @MainActor
-    func testAIConfigRoundTrip() async throws {
+    @Test @MainActor func aiConfigRoundTrip() async throws {
         let aiProvider = MockAIProvider()
         let vm = makeViewModel(aiProvider: aiProvider)
 
         // Load defaults
         await vm.loadAIConfig()
-        XCTAssertFalse(vm.aiEnabled)
-        XCTAssertEqual(vm.aiModel, .off)
+        #expect(!vm.aiEnabled)
+        #expect(vm.aiModel == .off)
 
         // Change everything
         await vm.setAIEnabled(true)
         await vm.setAIModel(.deepseek)
-        try await vm.setAIKey("sk-roundtrip")
+        await vm.setAIKey("sk-roundtrip")
         await vm.setAISendMetadata(true)
         await vm.setAIPathAnonymization(false)
         await vm.setAILocalVision(false)
 
         // Verify in-memory state
-        XCTAssertTrue(vm.aiEnabled)
-        XCTAssertEqual(vm.aiModel, .deepseek)
-        XCTAssertEqual(vm.aiAPIKeyText, "sk-roundtrip")
-        XCTAssertTrue(vm.aiSendMetadata)
-        XCTAssertFalse(vm.aiPathAnonymization)
-        XCTAssertFalse(vm.aiLocalVision)
+        #expect(vm.aiEnabled)
+        #expect(vm.aiModel == .deepseek)
+        #expect(vm.aiAPIKeyText == "sk-roundtrip")
+        #expect(vm.aiSendMetadata)
+        #expect(!vm.aiPathAnonymization)
+        #expect(!vm.aiLocalVision)
 
         // Verify provider state
-        XCTAssertTrue(aiProvider.enabled)
-        XCTAssertEqual(aiProvider.model, "deepseek")
-        XCTAssertEqual(aiProvider.apiKey, "sk-roundtrip")
-        XCTAssertTrue(aiProvider.sendMetadata)
-        XCTAssertFalse(aiProvider.pathAnonymization)
-        XCTAssertFalse(aiProvider.localVision)
+        #expect(aiProvider.enabled)
+        #expect(aiProvider.model == "deepseek")
+        #expect(aiProvider.apiKey == "sk-roundtrip")
+        #expect(aiProvider.sendMetadata)
+        #expect(!aiProvider.pathAnonymization)
+        #expect(!aiProvider.localVision)
     }
 
     // MARK: - 23. Auto-launch loads from provider
 
-    @MainActor
-    func testAutoLaunchLoadsFromProvider() async {
+    @Test @MainActor func autoLaunchLoadsFromProvider() async {
         let launchProvider = MockLaunchAtLoginProvider()
         launchProvider.enabled = true
         let vm = makeViewModel(launchProvider: launchProvider)
 
-        XCTAssertFalse(vm.autoLaunchEnabled)
+        #expect(!vm.autoLaunchEnabled)
         await vm.loadAutoLaunchConfig()
-        XCTAssertTrue(vm.autoLaunchEnabled)
+        #expect(vm.autoLaunchEnabled)
     }
 
     // MARK: - 24. Auto-launch toggle enables
 
-    @MainActor
-    func testAutoLaunchToggleEnables() async {
+    @Test @MainActor func autoLaunchToggleEnables() async {
         let launchProvider = MockLaunchAtLoginProvider()
         let vm = makeViewModel(launchProvider: launchProvider)
 
-        XCTAssertFalse(vm.autoLaunchEnabled)
+        #expect(!vm.autoLaunchEnabled)
         await vm.setAutoLaunch(true)
-        XCTAssertTrue(vm.autoLaunchEnabled)
-        XCTAssertTrue(launchProvider.enabled)
+        #expect(vm.autoLaunchEnabled)
+        #expect(launchProvider.enabled)
     }
 
     // MARK: - 25. Auto-launch toggle disables
 
-    @MainActor
-    func testAutoLaunchToggleDisables() async {
+    @Test @MainActor func autoLaunchToggleDisables() async {
         let launchProvider = MockLaunchAtLoginProvider()
         launchProvider.enabled = true
         let vm = makeViewModel(launchProvider: launchProvider)
         await vm.loadAutoLaunchConfig()
 
-        XCTAssertTrue(vm.autoLaunchEnabled)
+        #expect(vm.autoLaunchEnabled)
         await vm.setAutoLaunch(false)
-        XCTAssertFalse(vm.autoLaunchEnabled)
-        XCTAssertFalse(launchProvider.enabled)
+        #expect(!vm.autoLaunchEnabled)
+        #expect(!launchProvider.enabled)
     }
 
     // MARK: - 26. Auto-launch failure sets error
 
-    @MainActor
-    func testAutoLaunchFailureSetsError() async {
+    @Test @MainActor func autoLaunchFailureSetsError() async {
         let launchProvider = MockLaunchAtLoginProvider()
         launchProvider.shouldFail = true
         let vm = makeViewModel(launchProvider: launchProvider)
 
-        XCTAssertNil(vm.autoLaunchError)
+        #expect(vm.autoLaunchError == nil)
         await vm.setAutoLaunch(true)
-        XCTAssertFalse(vm.autoLaunchEnabled)
-        XCTAssertNotNil(vm.autoLaunchError)
-        XCTAssertTrue(vm.autoLaunchError!.contains("Failed"))
+        #expect(!vm.autoLaunchEnabled)
+        #expect(vm.autoLaunchError != nil)
+        #expect(vm.autoLaunchError!.contains("Failed"))
     }
 
     // MARK: - 27. Auto-launch error clears on retry
 
-    @MainActor
-    func testAutoLaunchErrorClearsOnRetry() async {
+    @Test @MainActor func autoLaunchErrorClearsOnRetry() async {
         let launchProvider = MockLaunchAtLoginProvider()
         launchProvider.shouldFail = true
         let vm = makeViewModel(launchProvider: launchProvider)
 
         await vm.setAutoLaunch(true)
-        XCTAssertNotNil(vm.autoLaunchError)
+        #expect(vm.autoLaunchError != nil)
 
         launchProvider.shouldFail = false
         await vm.setAutoLaunch(true)
-        XCTAssertTrue(vm.autoLaunchEnabled)
-        XCTAssertNil(vm.autoLaunchError)
+        #expect(vm.autoLaunchEnabled)
+        #expect(vm.autoLaunchError == nil)
     }
 }

@@ -133,6 +133,20 @@ actor NLOperationHistory {
     }
 }
 
+// MARK: - NLOperationError
+
+/// Errors thrown during natural-language operation execution.
+enum NLOperationError: Error, Equatable, LocalizedError {
+    case invalidDestination(String)
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidDestination(let reason):
+            return "Invalid destination: \(reason)"
+        }
+    }
+}
+
 // MARK: - NLOperationResult
 
 /// Result of executing an operation through the executor.
@@ -236,6 +250,19 @@ struct NLOperationExecutor: @unchecked Sendable {
                 // For rename, destination is the new name in the same directory
                 destDir = sourceURL.deletingLastPathComponent().path
                 destFileName = operation.destination
+            }
+
+            // Validate destination path stays within expected directories
+            let resolvedDest = (destDir as NSString).standardizingPath
+            guard !resolvedDest.contains("..") else {
+                errors.append("\(sourcePath): Path traversal not allowed")
+                continue
+            }
+            guard resolvedDest.hasPrefix("/Users/")
+                || resolvedDest.hasPrefix("/Volumes")
+                || resolvedDest.hasPrefix("/tmp") else {
+                errors.append("\(sourcePath): Destination must be within /Users, /Volumes, or /tmp")
+                continue
             }
 
             let destPath = destDir.hasSuffix("/")

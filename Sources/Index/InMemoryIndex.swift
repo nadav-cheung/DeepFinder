@@ -97,7 +97,7 @@ actor InMemoryIndex {
         let normalizedLower = name.precomposedStringWithCanonicalMapping.lowercased()
         let scalars = Array(normalizedLower.unicodeScalars)
         if !scalars.isEmpty {
-            let existing = trie.search(prefix: scalars).first ?? []
+            let existing = trie.get(key: scalars) ?? []
             var updated = existing
             updated.insert(id)
             trie.insert(scalars, value: updated)
@@ -163,7 +163,7 @@ actor InMemoryIndex {
         let normalizedLower = name.precomposedStringWithCanonicalMapping.lowercased()
         let scalars = Array(normalizedLower.unicodeScalars)
         if !scalars.isEmpty {
-            if var set = trie.search(prefix: scalars).first {
+            if var set = trie.get(key: scalars) {
                 set.remove(id)
                 if set.isEmpty {
                     trie.remove(scalars)

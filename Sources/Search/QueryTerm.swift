@@ -48,6 +48,80 @@ struct ParsedQuery: Equatable, Sendable {
     var rawQuery: String
 }
 
+// MARK: - ParsedQuery Modifier Extraction
+
+extension ParsedQuery {
+
+    /// All modifier key-value pairs extracted from the parsed AST.
+    ///
+    /// Walks the term tree recursively; only ``QueryTerm/modifier(key:value:)``
+    /// nodes are collected. Nested modifiers inside `and`/`or`/`not` groups
+    /// are also extracted so that `(report | memo) size:>10mb` works as expected.
+    var modifierPairs: [(key: String, value: String)] {
+        var pairs: [(key: String, value: String)] = []
+        collectModifiers(terms, into: &pairs)
+        return pairs
+    }
+
+    /// Rebuild the query string with all modifier terms removed.
+    ///
+    /// The returned string is suitable for passing to text-based search providers.
+    /// Modifiers are stripped; text, wildcard, regex, and path-qualifier terms
+    /// are preserved. Boolean structure (and/or/not) is flattened into a
+    /// space-joined string for maximal search recall.
+    var textOnlyQuery: String {
+        rebuildWithoutModifiers(terms)
+            .trimmingCharacters(in: .whitespaces)
+    }
+
+    // MARK: - Private helpers
+
+    private func collectModifiers(
+        _ terms: [QueryTerm],
+        into pairs: inout [(key: String, value: String)]
+    ) {
+        for term in terms {
+            switch term {
+            case .modifier(let key, let value):
+                pairs.append((key, value))
+            case .and(let sub), .or(let sub):
+                collectModifiers(sub, into: &pairs)
+            case .not(let sub):
+                collectModifiers([sub], into: &pairs)
+            case .text, .wildcard, .regex, .pathQualifier:
+                break
+            }
+        }
+    }
+
+    private func rebuildWithoutModifiers(_ terms: [QueryTerm]) -> String {
+        terms.compactMap { term -> String? in
+            switch term {
+            case .text(let s):
+                return s
+            case .wildcard(let s):
+                return s
+            case .regex(let s):
+                return "regex:\(s)"
+            case .modifier:
+                return nil
+            case .pathQualifier(let s):
+                return "\(s)\\ "
+            case .and(let sub):
+                return rebuildWithoutModifiers(sub)
+            case .or(let sub):
+                let kept = sub.filter { if case .modifier = $0 { false } else { true } }
+                guard !kept.isEmpty else { return nil }
+                return kept.map { rebuildWithoutModifiers([$0]) }.joined(separator: "|")
+            case .not(let sub):
+                if case .modifier = sub { return nil }
+                let inner = rebuildWithoutModifiers([sub])
+                return inner.isEmpty ? nil : "!\(inner)"
+            }
+        }.joined(separator: " ")
+    }
+}
+
 // MARK: - QueryParser
 
 /// Parses a raw query string into a structured `ParsedQuery` AST.
@@ -85,8 +159,12 @@ enum QueryParser {
 extension QueryParser {
 
     /// Recognized modifier key prefixes.
+    /// Must include every key that ``FilterPipeline/parse(from:)`` handles.
     private static let modifierKeys: Set<String> = [
-        "case", "file", "folder", "ext", "path"
+        "case", "file", "folder", "ext", "path",
+        "size", "dm", "depth", "width", "height",
+        "duration", "pages", "pagecount", "fps", "bitrate",
+        "artist", "album", "title", "genre", "codec"
     ]
 
     /// Tokenize raw input into a flat list of tokens.

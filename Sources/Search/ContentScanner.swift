@@ -1,4 +1,5 @@
 import Foundation
+import OSLog
 
 // MARK: - ScanOptions
 
@@ -62,6 +63,10 @@ enum TextFileExtensions {
 /// in the text-file whitelist are skipped.
 enum ContentScanner: Sendable {
 
+    // MARK: - Logging
+
+    private static let logger = Logger(subsystem: "com.nadav.deepfinder.daemon", category: "content-scan")
+
     // MARK: - Public API
 
     /// Scan a file at the given path for occurrences of `query`.
@@ -84,7 +89,10 @@ enum ContentScanner: Sendable {
         guard FileManager.default.fileExists(atPath: path) else { return [] }
 
         // Read raw data
-        guard let rawData = try? Data(contentsOf: url) else { return [] }
+        guard let rawData = try? Data(contentsOf: url) else {
+            Self.logger.debug("ContentScanner: failed to read data from \(path, privacy: .public) — file may be locked or have been deleted")
+            return []
+        }
 
         // Skip likely binary files: if the first 8KB contain a NUL byte, treat as binary
         let probeSize = min(rawData.count, 8192)

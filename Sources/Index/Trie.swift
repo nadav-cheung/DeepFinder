@@ -47,6 +47,17 @@ struct Trie<Key: Hashable, Value> {
         node.value = value
     }
 
+    /// Return the value stored at exactly this key, or nil if no value exists at this node.
+    /// Unlike search(prefix:), this does NOT traverse into child nodes.
+    func get(key: [Key]) -> Value? {
+        var node = root
+        for element in key {
+            guard let child = node.children[element] else { return nil }
+            node = child
+        }
+        return node.value
+    }
+
     /// Search for all values whose keys start with the given prefix.
     /// Returns results in depth-first order.
     func search(prefix: [Key]) -> [Value] {

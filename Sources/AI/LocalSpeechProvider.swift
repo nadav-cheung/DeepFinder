@@ -1,5 +1,6 @@
 // Sources/AI/LocalSpeechProvider.swift
 import Foundation
+import OSLog
 import Speech
 
 /// A single speech recognition result, containing the transcribed text
@@ -160,6 +161,10 @@ actor LocalSpeechProvider {
             // SFSpeechRecognitionTask if the actor is deallocated mid-recognition.
             recognizer.recognitionTask(with: request) { result, error in
                 guard let result else {
+                    if let error {
+                        Logger(subsystem: "com.nadav.deepfinder.ai", category: "speech")
+                            .warning("Speech recognition error: \(error)")
+                    }
                     continuation.finish()
                     return
                 }

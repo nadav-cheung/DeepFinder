@@ -20,6 +20,9 @@ enum Product {
     /// CLI command name (used for binary name, shell completions, prompt).
     static let command = "deepfinder"
 
+    /// Daemon binary name (spawned by CLI when daemon is not already running).
+    static let daemonCommand = "deepfinder-daemon"
+
     /// macOS bundle identifier and LaunchAgent label.
     static let identifier = "com.nadav.deepfinder"
 
@@ -47,7 +50,7 @@ enum Product {
 
     /// Current version string. Updated manually on each release.
     /// Kept in sync with the `VERSION` file at the repository root.
-    static let version = "0.5.0-dev"
+    static let version = "3.0.0"
 
     // MARK: - Organization
 

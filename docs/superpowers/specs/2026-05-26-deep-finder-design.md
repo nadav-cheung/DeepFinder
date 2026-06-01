@@ -161,13 +161,13 @@
 
 ```swift
 /// AI 能力定义
-enum AICapability: Sendable {
+enum AICapability: String, Sendable, Codable, CaseIterable {
     case textToSearch       // 自然语言 → 搜索语法
     case resultSummary      // 结果摘要 & 分类
     case querySuggestion    // AI 搜索建议
     case intentAnalysis     // 意图理解
-    case localVision        // 本地图片理解（CoreML）
-    case localSpeech        // 本地语音识别（Speech）
+    case localVision        // 本地图片理解（Vision 框架，完全本地）
+    case localSpeech        // 本地语音识别（Speech 框架，完全本地）
 }
 
 /// 隐私安全的元数据摘要 — 唯一允许外传的数据结构
@@ -187,35 +187,48 @@ struct AIContext: Sendable {
     let indexStats: IndexStats
 }
 
-/// AI 模型提供者协议（基础）
+/// AI 模型提供者协议（单一协议设计）
+///
+/// 所有 AI 后端（云端 API 和本地框架）都实现此协议。
+/// 通过 `capabilities: Set<AICapability>` 区分支持的能力：
+/// - 云端提供商（DeepSeek/Qwen）：textToSearch, resultSummary, querySuggestion, intentAnalysis
+/// - 本地 Vision：localVision
+/// - 本地 Speech：localSpeech
+///
+/// 能力系统允许：
+/// - 跳过活动提供商不支持的功能
+/// - 混合提供商：文本提供商用于搜索翻译 + 本地 Vision 用于图片分析
+/// - 优雅降级：当 `provider` 为 `nil` 时所有消费者返回 `nil`/空
+///
+/// 添加新提供商只需一个实现此协议的新文件，无需修改现有代码。
 protocol AIModelProvider: Sendable {
+    /// 可读的提供商名称（如 "deepseek", "qwen", "mock"）
     var name: String { get }
+
+    /// 此提供商支持的能力集
     var capabilities: Set<AICapability> { get }
-}
 
-/// 文本补全能力（DeepSeek/Qwen 实现）
-protocol AITextCompletion: AIModelProvider {
-    func complete(
-        prompt: String,
-        context: AIContext
-    ) -> AsyncThrowingStream<String, Error>
-}
+    /// 对给定提示进行流式补全，可选附带搜索上下文。
+    ///
+    /// 返回 `AsyncThrowingStream` 用于流式（逐 token）响应。
+    /// 调用方在 token 到达时逐块消费；错误通过流的终端事件（`.failure`）传播。
+    /// 调用方应使用 `for try await` 并在迭代处捕获错误，优雅回退（如返回 `nil`）。
+    ///
+    /// **错误传播**：流可能以以下方式结束：
+    /// - `AIError.rateLimited`（HTTP 429）
+    /// - `AIError.networkError`（HTTP 4xx/5xx，传输失败）
+    /// - `CancellationError`（如果消费 Task 在流中取消）
+    ///
+    /// **隐私**：context 仅包含文件元数据（名称、大小、日期、扩展名）—— 绝不包含文件内容。
+    func complete(prompt: String, context: AIContext?) -> AsyncThrowingStream<String, Error>
 
-/// 自然语言翻译为搜索语法（DeepSeek/Qwen 实现）
-protocol AISearchTranslator: AIModelProvider {
-    func translateToSearchSyntax(
-        naturalLanguage: String
-    ) async throws -> String
-}
-
-/// 图片理解能力（LocalVisionProvider 实现）
-protocol AIVisionProvider: AIModelProvider {
-    func analyzeImage(at path: String) async throws -> [String]
-}
-
-/// 语音识别能力（LocalSpeechProvider 实现）
-protocol AISpeechProvider: AIModelProvider {
-    func transcribe(audioAt path: String) async throws -> String
+    /// 将自然语言查询翻译为 DeepFinder 搜索语法。
+    ///
+    /// 示例："find big videos from last week" → "ext:mp4;mov;mkv dm:lastweek size:>100mb"
+    ///
+    /// - Parameter naturalLanguage: 用户的自然语言输入。
+    /// - Returns: 有效的 DeepFinder 搜索语法字符串。
+    func translateToSearchSyntax(naturalLanguage: String) async throws -> String
 }
 ```
 
@@ -258,23 +271,21 @@ protocol AISpeechProvider: AIModelProvider {
 │  └──────┬──────┘  └──────────────┘  └───────────────────┘  │
 │         │                                                    │
 │  ┌──────▼──────────────────────────────────────────────┐   │
-│  │              IndexingEngine (actor)                   │   │
-│  │  ┌──────────────┐  ┌────────────────────────────┐   │   │
-│  │  │  FileScanner │  │ FileSystemEventStream      │   │   │
-│  │  └──────┬───────┘  └───────────┬────────────────┘   │   │
-│  │         │                      │                     │   │
-│  │  ┌──────▼──────────────────────▼───────────────┐    │   │
-│  │  │     InMemoryIndex (actor)                    │    │   │
-│  │  │  - Trie (前缀匹配)                           │    │   │
-│  │  │  - FullSubstringMap (子串 O(1) 直查)         │    │   │
-│  │  │  - TrigramIndex (长文件名兜底)               │    │   │
-│  │  │  - PinyinIndex (拼音搜索)                    │    │   │
-│  │  │  - FileRecord[] (路径、大小、日期)           │    │   │
-│  │  └─────────────────────────────────────────────┘    │   │
-│  │                                                      │   │
-│  │  ┌──────────────────────────────────────────────┐   │   │
-│  │  │  IndexPersistence (SQLite WAL)                │   │   │
-│  │  └──────────────────────────────────────────────┘   │   │
+│  │     InMemoryIndex (actor)                            │   │
+│  │  - Trie (前缀匹配)                                   │   │
+│  │  - FullSubstringMap (子串 O(1) 直查)                 │   │
+│  │  - TrigramIndex (长文件名兜底)                       │   │
+│  │  - PinyinIndex (拼音搜索)                            │   │
+│  │  - FileRecord[] (路径、大小、日期)                   │   │
+│  └──┬───────────────────────────────┬──────────────────┘   │
+│     │                               │                       │
+│  ┌──▼──────────────┐  ┌─────────────▼──────────────────┐   │
+│  │  FileScanner    │  │ FileSystemEventStream          │   │
+│  │                 │  │  (FSEventWatcher)              │   │
+│  └─────────────────┘  └────────────────────────────────┘   │
+│                                                              │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │  IndexPersistence (SQLite WAL)                        │   │
 │  └──────────────────────────────────────────────────────┘   │
 │                                                              │
 │  PID file: ~/.deep-finder/daemon.pid                        │
@@ -330,9 +341,9 @@ InMemoryIndex: actor
   - 所有读/写操作通过 actor isolation 保证线程安全
   - 快照读 API: snapshot() -> IndexSnapshot (不可变)
 
-IndexingEngine: actor
-  - 协调 FileScanner 和 FSEventWatcher
-  - 通过 InMemoryIndex actor 方法写入
+FileScanner + FSEventWatcher: 由 DaemonMain 管理生命周期
+  - FileScanner 在后台 DispatchQueue 上运行，完成后通过 InMemoryIndex actor 方法写入
+  - FSEventWatcher 分发到独立 DispatchQueue，通过 InMemoryIndex actor 方法写入
 
 SearchCoordinator: plain actor (NOT @MainActor)
   - daemon 无 UI 上下文，不需要主线程
@@ -507,41 +518,96 @@ final class MockEventStream: FileSystemEventStream { ... }
 
 ### 3.1 协议
 
+#### SearchResultSequence
+
+The `SearchProvider` protocol returns a concrete `SearchResultSequence` (not an
+existential `any AsyncSequence`) so that results can safely cross actor
+boundaries — the existential is not `Sendable`. MVP providers wrap a
+pre-computed `[SearchResult]`; future streaming providers can yield
+incrementally within the same wrapper:
+
 ```swift
-protocol SearchProvider: Sendable {
-    associatedtype SearchStream: AsyncSequence where SearchStream.Element == SearchResult
-
-    var name: String { get }
-    var isReady: Bool { get }
-
-    func search(query: SearchQuery) -> SearchStream
-    func cancel(queryID: String)
-    func prepare() async
-}
-
-struct SearchQuery: Sendable {
-    let id: String
-    let text: String           // NFC + lowercased
-    let limit: Int             // 默认 100
-    let options: SearchOptions
-}
-
-struct SearchResult: Sendable {
-    let record: FileRecord
-    let provider: String
-    let score: Double
-    let matchType: MatchType
-}
-
-enum MatchType: Sendable {
-    case exact
-    case prefix
-    case substring
-    case pinyin
-    case regex       // future
-    case semantic    // future
+struct SearchResultSequence: AsyncSequence, Sendable {
+    typealias Element = SearchResult
+    init(_ elements: [SearchResult])
+    func makeAsyncIterator() -> Iterator
+    struct Iterator: AsyncIteratorProtocol, Sendable { … }
 }
 ```
+
+#### SearchProvider
+
+```swift
+protocol SearchProvider: Sendable {
+    /// Stable identifier for this provider (e.g. "file-index", "content-search").
+    var providerID: String { get }
+
+    func search(query: SearchQuery) async -> SearchResultSequence
+    func cancel(queryID: String) async
+    func prepare() async
+}
+```
+
+Providers are the unit of extensibility for search: different providers can
+search different data sources (in-memory index, content search, AI semantic
+search) while sharing the same `SearchQuery` / `SearchResult` types.
+
+- `providerID` — stable, unique identifier (e.g. `"file-index"`).
+- `search(query:)` — returns results wrapped in `SearchResultSequence`.
+- `cancel(queryID:)` — cancels an in-flight query. No-op for synchronous MVP
+  providers; required for future streaming providers.
+- `prepare()` — one-time async setup (e.g. loading an index from disk). No-op
+  for in-memory providers.
+
+#### SearchQuery
+
+```swift
+struct SearchQuery: Sendable {
+    /// Original user input, unmodified.
+    let rawQuery: String
+    /// NFC-normalized + lowercased form (used for matching).
+    let normalizedQuery: String
+
+    init(_ query: String)
+}
+```
+
+On init the query is NFC-normalized via `precomposedStringWithCanonicalMapping`
+and lowercased. The raw form is preserved for display.
+
+#### SearchResult
+
+```swift
+struct SearchResult: Codable, Sendable, Equatable {
+    let record: FileRecord
+    /// Identifier of the provider that produced this result (e.g. "file-index").
+    let providerID: String
+    let score: Double
+    let matchType: MatchType
+
+    /// Equality by record.id for deduplication.
+    static func == (lhs: SearchResult, rhs: SearchResult) -> Bool
+}
+```
+
+#### MatchType
+
+```swift
+enum MatchType: Int, Codable, Comparable, Sendable {
+    /// The query exactly matches the full filename (case-insensitive).
+    case exact = 0
+    /// The query matches the beginning of the filename.
+    case prefix = 1
+    /// The query matches via pinyin transliteration of Chinese characters.
+    case pinyin = 2
+    /// The query appears as a substring anywhere in the filename.
+    case substring = 3
+}
+```
+
+Lower `rawValue` equals higher priority, driving result ordering (exact before
+prefix before pinyin before substring). `MatchType` is `Comparable` via
+`rawValue`.
 
 ### 3.2 SearchCoordinator
 
@@ -570,7 +636,7 @@ plain actor（NOT @MainActor）。daemon 进程无 UI 上下文。v2.0 GUI clien
 **启动序列：**
 1. 加载 `~/.deep-finder/config.json`（不存在则用默认配置）
 2. 加载 SQLite FileRecord[]，重建 InMemoryIndex
-3. 启动 IndexingEngine（FSEventWatcher + 后台验证）
+3. 启动 FSEventWatcher + 后台验证
 4. 清理旧 socket 文件（unlink），创建 Unix domain socket
 5. 绑定 socket → 开始监听
 6. 写 PID 到 `~/.deep-finder/daemon.pid`
@@ -637,83 +703,95 @@ plain actor（NOT @MainActor）。daemon 进程无 UI 上下文。v2.0 GUI clien
 
 ### 4.3 IPC 消息类型
 
+消息格式为 flat enum -- 不使用嵌套 payload struct。每个 request/response 通过 `kind` 字段鉴别类型，
+`ipcProtocolVersion` 字段嵌入每个 request 用于前向兼容。
+
+**Wire format example (query):**
+```json
+{"ipcProtocolVersion":1,"kind":"query","query":"report","limit":100}
+```
+
 ```swift
-// MARK: - Requests
+// MARK: - Protocol Version
 
-struct IPCRequest: Codable {
-    let id: String          // UUID, 匹配 response
-    let payload: IPCRequestPayload
+/// Embedded in every encoded request for forward compatibility.
+/// Incremented when the wire format changes in a non-backward-compatible way.
+let ipcProtocolVersion = 1
+
+// MARK: - IPCError
+
+/// Fine-grained error types returned in IPC error responses.
+enum IPCError: Codable, Sendable, Equatable, Error {
+    case daemonNotReady
+    case queryError(String)
+    case invalidRequest(String)
+    case permissionDenied(String)
+    case incompatibleProtocolVersion
 }
 
-enum IPCRequestPayload: Codable {
-    case query(IPCQueryRequest)
-    case status
-    case configGet(key: String)
+// MARK: - IPCRequest
+
+/// All message types a client can send to the daemon (flat enum, 6 cases).
+enum IPCRequest: Codable, Sendable, Equatable {
+    /// Execute a search query with an optional result limit.
+    case query(_ query: String, limit: Int?)
+    /// Cancel an in-flight query by its identifier.
+    case cancel(queryID: String)
+    /// Request daemon statistics (file count, uptime, memory usage).
+    case stats
+    /// Read one or all configuration values. Pass `nil` for all keys.
+    case configGet(key: String?)
+    /// Update a single configuration key-value pair.
     case configSet(key: String, value: String)
-    case indexRebuild
-    case daemonStop
+    /// Request current index state and file count.
+    case indexStatus
 }
 
-struct IPCQueryRequest: Codable {
-    let text: String
-    let limit: Int          // 默认 100
-    let offset: Int         // 默认 0
-    let sortBy: IPSearchSort?
-    let fileType: IPCFileType?  // file / folder / nil(both)
+// MARK: - DaemonStats
+
+/// Runtime statistics reported by the daemon.
+struct DaemonStats: Codable, Sendable, Equatable {
+    let totalFiles: Int
+    let indexState: String        // e.g. "live", "verifying", "polling"
+    let uptimeSeconds: Double
+    let memoryUsageMB: Double
 }
 
-enum IPSearchSort: String, Codable {
-    case name, size, date, ext
+// MARK: - DaemonIndexStatus
+
+/// Current state of the file index as reported by the daemon.
+struct DaemonIndexStatus: Codable, Sendable, Equatable {
+    let state: String             // e.g. "stale", "verifying", "live", "polling"
+    let filesIndexed: Int
+    let lastScanDate: Date?
 }
 
-enum IPCFileType: String, Codable {
-    case file, folder
-}
+// MARK: - IPCResponse
 
-// MARK: - Responses
-
-struct IPCResponse: Codable {
-    let id: String          // 匹配 request id
-    let payload: IPCResponsePayload
-}
-
-enum IPCResponsePayload: Codable {
-    case queryResults(IPCQueryResponse)
-    case status(IPCStatusResponse)
-    case configValue(key: String, value: String?)
-    case ack
+/// All message types the daemon can send back to a client (flat enum, 5 cases).
+enum IPCResponse: Codable, Sendable, Equatable {
+    case results([SearchResult], queryID: String)
     case error(IPCError)
+    case stats(DaemonStats)
+    case ack
+    case indexStatus(DaemonIndexStatus)
 }
 
-struct IPCQueryResponse: Codable {
-    let totalResults: Int
-    let results: [IPCSearchResult]
-    let hasMore: Bool
+// MARK: - IPCFraming
+
+/// Wire-framing helpers. 4-byte big-endian UInt32 length prefix + JSON body.
+enum IPCFraming {
+    static func addLengthPrefix(to payload: Data) -> Data
+    static func stripLengthPrefix(from data: Data) throws -> Data
+    static func encode<T: Codable>(_ value: T) throws -> Data
+    static func decode<T: Codable>(_ type: T.Type, from data: Data) throws -> T
 }
 
-struct IPCSearchResult: Codable {
-    let rank: Int           // 1-based
-    let name: String        // originalName
-    let path: String
-    let parentPath: String
-    let isDirectory: Bool
-    let size: Int64
-    let modifiedAt: Date
-    let `extension`: String?
-    let matchRange: Range<String.Index>?  // 匹配范围，用于 CLI 高亮
-}
+// MARK: - IPCFramingError
 
-struct IPCStatusResponse: Codable {
-    let state: String       // "stale" / "verifying" / "live" / "error"
-    let indexedFiles: Int
-    let uptime: TimeInterval
-    let memoryUsage: Int64  // bytes
-    let daemonPID: Int32
-}
-
-struct IPCError: Codable {
-    let code: Int
-    let message: String
+enum IPCFramingError: Error, Sendable {
+    case insufficientHeader
+    case incompletePayload(expected: Int, actual: Int)
 }
 ```
 
@@ -872,30 +950,53 @@ CLI 检测 daemon 是否运行：
 
 ---
 
-## 6. v2.0 GUI 层（deferred）
+## 6. v2.0 GUI 层（已实现）
 
-以下设计 deferred 到 v2.0。daemon 和 IPC 不变，GUI 作为新的 IPC client。
+v2.0 已完全实现 — 19 个源文件在 `Sources/GUI/`，测试在 `Tests/GUITests/`。GUI 作为独立 IPC client 连接 daemon，daemon 和 IPC 协议不变。
 
-### 6.1 窗口
+### 6.1 应用入口 & 菜单栏
 
-- NSPanel 浮动窗口，无标题栏
-- Liquid Glass 材质：`.glassEffect(.regular, in: .rect(cornerRadius: 24))`
-- `.floating` 窗口层级
-- 点击外部 / Esc 自动关闭
-- 屏幕顶部居中
+- `DeepFinderAppDelegate: NSApplicationDelegate` — 应用入口（非 `@main`，由外部 app target 设置 delegate 后启动）
+- `NSApp.setActivationPolicy(.accessory)` — LSUIElement，无 Dock 图标，无主菜单
+- `StatusBarController` — NSStatusItem 菜单栏图标（magnifyingglass SF Symbol），左键切换面板，右键上下文菜单（搜索/设置/退出）
+- 自动启动 daemon：`applicationDidFinishLaunching` 中通过 `IPCClient.ensureDaemonRunning()` 确保 daemon 运行
+- 组件间通过 `NotificationCenter` 通信（`.toggleSearchPanel`, `.showSettings`）
 
-### 6.2 Apple Intelligence 光晕
+### 6.2 搜索面板（NSPanel）
 
-- AngularGradient (teal/violet/coral/amber) 旋转 ~1.8s
-- 4 层叠加，60fps on M4+
-- `accessibilityReduceMotion` → 静态渐变边框
-- 面板隐藏时暂停动画
+- `SearchPanelHostingController` — 管理 NSPanel 生命周期
+- `.nonactivatingPanel` + `.fullSizeContentView` + `.borderless` 样式
+- `.floating` 窗口层级，无标题栏
+- 居中于鼠标所在屏幕（`screenForMouseLocation()`），非固定顶部居中
+- `hidesOnDeactivate = true` — 点击外部 / Esc 自动关闭
+- 重新打开时保留搜索文本（`SearchViewModel` 持续存在）
+- Liquid Glass 材质：`GlassEffectContainer` 封装 `.glassEffect(.regular, in: .rect(cornerRadius: 24))`
 
-### 6.3 全局热键
+### 6.3 Apple Intelligence 光晕
 
-- 默认 `⌃⌘K`，可配置
-- Carbon RegisterEventHotKey 优先，CGEventTap fallback
-- 需 Accessibility 权限
+- `IntelligenceGlow` — AngularGradient (teal/violet/coral/amber) 旋转 1.8s，60fps on M4+
+- `GlassEffectContainer` 将 material 和 glow overlay 组合，`.allowsHitTesting(false)` 确保光晕不挡交互
+- `@Environment(\.accessibilityReduceMotion)` → 静态渐变边框（无旋转和透明度脉冲）
+- 4 层叠加动画
+
+### 6.4 全局热键
+
+- `GlobalHotkey` — 默认 `⌃⌘K`，支持 `KeyCombination` 类型配置
+- Carbon `RegisterEventHotKey` 优先，CGEventTap fallback
+- 需 Accessibility 权限，`HotkeyPermissionHelper` 引导授权流程
+- 热键冲突检测和重试退避
+
+### 6.5 其他 GUI 组件
+
+- `SearchBarView` — 搜索输入框，自动补全支持
+- `ResultsListView` — 可滚动结果容器，键盘导航
+- `ResultRowView` — 单行结果（文件名/路径/大小/日期）
+- `QuickLookPreview` — Space 快速预览
+- `ResultContextMenu` — 右键菜单（Finder 中显示/复制路径）
+- `ResultDragView` — 文件拖拽支持
+- `SettingsView` / `SettingsWindow` — 偏好设置面板（排除路径、索引统计、重建）
+- `SearchViewModel` — `@ObservableObject`，桥接 GUI 与 `IPCClientProtocol`
+- `WorkspaceProtocol` — NSWorkspace 抽象协议（测试性）
 
 ---
 
@@ -917,97 +1018,36 @@ CLI 检测 daemon 是否运行：
 
 ## 8. 项目结构
 
+**Single-library architecture.** Sources/ holds all modules (Index, Search, FS, Persist, Daemon, CLI, GUI, AI, Media, Services) under one monolithic `DeepFinder` library target. Two thin executables (`DeepFinderCLI`, `DeepFinderDaemon`) each contain only a `main.swift` and link the shared library. A single `DeepFinderTests` target covers all modules. This avoids cross-target dependency management while keeping build simple. Splitting into sub-libraries is planned to improve build parallelism and enforce module boundaries (see CLAUDE.md).
+
 ```
 deep-finder/
 ├── Package.swift
 ├── Sources/
-│   ├── DeepFinderIndex/               # 共享库 (library target)
-│   │   ├── Index/
-│   │   │   ├── FileRecord.swift
-│   │   │   ├── Trie.swift
-│   │   │   ├── FullSubstringMap.swift
-│   │   │   ├── TrigramIndex.swift
-│   │   │   ├── PinyinIndex.swift
-│   │   │   ├── InMemoryIndex.swift
-│   │   │   └── IndexingEngine.swift
-│   │   ├── Search/
-│   │   │   ├── SearchProvider.swift
-│   │   │   ├── SearchCoordinator.swift
-│   │   │   ├── SearchQuery.swift
-│   │   │   └── SearchResult.swift
-│   │   ├── FS/
-│   │   │   ├── FileSystemEventStream.swift
-│   │   │   ├── FileScanner.swift
-│   │   │   └── FSEventWatcher.swift
-│   │   ├── Persist/
-│   │   │   ├── IndexPersistence.swift
-│   │   │   └── ConfigStore.swift
-│   │   └── IPC/
-│   │       └── IPCProtocol.swift       # 共享消息类型
-│   ├── DeepFinderDaemon/              # Daemon 可执行文件 (executable target)
-│   │   ├── DaemonMain.swift
-│   │   ├── IPCServer.swift
-│   │   └── DaemonConfig.swift          # LaunchAgent plist, PID 管理
-│   └── DeepFinderCLI/                 # CLI 可执行文件 (executable target)
-│       ├── CLIMain.swift
-│       ├── ArgParser.swift
-│       ├── SingleShot.swift
-│       ├── REPL.swift
-│       ├── REPLCommands.swift
-│       ├── TerminalFormatter.swift
-│       ├── IPCClient.swift
-│       ├── History.swift
-│       └── Completion.swift
+│   ├── Index/                    # FileRecord, Trie, FullSubstringMap, TrigramIndex, PinyinIndex, InMemoryIndex, ProductConfig
+│   ├── Search/                   # SearchProvider, SearchCoordinator, FilterPipeline, SearchSorter, ContentScanner, AutocompleteProvider, DuplicateFinder, SearchBookmark
+│   ├── FS/                       # FileScanner, FSEventWatcher, FileSystemEventStream, FSEventStreamImpl, MockEventStream, VolumeManager
+│   ├── Persist/                  # IndexPersistence, IndexRecovery, PathEncryption
+│   ├── Daemon/                   # DaemonMain, IPCServer, IPCClient, IPCProtocol, IPCFraming, ConfigStore, LaunchAgent
+│   ├── CLI/                      # CLIMain, ArgParser, SingleShot, REPL, REPLCommands, REPLHistory, TerminalFormatter, ConfigCommands, DaemonCommands, InstallCommands, FuzzyCorrection, ServeMode
+│   ├── GUI/                      # SearchPanelView, SearchBarView, ResultsListView, SearchViewModel, AppDelegate, GlobalHotkey, IntelligenceGlow, StatusBarController (v2.0+)
+│   ├── AI/                       # NLSearchTranslator, AIConfig, AIModelProvider, DeepSeekProvider, QwenProvider, SemanticGrouper, VisionTaggingCoordinator
+│   ├── Media/                    # ImageMetadataExtractor, AudioMetadataExtractor, VideoMetadataExtractor, PDFMetadataExtractor, MediaMetadataIndex
+│   ├── Services/                 # HTTPSearchService, URLSchemeHandler, SearchIntent, SearchScriptCommand
+│   ├── CLIEntry/                 # Thin executable entry point: main.swift → CLIMain
+│   └── DaemonEntry/              # Thin executable entry point: main.swift → DaemonMain
 ├── Tests/
 │   ├── IndexTests/
-│   │   ├── FileRecordTests.swift
-│   │   ├── TrieTests.swift
-│   │   ├── FullSubstringMapTests.swift
-│   │   ├── TrigramIndexTests.swift
-│   │   ├── PinyinIndexTests.swift
-│   │   ├── InMemoryIndexTests.swift
-│   │   └── InMemoryIndexPerformanceTests.swift
 │   ├── SearchTests/
-│   │   ├── SearchCoordinatorTests.swift
-│   │   └── SearchProviderContractTests.swift
 │   ├── FSTests/
-│   │   ├── FileScannerTests.swift
-│   │   ├── FSEventWatcherTests.swift
-│   │   └── IndexPersistenceTests.swift
+│   ├── PersistTests/
 │   ├── DaemonTests/
-│   │   ├── IPCProtocolTests.swift
-│   │   └── DaemonLifecycleTests.swift
 │   ├── CLITests/
-│   │   ├── SingleShotTests.swift
-│   │   ├── REPLCommandTests.swift
-│   │   ├── TerminalFormatterTests.swift
-│   │   └── ArgParserTests.swift
-│   └── Fixtures/
-│       ├── FileRecordGenerator.swift
-│       ├── EdgeCaseFixtures.swift
-│       └── PerformanceFixtures.swift
-├── docs/
-│   └── superpowers/specs/
-│       ├── requirements.md          # index file → reqs/
-│       ├── reqs/                    # per-module requirement files
-│       │   ├── 00-overview.md
-│       │   ├── v0.1-index-core.md
-│       │   ├── v0.2-file-system.md
-│       │   ├── v0.3-search.md
-│       │   ├── v0.4-daemon-ipc.md
-│       │   ├── v0.5-cli-singleshot.md
-│       │   ├── v0.6-repl.md
-│       │   ├── v0.7-daemon-mgmt.md
-│       │   ├── v1.0-cli-release.md
-│       │   ├── v1.1-advanced-syntax.md
-│       │   ├── v1.2-metadata-filter.md
-│       │   ├── v1.3-search-exp.md
-│       │   ├── v1.4-content-search.md
-│       │   ├── v1.5-duplicate.md
-│       │   ├── v2.0-gui.md
-│       │   ├── v3.0-ai.md
-│       │   └── v3.1-rag.md
-│       └── 2026-05-26-deep-finder-design.md
+│   ├── GUITests/
+│   ├── AITests/
+│   ├── MediaTests/
+│   └── ServicesTests/
+├── docs/superpowers/specs/       # Design doc + requirement files
 ├── VERSION
 └── README.md
 ```
@@ -1022,53 +1062,51 @@ let package = Package(
     name: "deep-finder",
     platforms: [.macOS(.v26)],
     products: [
-        .library(name: "DeepFinderIndex", targets: ["DeepFinderIndex"]),
-        .executableProduct(name: "deepfinder", targets: ["DeepFinderCLI"]),
-        .executableProduct(name: "deepfinder-daemon", targets: ["DeepFinderDaemon"]),
+        .library(name: "DeepFinder", targets: ["DeepFinder"]),
+        .executable(name: "deepfinder", targets: ["DeepFinderCLI"]),
+        .executable(name: "deepfinder-daemon", targets: ["DeepFinderDaemon"]),
     ],
     targets: [
         .target(
-            name: "DeepFinderIndex",
-            path: "Sources/DeepFinderIndex"
-        ),
-        .executableTarget(
-            name: "DeepFinderDaemon",
-            dependencies: ["DeepFinderIndex"],
-            path: "Sources/DeepFinderDaemon"
+            name: "DeepFinder",
+            path: "Sources",
+            exclude: ["CLIEntry", "DaemonEntry"],
+            linkerSettings: [
+                .linkedLibrary("edit")
+            ]
         ),
         .executableTarget(
             name: "DeepFinderCLI",
-            dependencies: ["DeepFinderIndex"],
-            path: "Sources/DeepFinderCLI"
+            dependencies: ["DeepFinder"],
+            path: "Sources/CLIEntry"
+        ),
+        .executableTarget(
+            name: "DeepFinderDaemon",
+            dependencies: ["DeepFinder"],
+            path: "Sources/DaemonEntry"
         ),
         .testTarget(
-            name: "DeepFinderIndexTests",
-            dependencies: ["DeepFinderIndex"],
-            path: "Tests/IndexTests"
-        ),
-        .testTarget(
-            name: "SearchTests",
-            dependencies: ["DeepFinderIndex"],
-            path: "Tests/SearchTests"
-        ),
-        .testTarget(
-            name: "FSTests",
-            dependencies: ["DeepFinderIndex"],
-            path: "Tests/FSTests"
-        ),
-        .testTarget(
-            name: "DaemonTests",
-            dependencies: ["DeepFinderDaemon"],
-            path: "Tests/DaemonTests"
-        ),
-        .testTarget(
-            name: "CLITests",
-            dependencies: ["DeepFinderCLI"],
-            path: "Tests/CLITests"
+            name: "DeepFinderTests",
+            dependencies: ["DeepFinder"],
+            path: "Tests"
         ),
     ]
 )
 ```
+
+**Build products:**
+- `DeepFinder` (library) — all modules, linked by CLI and daemon
+- `deepfinder` (executable) — thin `CLIEntry/main.swift` calling `CLIMain`
+- `deepfinder-daemon` (executable) — thin `DaemonEntry/main.swift` calling `DaemonMain`
+
+**Dependency direction (one-way, no cycles):**
+```
+CLI/Daemon → Search → Index
+  └→ IPC
+(v2.0: GUI → IPC → Daemon, same daemon binary)
+```
+
+Index layer has zero UI/CLI dependencies and can be tested in isolation.
 
 ---
 

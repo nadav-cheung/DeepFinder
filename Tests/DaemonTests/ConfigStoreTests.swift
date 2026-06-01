@@ -1,8 +1,8 @@
-import XCTest
+import Testing
 import Foundation
 @testable import DeepFinder
 
-final class ConfigStoreTests: XCTestCase {
+struct ConfigStoreTests {
 
     // MARK: - Helpers
 
@@ -21,22 +21,22 @@ final class ConfigStoreTests: XCTestCase {
 
     // MARK: - 1. Default config when no file exists
 
-    func testGetReturnsDefaultConfigWhenFileDoesNotExist() async throws {
+    @Test func getReturnsDefaultConfigWhenFileDoesNotExist() async throws {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
 
         let store = ConfigStore(configPath: configPath(in: dir))
         let config = await store.get()
 
-        XCTAssertEqual(config.excludedPaths, ["/System", "/Library"])
-        XCTAssertEqual(config.indexBatchSize, 100)
-        XCTAssertEqual(config.maxResults, 1000)
-        XCTAssertEqual(config.configVersion, 1)
+        #expect(config.excludedPaths == ["/System", "/Library"])
+        #expect(config.indexBatchSize == 100)
+        #expect(config.maxResults == 1000)
+        #expect(config.configVersion == 1)
     }
 
     // MARK: - 2. Round-trip: set then get persists across instances
 
-    func testRoundTripPersistsAcrossInstances() async throws {
+    @Test func roundTripPersistsAcrossInstances() async throws {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         let path = configPath(in: dir)
@@ -49,33 +49,33 @@ final class ConfigStoreTests: XCTestCase {
         // Read via second instance
         let store2 = ConfigStore(configPath: path)
         let config = await store2.get()
-        XCTAssertEqual(config.indexBatchSize, 500)
-        XCTAssertEqual(config.maxResults, 5000)
+        #expect(config.indexBatchSize == 500)
+        #expect(config.maxResults == 5000)
     }
 
     // MARK: - 3. get(key:) returns individual values
 
-    func testGetByKeyReturnsCorrectValue() async throws {
+    @Test func getByKeyReturnsCorrectValue() async throws {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
 
         let store = ConfigStore(configPath: configPath(in: dir))
         let val = await store.get(key: "indexBatchSize")
-        XCTAssertEqual(val, "100")
+        #expect(val == "100")
     }
 
-    func testGetByKeyReturnsNilForUnknownKey() async throws {
+    @Test func getByKeyReturnsNilForUnknownKey() async throws {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
 
         let store = ConfigStore(configPath: configPath(in: dir))
         let val = await store.get(key: "nonexistent")
-        XCTAssertNil(val)
+        #expect(val == nil)
     }
 
     // MARK: - 4. Set individual key
 
-    func testSetUpdatesSingleKey() async throws {
+    @Test func setUpdatesSingleKey() async throws {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
 
@@ -83,15 +83,15 @@ final class ConfigStoreTests: XCTestCase {
         try await store.set(key: "excludedPaths", value: "[\"/System\",\"/private\"]")
 
         let config = await store.get()
-        XCTAssertEqual(config.excludedPaths, ["/System", "/private"])
+        #expect(config.excludedPaths == ["/System", "/private"])
         // Other fields unchanged
-        XCTAssertEqual(config.indexBatchSize, 100)
-        XCTAssertEqual(config.maxResults, 1000)
+        #expect(config.indexBatchSize == 100)
+        #expect(config.maxResults == 1000)
     }
 
     // MARK: - 5. Batch update via transform
 
-    func testUpdateTransformsConfigAtomically() async throws {
+    @Test func updateTransformsConfigAtomically() async throws {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
 
@@ -105,14 +105,14 @@ final class ConfigStoreTests: XCTestCase {
         }
 
         let config = await store.get()
-        XCTAssertEqual(config.indexBatchSize, 200)
-        XCTAssertEqual(config.maxResults, 2000)
-        XCTAssertEqual(config.excludedPaths, ["/System", "/Library", "/private"])
+        #expect(config.indexBatchSize == 200)
+        #expect(config.maxResults == 2000)
+        #expect(config.excludedPaths == ["/System", "/Library", "/private"])
     }
 
     // MARK: - 6. Atomic write verified (no partial file)
 
-    func testAtomicWriteProducesValidJSON() async throws {
+    @Test func atomicWriteProducesValidJSON() async throws {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         let path = configPath(in: dir)
@@ -123,12 +123,12 @@ final class ConfigStoreTests: XCTestCase {
         // File should be valid JSON
         let data = try Data(contentsOf: URL(fileURLWithPath: path))
         let decoded = try JSONDecoder().decode(DaemonConfig.self, from: data)
-        XCTAssertEqual(decoded.maxResults, 42)
+        #expect(decoded.maxResults == 42)
     }
 
     // MARK: - 7. File permissions 600
 
-    func testFilePermissionsAre600() async throws {
+    @Test func filePermissionsAre600() async throws {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         let path = configPath(in: dir)
@@ -138,12 +138,12 @@ final class ConfigStoreTests: XCTestCase {
 
         let attrs = try FileManager.default.attributesOfItem(atPath: path)
         let perms = attrs[.posixPermissions] as? Int
-        XCTAssertEqual(perms, 0o600, "Config file should have 600 permissions")
+        #expect(perms == 0o600, "Config file should have 600 permissions")
     }
 
     // MARK: - 8. Corrupted file falls back to defaults
 
-    func testCorruptedFileFallsBackToDefaults() async throws {
+    @Test func corruptedFileFallsBackToDefaults() async throws {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
         let path = configPath(in: dir)
@@ -154,29 +154,26 @@ final class ConfigStoreTests: XCTestCase {
         let store = ConfigStore(configPath: path)
         let config = await store.get()
         // Should fall back to defaults
-        XCTAssertEqual(config.excludedPaths, ["/System", "/Library"])
-        XCTAssertEqual(config.indexBatchSize, 100)
-        XCTAssertEqual(config.maxResults, 1000)
+        #expect(config.excludedPaths == ["/System", "/Library"])
+        #expect(config.indexBatchSize == 100)
+        #expect(config.maxResults == 1000)
     }
 
     // MARK: - 9. Update throws on invalid transform result
 
-    func testSetThrowsOnInvalidExcludedPathsJSON() async throws {
+    @Test func setThrowsOnInvalidExcludedPathsJSON() async throws {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
 
         let store = ConfigStore(configPath: configPath(in: dir))
-        do {
+        await #expect(throws: (any Error).self) {
             try await store.set(key: "excludedPaths", value: "not a json array")
-            XCTFail("Expected throw for invalid excludedPaths value")
-        } catch {
-            // Expected
         }
     }
 
     // MARK: - 10. ConfigStore re-reads after write
 
-    func testInMemoryCacheReflectsWrite() async throws {
+    @Test func inMemoryCacheReflectsWrite() async throws {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
 
@@ -184,11 +181,11 @@ final class ConfigStoreTests: XCTestCase {
 
         // Default
         let before = await store.get()
-        XCTAssertEqual(before.indexBatchSize, 100)
+        #expect(before.indexBatchSize == 100)
 
         // After set, same instance should reflect
         try await store.set(key: "indexBatchSize", value: "999")
         let after = await store.get()
-        XCTAssertEqual(after.indexBatchSize, 999)
+        #expect(after.indexBatchSize == 999)
     }
 }

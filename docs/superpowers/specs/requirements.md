@@ -1,5 +1,7 @@
 # DeepFinder — 需求管理
 
+Status: See REQ_STATUS.md for the implementation status of all requirements.
+
 需求 ID 格式：`REQ-{版本}-{序号}`，如 `REQ-1.0-01`。
 优先级：P0 必须 / P1 重要 / P2 增强 / P3 未来。
 状态：📋 规划中 / 🔨 开发中 / ✅ 已完成 / ❌ 已取消。

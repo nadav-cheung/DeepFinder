@@ -1,5 +1,6 @@
-import SwiftUI
+import OSLog
 import ServiceManagement
+import SwiftUI
 
 // MARK: - LaunchAtLoginProvider
 
@@ -127,6 +128,10 @@ enum AIModelOption: String, CaseIterable, Sendable {
 @MainActor
 @Observable
 final class SettingsViewModel {
+
+    // MARK: - Logging
+
+    private let logger = Logger(subsystem: "com.nadav.deepfinder.daemon", category: "settings")
 
     // MARK: - State
 
@@ -271,10 +276,12 @@ final class SettingsViewModel {
         await aiProvider?.setModel(model.rawValue)
     }
 
-    /// Persist API key to Keychain.
-    func setAIKey(_ key: String) async throws {
+    /// Persist API key to Keychain. Errors are logged but not propagated to avoid
+    /// disrupting the UI binding flow (SecureField calls this on every keystroke).
+    func setAIKey(_ key: String) async {
         aiAPIKeyText = key
-        try await aiProvider?.setAPIKey(key)
+        do { try await aiProvider?.setAPIKey(key) }
+        catch { logger.warning("Failed to save AI API key: \(error.localizedDescription, privacy: .public)") }
     }
 
     /// Persist send metadata toggle.
@@ -514,7 +521,7 @@ struct SettingsView: View {
                     get: { viewModel.aiAPIKeyText },
                     set: { newValue in
                         viewModel.aiAPIKeyText = newValue
-                        Task { try? await viewModel.setAIKey(newValue) }
+                        Task { await viewModel.setAIKey(newValue) }
                     }
                 ))
                 .textFieldStyle(.roundedBorder)

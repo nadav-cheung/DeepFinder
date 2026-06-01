@@ -69,7 +69,7 @@ struct ServeMode {
                     return []
                 }
             } catch {
-                return []
+                return [["error": "daemon unavailable - \(error.localizedDescription)"]]
             }
         }
 

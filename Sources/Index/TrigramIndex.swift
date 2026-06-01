@@ -36,6 +36,15 @@ struct TrigramIndex {
     /// Re-inserting an existing `id` updates the stored name and posting lists.
     mutating func insert(name: String, id: UInt32) {
         let normalized = name.precomposedStringWithCanonicalMapping.lowercased()
+        let scalars = Array(normalized.unicodeScalars)
+        guard scalars.count >= 3 else {
+            // Too short for trigrams — still store the name for short-query fallback
+            if names[id] == nil {
+                _count += 1
+            }
+            names[id] = normalized
+            return
+        }
 
         // If re-inserting, remove old posting lists first
         if let oldName = names[id] {
@@ -57,7 +66,6 @@ struct TrigramIndex {
 
         names[id] = normalized
 
-        let scalars = Array(normalized.unicodeScalars)
         for i in 0..<(scalars.count - 2) {
             let trigram = Self.makeTrigram(scalars: scalars, at: i)
             postingLists[trigram, default: []].insert(id)

@@ -204,10 +204,10 @@ final class SystemVolumeMonitor: VolumeMonitor {
             observers = [mountedObserver, unmountedObserver, willUnmountObserver]
 
             continuation.onTermination = { _ in
-                for observer in observers {
-                    NotificationCenter.default.removeObserver(observer)
+                DispatchQueue.main.async {
+                    observers.forEach { NotificationCenter.default.removeObserver($0) }
+                    observers.removeAll()
                 }
-                observers.removeAll()
             }
         }
     }

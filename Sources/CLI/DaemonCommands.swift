@@ -316,17 +316,16 @@ struct DaemonCommandRunner: Sendable {
 
 // MARK: - System Implementations
 
-/// Production implementation: spawns a daemon via `Process`.
+/// Production implementation: delegates to `IPCClient.spawnDaemon` for
+/// shared secure path resolution, environment hardening, and stdio setup.
 struct SystemProcessSpawner: ProcessSpawner, Sendable {
     func spawnDaemon(binaryPath: String, arguments: [String]) -> Result<Void, Error> {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: binaryPath)
-        process.arguments = arguments
-        do {
-            try process.run()
+        let result = IPCClient.spawnDaemon(binaryPath: binaryPath)
+        switch result {
+        case .success:
             return .success(())
-        } catch {
-            return .failure(error)
+        case .failure(let spawnError):
+            return .failure(spawnError)
         }
     }
 }

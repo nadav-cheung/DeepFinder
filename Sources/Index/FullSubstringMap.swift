@@ -36,14 +36,15 @@ struct FullSubstringMap {
         guard normalized.count <= Self.maxNameLength else { return }
 
         let lowered = normalized.lowercased()
-        let chars = Array(lowered)
 
         // Track whether this is a new entry to avoid double-counting
         let isNew = index[lowered, default: []].insert(id).inserted
 
-        for start in 0..<chars.count {
-            for end in (start + 1)...chars.count {
-                let substring = String(chars[start..<end])
+        for startIdx in 0..<lowered.count {
+            let start = lowered.index(lowered.startIndex, offsetBy: startIdx)
+            for endIdx in (startIdx + 1)...lowered.count {
+                let end = lowered.index(lowered.startIndex, offsetBy: endIdx)
+                let substring = String(lowered[start..<end])
                 index[substring, default: []].insert(id)
             }
         }
@@ -75,12 +76,13 @@ struct FullSubstringMap {
         guard normalized.count <= Self.maxNameLength else { return }
 
         let lowered = normalized.lowercased()
-        let chars = Array(lowered)
 
         var wasPresent = false
-        for start in 0..<chars.count {
-            for end in (start + 1)...chars.count {
-                let substring = String(chars[start..<end])
+        for startIdx in 0..<lowered.count {
+            let start = lowered.index(lowered.startIndex, offsetBy: startIdx)
+            for endIdx in (startIdx + 1)...lowered.count {
+                let end = lowered.index(lowered.startIndex, offsetBy: endIdx)
+                let substring = String(lowered[start..<end])
                 if var ids = index[substring] {
                     if ids.remove(id) != nil {
                         wasPresent = true
