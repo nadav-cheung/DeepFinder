@@ -12,13 +12,19 @@ struct EmbeddingProviderTests {
         #expect(result.count == 512)
     }
 
-    @Test("embedBatch returns correct count and dimensions")
+    @Test("embedBatch returns correct count, dimensions, and preserves input order")
     func embedBatchReturnsCorrectCount() async throws {
         let provider = MockEmbeddingProvider(dimensions: 256)
-        let results = try await provider.embedBatch(texts: ["a", "b", "c"])
+        let texts = ["a", "b", "c"]
+        let results = try await provider.embedBatch(texts: texts)
         #expect(results.count == 3)
         for vector in results {
             #expect(vector.count == 256)
+        }
+        // Verify order preservation: results[i] must match embed(texts[i])
+        for (i, text) in texts.enumerated() {
+            let expected = try await provider.embed(text: text)
+            #expect(results[i] == expected)
         }
     }
 
@@ -51,17 +57,9 @@ struct MockEmbeddingProvider: EmbeddingProvider {
     let dimensions: Int
 
     func embed(text: String) async throws -> [Float] {
-        Array(repeating: Float.random(in: -1...1), count: dimensions)
-    }
-
-    func embedBatch(texts: [String]) async throws -> [[Float]] {
-        try await withThrowingTaskGroup(of: [Float].self) { group in
-            for text in texts {
-                group.addTask { try await self.embed(text: text) }
-            }
-            var results: [[Float]] = []
-            for try await vec in group { results.append(vec) }
-            return results
-        }
+        // Deterministic output based on input text so order-preservation tests are meaningful.
+        var vector = [Float](repeating: 0, count: dimensions)
+        vector[0] = Float(text.hashValue & 0xFF)
+        return vector
     }
 }
