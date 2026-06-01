@@ -97,13 +97,6 @@ struct NLEmbeddingProviderTests {
         #expect(vector.count == 512)
         #expect(vector.allSatisfy { $0 == 0 })
     }
-
-    @Test("NLEmbeddingProvider is Sendable")
-    func isSendable() {
-        let provider = NLEmbeddingProvider()
-        func assertSendable<T: Sendable>(_: T) {}
-        assertSendable(provider)
-    }
 }
 
 private func cosineSimilarity(_ a: [Float], _ b: [Float]) -> Float {

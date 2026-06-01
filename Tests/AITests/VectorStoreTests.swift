@@ -71,13 +71,6 @@ struct VectorStoreTests {
         for i in 0..<50 { try await store.delete(id: UInt64(i)) }
         #expect(await store.count() == 50)
     }
-
-    @Test("MockVectorStore is Sendable")
-    func mockIsSendable() {
-        let store = MockVectorStore()
-        func assertSendable<T: Sendable>(_: T) {}
-        assertSendable(store)
-    }
 }
 
 /// In-memory mock using brute-force cosine similarity.

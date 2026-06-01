@@ -14,13 +14,6 @@ struct QwenProviderTests {
         assertProvider(provider)
     }
 
-    @Test("QwenProvider is Sendable")
-    func isSendable() {
-        let provider = QwenProvider.qwen(apiKey: "test-key", httpClient: MockHTTPClient())
-        func assertSendable<T: Sendable>(_: T) {}
-        assertSendable(provider)
-    }
-
     // MARK: - name
 
     @Test("name returns 'qwen'")

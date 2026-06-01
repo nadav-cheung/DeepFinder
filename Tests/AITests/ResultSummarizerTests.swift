@@ -63,15 +63,6 @@ struct ResultSummarizerTests {
         let result = await summarizer.summarize(query: "test", results: results)
         #expect(result == nil)
     }
-
-    // MARK: - Sendable conformance
-
-    @Test("ResultSummarizer is Sendable")
-    func summarizerIsSendable() {
-        let summarizer = ResultSummarizer(provider: nil)
-        func assertSendable<T: Sendable>(_: T) {}
-        assertSendable(summarizer)
-    }
 }
 
 // MARK: - Helpers

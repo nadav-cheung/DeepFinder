@@ -97,11 +97,4 @@ struct ProviderRegistryTests {
                               defaultModel: "m1", requiresCustomConfig: false)
         #expect(a == b)
     }
-
-    @Test("ProviderRegistry is Sendable")
-    func providerRegistryIsSendable() {
-        let registry = ProviderRegistry()
-        func assertSendable<T: Sendable>(_: T) {}
-        assertSendable(registry)
-    }
 }

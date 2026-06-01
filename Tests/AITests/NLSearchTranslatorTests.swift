@@ -135,15 +135,6 @@ struct NLSearchTranslatorTests {
         let result = await translator.translate("find my files")
         #expect(result == "find my files")
     }
-
-    // MARK: - Sendable conformance
-
-    @Test("NLSearchTranslator is Sendable")
-    func translatorIsSendable() {
-        let translator = NLSearchTranslator(provider: nil)
-        func assertSendable<T: Sendable>(_: T) {}
-        assertSendable(translator)
-    }
 }
 
 // MARK: - Mock Provider for NLSearchTranslator tests

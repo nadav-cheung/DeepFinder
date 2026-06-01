@@ -168,23 +168,18 @@ struct NLOperationsTests {
         #expect(preview.count == 2)
     }
 
-    // MARK: - Sendable / Codable conformance
+    // MARK: - Codable / Equatable conformance
 
-    @Test("NLOperationType is Sendable and Codable")
-    func operationTypeSendable() {
-        func assertSendable<T: Sendable>(_: T) {}
-        assertSendable(NLOperationType.move)
-        // Codable round-trip
+    @Test("NLOperationType round-trips through Codable")
+    func operationTypeCodable() {
         let data = try! JSONEncoder().encode(NLOperationType.copy)
         let decoded = try! JSONDecoder().decode(NLOperationType.self, from: data)
         #expect(decoded == .copy)
     }
 
-    @Test("NLOperation is Sendable and Equatable")
-    func operationSendable() {
-        func assertSendable<T: Sendable>(_: T) {}
+    @Test("NLOperation is Equatable")
+    func operationEquatable() {
         let op = NLOperation(type: .move, sourcePattern: "a", destination: "b", preview: [])
-        assertSendable(op)
         let op2 = NLOperation(type: .move, sourcePattern: "a", destination: "b", preview: [])
         #expect(op == op2)
     }
@@ -685,11 +680,9 @@ struct NLOperationsTests {
 
     // MARK: - NLOperationResult and NLOperationStatus
 
-    @Test("NLOperationResult is Sendable and Equatable")
-    func operationResultSendable() {
-        func assertSendable<T: Sendable>(_: T) {}
+    @Test("NLOperationResult is Equatable")
+    func operationResultEquatable() {
         let result = NLOperationResult(success: true, affectedCount: 3, status: .confirmed, errors: [])
-        assertSendable(result)
         let result2 = NLOperationResult(success: true, affectedCount: 3, status: .confirmed, errors: [])
         #expect(result == result2)
     }

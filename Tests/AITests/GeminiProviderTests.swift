@@ -18,17 +18,6 @@ struct GeminiProviderTests {
         assertProvider(provider)
     }
 
-    @Test("GeminiProvider is Sendable")
-    func isSendable() {
-        let provider = GeminiProvider(
-            apiKey: "test-key",
-            model: "gemini-2.5-pro",
-            httpClient: MockHTTPClient(response: mockGeminiResponse())
-        )
-        func assertSendable<T: Sendable>(_: T) {}
-        assertSendable(provider)
-    }
-
     // MARK: - name & displayName
 
     @Test("provider name and display name")

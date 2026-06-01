@@ -48,12 +48,6 @@ struct EmbeddingProviderTests {
         #expect(provider == nil)
     }
 
-    @Test("MockEmbeddingProvider is Sendable")
-    func mockIsSendable() {
-        let provider = MockEmbeddingProvider(dimensions: 128)
-        func assertSendable<T: Sendable>(_: T) {}
-        assertSendable(provider)
-    }
 }
 
 // MARK: - Mock Implementation

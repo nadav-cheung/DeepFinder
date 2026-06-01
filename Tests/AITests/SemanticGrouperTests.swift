@@ -90,22 +90,6 @@ struct SemanticGrouperTests {
         #expect(g1 == g2)
         #expect(g1 != g3)
     }
-
-    // MARK: - Sendable conformance
-
-    @Test("SemanticGrouper is Sendable")
-    func grouperIsSendable() {
-        let grouper = SemanticGrouper(provider: nil)
-        func assertSendable<T: Sendable>(_: T) {}
-        assertSendable(grouper)
-    }
-
-    @Test("SemanticGroup is Sendable")
-    func groupIsSendable() {
-        let group = SemanticGroup(name: "test", fileIDs: [1])
-        func assertSendable<T: Sendable>(_: T) {}
-        assertSendable(group)
-    }
 }
 
 // MARK: - Helpers

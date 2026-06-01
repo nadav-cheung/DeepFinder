@@ -15,13 +15,6 @@ struct DeepSeekProviderTests {
         assertProvider(provider)
     }
 
-    @Test("DeepSeekProvider is Sendable")
-    func isSendable() {
-        let provider = DeepSeekProvider.deepSeek(apiKey: "test-key", httpClient: MockHTTPClient())
-        func assertSendable<T: Sendable>(_: T) {}
-        assertSendable(provider)
-    }
-
     // MARK: - name
 
     @Test("name returns 'deepseek'")

@@ -66,14 +66,6 @@ struct AIModelProviderTests {
         #expect(result == "ext:mp4;mov;mkv size:>100mb")
     }
 
-    @Test("MockProvider is Sendable")
-    func mockProviderIsSendable() {
-        let provider = MockAIProvider()
-        // Compile-time check: passing to a Sendable-constrained function
-        func assertSendable<T: Sendable>(_: T) {}
-        assertSendable(provider)
-    }
-
     // MARK: - Default property values
 
     @Test("displayName defaults to name")

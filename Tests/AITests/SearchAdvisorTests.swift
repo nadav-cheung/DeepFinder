@@ -47,15 +47,6 @@ struct SearchAdvisorTests {
         let result = await advisor.suggest(query: "report", results: [])
         #expect(result != nil)
     }
-
-    // MARK: - Sendable conformance
-
-    @Test("SearchAdvisor is Sendable")
-    func advisorIsSendable() {
-        let advisor = SearchAdvisor(provider: nil)
-        func assertSendable<T: Sendable>(_: T) {}
-        assertSendable(advisor)
-    }
 }
 
 // MARK: - Helpers

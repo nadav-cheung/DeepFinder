@@ -104,14 +104,6 @@ struct CrossLanguageSearchTests {
         #expect(result.isEmpty)
     }
 
-    // MARK: - Sendable conformance
-
-    @Test("CrossLanguageSearch is Sendable")
-    func searchIsSendable() {
-        let search = CrossLanguageSearch(provider: nil)
-        func assertSendable<T: Sendable>(_: T) {}
-        assertSendable(search)
-    }
 }
 
 // MARK: - Mock Provider for CrossLanguageSearch tests

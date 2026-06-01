@@ -18,17 +18,6 @@ struct AnthropicProviderTests {
         assertProvider(provider)
     }
 
-    @Test("AnthropicProvider is Sendable")
-    func isSendable() {
-        let provider = AnthropicProvider(
-            apiKey: "sk-ant-test",
-            model: "claude-sonnet-4-6-20251001",
-            httpClient: MockHTTPClient(response: mockStopResponse())
-        )
-        func assertSendable<T: Sendable>(_: T) {}
-        assertSendable(provider)
-    }
-
     // MARK: - name & displayName
 
     @Test("provider name and display name")

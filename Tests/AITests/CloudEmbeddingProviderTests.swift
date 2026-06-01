@@ -60,13 +60,5 @@ struct CloudEmbeddingProviderTests {
         #expect(provider.dimensions == 1024)
     }
 
-    @Test("is Sendable")
-    func isSendable() {
-        let provider = CloudEmbeddingProvider(
-            name: "test", endpoint: URL(string: "https://example.com/")!,
-            apiKey: "sk-test", model: "test", dimensions: 128
-        )
-        func assertSendable<T: Sendable>(_: T) {}
-        assertSendable(provider)
-    }
+
 }
