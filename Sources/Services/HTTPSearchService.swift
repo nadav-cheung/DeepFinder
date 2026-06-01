@@ -54,7 +54,6 @@ actor HTTPSearchService {
     private let statsHandler: StatsHandler
     private var listener: NWListener?
     private let queue = DispatchQueue(label: "http-search-service", attributes: .concurrent)
-    private var handlerTasks: Set<Task<Void, Never>> = []
 
     /// Random auth token generated on each start. Clients must supply this
     /// as a `token` query parameter or `Authorization: Bearer <token>` header.
@@ -169,10 +168,8 @@ actor HTTPSearchService {
         }
     }
 
-    /// Stop the HTTP server and cancel all in-flight handler tasks.
+    /// Stop the HTTP server.
     func stop() {
-        for task in handlerTasks { task.cancel() }
-        handlerTasks.removeAll()
         listener?.cancel()
         listener = nil
     }
@@ -303,9 +300,6 @@ enum HTTPRouter {
         }
 
         switch request.path {
-        case "/health":
-            sendResponse(connection: connection, statusCode: 200, body: "{\"status\":\"ok\"}")
-
         case "/search":
             let query = request.queryParams["q"] ?? ""
             let limit = Int(request.queryParams["limit"] ?? "100") ?? 100
@@ -329,7 +323,9 @@ enum HTTPRouter {
             }
 
         default:
-            sendResponse(connection: connection, statusCode: 404, body: "{\"error\":\"Not found\"}")
+            // Delegate to route() for sync responses (health, 404, 405, etc.)
+            let (statusCode, body) = route(request: request)
+            sendResponse(connection: connection, statusCode: statusCode, body: body)
         }
     }
 
