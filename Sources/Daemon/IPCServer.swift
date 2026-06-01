@@ -44,7 +44,8 @@ actor IPCServer {
 
     private let socketPath: String
     private let coordinator: SearchCoordinator
-    private let statsProvider: @Sendable () -> DaemonStats
+    private let statsProvider: @Sendable () async -> DaemonStats
+    private let indexStatusProvider: @Sendable () async -> DaemonIndexStatus
 
     private var listenFD: Int32 = -1
     private var acceptTask: Task<Void, Never>?
@@ -80,14 +81,18 @@ actor IPCServer {
     /// - Parameters:
     ///   - socketPath: File path for the Unix domain socket (e.g. `~/.deep-finder/ipc.sock`).
     ///   - coordinator: The search coordinator that processes queries.
-    ///   - statsProvider: Closure that returns current daemon statistics when called.
+    ///   - statsProvider: Async closure that returns current daemon statistics when called.
+    ///   - indexStatusProvider: Async closure that returns current index status when called.
     ///   - maxConnsPerSecond: Maximum new connections allowed per second (default 10).
     ///   - maxConcurrentClients: Maximum concurrent client connections (default 50).
     init(
         socketPath: String,
         coordinator: SearchCoordinator,
-        statsProvider: @escaping @Sendable () -> DaemonStats = {
+        statsProvider: @escaping @Sendable () async -> DaemonStats = {
             DaemonStats(totalFiles: 0, indexState: "unknown", uptimeSeconds: 0, memoryUsageMB: 0)
+        },
+        indexStatusProvider: @escaping @Sendable () async -> DaemonIndexStatus = {
+            DaemonIndexStatus(state: "unknown", filesIndexed: 0, lastScanDate: nil)
         },
         maxConnsPerSecond: Int = 10,
         maxConcurrentClients: Int = 50
@@ -95,6 +100,7 @@ actor IPCServer {
         self.socketPath = socketPath
         self.coordinator = coordinator
         self.statsProvider = statsProvider
+        self.indexStatusProvider = indexStatusProvider
         self.maxConnsPerSecond = maxConnsPerSecond
         self.maxConcurrentClients = maxConcurrentClients
     }
@@ -488,7 +494,7 @@ actor IPCServer {
             return .results(results, queryID: queryID)
 
         case .stats:
-            let stats = statsProvider()
+            let stats = await statsProvider()
             return .stats(stats)
 
         case .cancel:
@@ -501,11 +507,7 @@ actor IPCServer {
             return .ack
 
         case .indexStatus:
-            let status = DaemonIndexStatus(
-                state: "unknown",
-                filesIndexed: 0,
-                lastScanDate: nil
-            )
+            let status = await indexStatusProvider()
             return .indexStatus(status)
         }
     }

@@ -186,6 +186,22 @@ public actor DaemonMain {
         NSString(string: path).expandingTildeInPath
     }
 
+    /// Get the current process resident memory (RSS) in megabytes.
+    ///
+    /// Uses `task_info` with `MACH_TASK_BASIC_INFO` to read `resident_size`.
+    /// Falls back to 0 if the call fails.
+    static func processMemoryMB() -> Double {
+        var info = mach_task_basic_info_data_t()
+        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info_data_t>.size / MemoryLayout<natural_t>.size)
+        let kr = withUnsafeMutablePointer(to: &info) { ptr in
+            ptr.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { rebound in
+                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), rebound, &count)
+            }
+        }
+        guard kr == KERN_SUCCESS else { return 0 }
+        return Double(info.resident_size) / (1024 * 1024)
+    }
+
     /// Ensure the data directory exists with permissions 700.
     ///
     /// Creates the directory and all intermediate directories if needed.
@@ -366,19 +382,35 @@ public actor DaemonMain {
 
         // 6. Start IPCServer
         let startTime = Date()
-        let statsProvider: @Sendable () -> DaemonStats = {
-            DaemonStats(
-                totalFiles: 0,
-                indexState: "live",
+        let capturedIndex = index
+        let capturedState: @Sendable () async -> DaemonState = { [weak self = self] in
+            await self?._state ?? .starting
+        }
+        let statsProvider: @Sendable () async -> DaemonStats = {
+            let fileCount = await capturedIndex.count
+            let memoryMB = Self.processMemoryMB()
+            return DaemonStats(
+                totalFiles: fileCount,
+                indexState: (await capturedState()).rawValue,
                 uptimeSeconds: Date().timeIntervalSince(startTime),
-                memoryUsageMB: 0
+                memoryUsageMB: memoryMB
+            )
+        }
+        let indexStatusProvider: @Sendable () async -> DaemonIndexStatus = {
+            let fileCount = await capturedIndex.count
+            let state = await capturedState()
+            return DaemonIndexStatus(
+                state: state.rawValue,
+                filesIndexed: fileCount,
+                lastScanDate: nil
             )
         }
 
         let ipcServer = IPCServer(
             socketPath: resolvedSocketPath,
             coordinator: coordinator,
-            statsProvider: statsProvider
+            statsProvider: statsProvider,
+            indexStatusProvider: indexStatusProvider
         )
         try await ipcServer.start()
         self.ipcServer = ipcServer
