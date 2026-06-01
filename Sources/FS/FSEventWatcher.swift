@@ -378,14 +378,7 @@ actor FSEventWatcher {
 
     /// Handle a file deletion event.
     private func handleFileDeleted(at path: String) async {
-        let fileName = URL(fileURLWithPath: path).lastPathComponent
-        let nfcName = fileName.precomposedStringWithCanonicalMapping
-
-        let candidates = await index.search(query: nfcName)
-        for record in candidates where record.path == path {
-            await index.remove(id: record.id)
-            return
-        }
+        await index.removeByPath(path)
     }
 
     /// Handle a rename event.

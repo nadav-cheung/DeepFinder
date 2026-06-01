@@ -267,4 +267,43 @@ struct InMemoryIndexTests {
         let results = await index.search(query: "")
         #expect(results.isEmpty)
     }
+
+    // MARK: - 15. Remove by Path
+
+    @Test("按路径删除文件")
+    func removeByPath() async {
+        let index = InMemoryIndex()
+        await index.insert(makeRecord(id: 1, name: "report.pdf", path: "/Users/test/Documents/report.pdf"))
+        await index.insert(makeRecord(id: 2, name: "notes.txt", path: "/Users/test/Documents/notes.txt"))
+
+        let removed = await index.removeByPath("/Users/test/Documents/report.pdf")
+        #expect(removed)
+        #expect(await index.count == 1)
+
+        let results = await index.search(query: "report")
+        #expect(results.isEmpty)
+    }
+
+    @Test("按路径删除不存在的文件返回 false")
+    func removeByPathNotFound() async {
+        let index = InMemoryIndex()
+        let removed = await index.removeByPath("/nonexistent/path/file.txt")
+        #expect(removed == false)
+    }
+
+    @Test("按路径删除同名不同路径的文件")
+    func removeByPathSameNameDifferentPath() async {
+        let index = InMemoryIndex()
+        await index.insert(makeRecord(id: 1, name: "report.pdf", path: "/Users/test/Documents/report.pdf"))
+        await index.insert(makeRecord(id: 2, name: "report.pdf", path: "/Users/test/Desktop/report.pdf"))
+
+        let removed = await index.removeByPath("/Users/test/Desktop/report.pdf")
+        #expect(removed)
+        #expect(await index.count == 1)
+
+        // The Documents version should still be searchable
+        let results = await index.search(query: "report")
+        #expect(results.count == 1)
+        #expect(results[0].path == "/Users/test/Documents/report.pdf")
+    }
 }

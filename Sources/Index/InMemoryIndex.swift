@@ -52,6 +52,9 @@ actor InMemoryIndex {
     /// ID-to-FileRecord lookup.
     private var records: [UInt32: FileRecord] = [:]
 
+    /// Path-to-ID lookup for O(1) path-based removal.
+    private var pathToID: [String: UInt32] = [:]
+
     /// Auto-incrementing ID counter.
     private var nextID: UInt32 = 1
 
@@ -88,10 +91,12 @@ actor InMemoryIndex {
         // If overwriting, remove old entries from sub-indices first
         if let oldRecord = records[id] {
             removeFromSubindices(oldRecord)
+            pathToID.removeValue(forKey: oldRecord.path)
         }
 
         // Store the record
         records[id] = record
+        pathToID[record.path] = id
 
         // Insert into Trie — key is NFC-normalized, lowercased unicode scalars
         let normalizedLower = name.precomposedStringWithCanonicalMapping.lowercased()
@@ -149,7 +154,17 @@ actor InMemoryIndex {
     /// Remove a file by ID from all index structures.
     func remove(id: UInt32) {
         guard let record = records.removeValue(forKey: id) else { return }
+        pathToID.removeValue(forKey: record.path)
         removeFromSubindices(record)
+    }
+
+    /// Remove a file by its absolute path. Returns `true` if a record was found and removed.
+    ///
+    /// O(1) path-based lookup — avoids the costly name-search approach.
+    func removeByPath(_ path: String) -> Bool {
+        guard let id = pathToID[path] else { return false }
+        remove(id: id)
+        return true
     }
 
     /// Remove a record's entries from all sub-indices (Trie, substringMap,
