@@ -262,7 +262,8 @@ actor FileScanner {
                         let fileSize = isRegularFile ? Int64(resourceValues.fileSize ?? 0) : Int64(0)
                         let createdAt = resourceValues.creationDate ?? Date()
                         let modifiedAt = resourceValues.contentModificationDate ?? Date()
-                        let fileExtension: String? = isRegularFile ? url.pathExtension : nil
+                        let rawExt: String? = isRegularFile ? url.pathExtension : nil
+                        let fileExtension = (rawExt != nil && rawExt!.isEmpty) ? nil : rawExt
 
                         let record = FileRecord(
                             id: assignID(),
