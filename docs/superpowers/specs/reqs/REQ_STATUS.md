@@ -1,7 +1,7 @@
 # REQ Status Tracking Matrix
 
 **Last updated**: 2026-06-02
-**Total REQs**: 116 across 18 version modules
+**Total REQs**: 121 across 18 version modules
 
 ---
 
@@ -9,10 +9,10 @@
 
 | Status | Count | Modules |
 |--------|-------|---------|
-| Done | 105 | v0.1, v0.2, v0.3, v0.4, v0.5, v0.6, v0.7, v1.1, v1.2, v1.3, v1.4, v1.5, v2.0, v2.1, v2.2, v3.0 |
+| Done | 105 | v0.1, v0.2, v0.3, v0.4, v0.5, v0.6, v0.7, v1.1, v1.2, v1.3, v1.4, v1.5, v2.0 (13 GUI REQs), v2.1, v2.2, v3.0 |
 | Partial | 4 | v1.0 (missing Homebrew/man/completions) |
-| Not Started | 7 | v3.1 (Local RAG) |
-| **Total** | **116** | |
+| Not Started | 12 | v2.0 (5 app target REQs), v3.1 (Local RAG) |
+| **Total** | **121** | |
 
 ### By Version
 
@@ -31,7 +31,7 @@
 | v1.3 Search Experience | 7 | 7 | 0 | 0 |
 | v1.4 Content Search | 4 | 4 | 0 | 0 |
 | v1.5 Duplicate Finder | 6 | 6 | 0 | 0 |
-| v2.0 GUI | 13 | 13 | 0 | 0 |
+| v2.0 GUI | 18 | 13 | 0 | 5 |
 | v2.1 Media Metadata | 7 | 7 | 0 | 0 |
 | v2.2 Service Integration | 5 | 5 | 0 | 0 |
 | v3.0 AI Semantic | 16 | 16 | 0 | 0 |
@@ -41,9 +41,9 @@
 
 | Priority | Total | Done | Partial | Not Started |
 |----------|-------|------|---------|-------------|
-| P0 | 75 | 66 | 3 | 6 |
-| P1 | 35 | 33 | 1 | 1 |
-| P2 | 6 | 6 | 0 | 0 |
+| P0 | 77 | 66 | 3 | 8 |
+| P1 | 37 | 33 | 1 | 3 |
+| P2 | 7 | 6 | 0 | 1 |
 
 ---
 
@@ -210,7 +210,7 @@
 
 ---
 
-## v2.0 -- GUI + Extended Index (13 REQs, done)
+## v2.0 -- GUI + Extended Index (18 REQs, 13 done, 5 not started)
 
 | REQ ID | Description | Status | Source Files | Test Files | Notes |
 |--------|-------------|--------|-------------|------------|-------|
@@ -227,6 +227,13 @@
 | REQ-2.0-11 | Quick Look preview | done | `Sources/GUI/QuickLookPreview.swift` | `Tests/GUITests/QuickLookPreviewTests.swift` | QLPreviewPanel, Space toggle |
 | REQ-2.0-12 | Context menu | done | `Sources/GUI/ResultContextMenu.swift` | `Tests/GUITests/ResultContextMenuTests.swift` | Open, Reveal in Finder, Copy Path, Get Info |
 | REQ-2.0-13 | Drag support | done | `Sources/GUI/ResultDragView.swift` | `Tests/GUITests/ResultDragViewTests.swift` | NSDraggingSource, file name badge |
+| REQ-2.0-14 | App executable target | not-started | `Sources/AppEntry/main.swift` | -- | DeepFinderApp SPM executable target, @main entry |
+| REQ-2.0-15 | App bundle Info.plist | not-started | `App/Info.plist` | -- | LSUIElement, bundle ID, version injection |
+| REQ-2.0-16 | Build script (.app bundle) | not-started | `scripts/build-app.sh` | -- | Assemble .app from SPM output, ad-hoc signing |
+| REQ-2.0-17 | Daemon discovery from app bundle | not-started | `Sources/Daemon/IPCClient.swift` | -- | Bundle.main fallback for embedded daemon |
+| REQ-2.0-18 | Homebrew Cask distribution | not-started | `Casks/deepfinder.rb` | -- | brew install --cask, /Applications, Login Item |
+
+> REQs 01-13 (GUI components) are fully implemented. REQs 14-18 (standalone app target, bundle, build, daemon discovery, distribution) are planned for the OSS readiness milestone.
 
 ---
 
@@ -300,3 +307,4 @@
 | 2026-05-31 | Initial REQ status matrix created. 116 REQs across 18 modules. |
 | 2026-06-01 | v1.2 REQs (01-08) corrected: FilterPipeline IS wired to SearchCoordinator (lines 129-130). All 8 v1.2 REQs moved from partial to done. Total done: 97→105. |
 | 2026-06-02 | Priority breakdown corrected: P0 73→75, P1 38→35, P2 5→6. Verified against per-module REQ files. |
+| 2026-06-02 | Added REQ-2.0-14 through REQ-2.0-18: standalone app target, Info.plist, build script, daemon discovery, Homebrew Cask. Total 116→121 REQs. |
