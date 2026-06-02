@@ -100,7 +100,7 @@ struct DaemonCommandRunner: Sendable {
     init(
         pidPath: String = Product.pidPath,
         socketPath: String = Product.socketPath,
-        daemonBinaryPath: String = Product.command,
+        daemonBinaryPath: String = Product.daemonCommand,
         processSpawner: any ProcessSpawner = SystemProcessSpawner(),
         processSignaler: any ProcessSignaler = SystemProcessSignaler(),
         socketWaiter: any SocketWaiter = SystemSocketWaiter(),

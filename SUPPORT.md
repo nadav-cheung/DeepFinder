@@ -10,7 +10,7 @@ Start with the [project README](README.md) and the architecture spec in [`docs/s
 
 ### GitHub Discussions
 
-For questions, usage help, configuration guidance, and general discussion, use **[GitHub Discussions](https://github.com/nadav/DeepFinder/discussions)**. Search existing threads before opening a new one — your question may already be answered.
+For questions, usage help, configuration guidance, and general discussion, use **[GitHub Discussions](https://github.com/nadav-cheung/DeepFinder/discussions)**. Search existing threads before opening a new one — your question may already be answered.
 
 ### GitHub Issues
 
