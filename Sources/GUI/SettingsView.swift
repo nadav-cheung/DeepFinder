@@ -51,9 +51,9 @@ protocol SettingsConfigProvider: Sendable {
 
 /// Protocol abstracting AI config access for the Settings AI tab.
 ///
-/// Decouples the view model from KeychainStore and ConfigStore so AI settings
-/// can be tested without real Keychain or IPC. In production, the implementation
-/// reads/writes through IPC configSet/configGet and KeychainStore for API keys.
+/// Decouples the view model from SecretsStore and ConfigStore so AI settings
+/// can be tested without real file storage or IPC. In production, the implementation
+/// reads/writes through IPC configSet/configGet and SecretsStore for API keys.
 protocol SettingsAIProvider: Sendable {
     /// Whether AI assist is enabled.
     func isEnabled() async -> Bool

@@ -17,8 +17,8 @@ APP_BUNDLE="$ROOT_DIR/build/$APP_NAME.app"
 echo "==> Building $APP_NAME v$VERSION..."
 
 # Build both the app and daemon executables.
-swift build -c release --product DeepFinderApp
-swift build -c release --product DeepFinderDaemon
+swift build -c release --product deepfinder-app
+swift build -c release --product deepfinder-daemon
 
 # Remove stale bundle.
 rm -rf "$APP_BUNDLE"
