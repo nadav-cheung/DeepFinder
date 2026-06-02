@@ -21,7 +21,7 @@ extension Notification.Name {
 ///
 /// Production uses `IPCClient.ensureDaemonRunning()`. Tests inject a mock
 /// to verify spawn behavior without starting a real process.
-protocol DaemonSpawner: Sendable {
+public protocol DaemonSpawner: Sendable {
     func ensureDaemonRunning() async throws
 }
 
@@ -31,7 +31,7 @@ protocol DaemonSpawner: Sendable {
 ///
 /// Enables test-time injection of mock status bar, hotkey, search panel, and daemon
 /// spawner. Production creates a `DeepFinderAppConfiguration` with real components.
-struct DeepFinderAppConfiguration: Sendable {
+public struct DeepFinderAppConfiguration: Sendable {
     /// Key combination for the global hotkey. Default: Ctrl+Cmd+K.
     var hotkeyCombination: KeyCombination = GlobalHotkey.defaultKeyCombination
 
@@ -85,7 +85,7 @@ struct DeepFinderAppConfiguration: Sendable {
 ///
 /// The AppDelegate subscribes to these and dispatches to the appropriate controller.
 @MainActor
-final class DeepFinderAppDelegate: NSObject, NSApplicationDelegate {
+public final class DeepFinderAppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Properties
 
@@ -112,14 +112,14 @@ final class DeepFinderAppDelegate: NSObject, NSApplicationDelegate {
     /// Create the app delegate with the given configuration.
     ///
     /// - Parameter configuration: Injected components and factories.
-    init(configuration: DeepFinderAppConfiguration) {
+    public init(configuration: DeepFinderAppConfiguration) {
         self.configuration = configuration
         super.init()
     }
 
     // MARK: - NSApplicationDelegate
 
-    func applicationDidFinishLaunching(_ notification: Notification) {
+    public func applicationDidFinishLaunching(_ notification: Notification) {
         // LSUIElement: no Dock icon, no main menu.
         NSApp?.setActivationPolicy(.accessory)
 
@@ -175,7 +175,7 @@ final class DeepFinderAppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    func applicationWillTerminate(_ notification: Notification) {
+    public func applicationWillTerminate(_ notification: Notification) {
         // Unregister global hotkey.
         globalHotkey?.unregister()
         globalHotkey = nil
@@ -240,7 +240,7 @@ extension DeepFinderAppConfiguration {
     ///
     /// Wires `StatusBarController` callbacks, `SearchPanelHostingController`,
     /// `GlobalHotkey`, and `IPCClient`-based daemon spawner.
-    static func production() -> DeepFinderAppConfiguration {
+    public static func production() -> DeepFinderAppConfiguration {
         DeepFinderAppConfiguration(
             daemonSpawnerFactory: {
                 DaemonSpawnerViaIPCClient()

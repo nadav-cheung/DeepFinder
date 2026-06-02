@@ -8,12 +8,13 @@ let package = Package(
         .library(name: "DeepFinder", targets: ["DeepFinder"]),
         .executable(name: "deepfinder", targets: ["DeepFinderCLI"]),
         .executable(name: "deepfinder-daemon", targets: ["DeepFinderDaemon"]),
+        .executable(name: "deepfinder-app", targets: ["DeepFinderApp"]),
     ],
     targets: [
         .target(
             name: "DeepFinder",
             path: "Sources",
-            exclude: ["CLIEntry", "DaemonEntry"],
+            exclude: ["CLIEntry", "DaemonEntry", "AppEntry"],
             resources: [
                 .process("AI/Prompts")
             ],
@@ -30,6 +31,11 @@ let package = Package(
             name: "DeepFinderDaemon",
             dependencies: ["DeepFinder"],
             path: "Sources/DaemonEntry"
+        ),
+        .executableTarget(
+            name: "DeepFinderApp",
+            dependencies: ["DeepFinder"],
+            path: "Sources/AppEntry"
         ),
         .testTarget(
             name: "DeepFinderTests",

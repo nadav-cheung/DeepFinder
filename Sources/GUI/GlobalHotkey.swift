@@ -8,11 +8,16 @@ import CoreGraphics
 ///
 /// Uses Carbon virtual key codes (e.g. `kVK_ANSI_K`) and Carbon modifier flags
 /// (`cmdKey`, `controlKey`, etc.) because `RegisterEventHotKey` requires this format.
-struct KeyCombination: Sendable, Equatable {
+public struct KeyCombination: Sendable, Equatable {
     /// Carbon virtual key code (e.g. `kVK_ANSI_K` = 0x28).
-    let keyCode: UInt32
+    public let keyCode: UInt32
     /// Carbon modifier flags (e.g. `cmdKey | controlKey`).
-    let modifiers: UInt32
+    public let modifiers: UInt32
+
+    public init(keyCode: UInt32, modifiers: UInt32) {
+        self.keyCode = keyCode
+        self.modifiers = modifiers
+    }
 }
 
 // MARK: - HotkeyRegistrationError
@@ -78,7 +83,7 @@ final class GlobalHotkey: @unchecked Sendable {
 
     // MARK: - State
 
-    private nonisolated(unsafe) let lock = NSLock()
+    private let lock = NSLock()
 
     /// The key combination to register.
     let keyCombination: KeyCombination

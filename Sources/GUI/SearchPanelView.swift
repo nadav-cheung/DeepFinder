@@ -201,7 +201,7 @@ struct SearchPanelView: View {
 ///
 /// Reopening preserves the search text via the shared `SearchViewModel`.
 @MainActor
-final class SearchPanelHostingController {
+public final class SearchPanelHostingController {
 
     private var panel: NSPanel?
     private let viewModel: SearchViewModel

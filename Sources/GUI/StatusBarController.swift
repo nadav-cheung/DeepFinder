@@ -76,7 +76,7 @@ enum IndexStatusBadge: String, Sendable, Equatable {
 ///
 /// `@MainActor` because all NSStatusItem operations must run on the main thread.
 @MainActor
-final class StatusBarController: StatusBarControllerActions, @unchecked Sendable {
+public final class StatusBarController: StatusBarControllerActions, @unchecked Sendable {
 
     // MARK: - State
 
@@ -113,7 +113,7 @@ final class StatusBarController: StatusBarControllerActions, @unchecked Sendable
     ///   - onHideSearchPanel: Called when the search panel should be hidden.
     ///   - onOpenSettings: Called when "Settings" is selected from the right-click menu.
     ///   - onQuit: Called when "Quit" is selected from the right-click menu.
-    init(
+    public init(
         onToggleSearchPanel: @escaping () -> Void = {},
         onShowSearchPanel: @escaping () -> Void = {},
         onHideSearchPanel: @escaping () -> Void = {},
