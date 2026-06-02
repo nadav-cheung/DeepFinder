@@ -112,6 +112,16 @@ enum Product {
     /// PID file permissions (owner read/write, readable by system).
     static let pidFilePermissions: Int = 0o644
 
+    // MARK: - Installation
+
+    /// Standard Homebrew/Unix binary installation directory.
+    /// Used as a fallback when resolving daemon binary location from the CLI.
+    /// Primary resolution uses `Bundle.main.executablePath`; this is the
+    /// secondary candidate for packaged installs.
+    /// - Note: Only correct for Homebrew installs. SPM builds resolve
+    ///   via the executable's own directory first.
+    static let defaultBinDir = "/usr/local/bin"
+
     // MARK: - Date Formats
 
     /// ISO date format used for search date filters.
