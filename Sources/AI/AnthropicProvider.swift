@@ -31,7 +31,10 @@ struct AnthropicProvider: AIModelProvider, Sendable {
         let baseURL = ProviderRegistry.allProviders
             .first(where: { $0.name == "anthropic" })?.defaultEndpoint
             ?? "https://api.anthropic.com/v1"
-        self.endpoint = URL(string: baseURL + "/messages")!
+        guard let url = URL(string: baseURL + "/messages") else {
+            preconditionFailure("Invalid Anthropic endpoint URL: \(baseURL)/messages")
+        }
+        self.endpoint = url
     }
 
     // MARK: - complete()

@@ -8,8 +8,8 @@ struct DeepSeekProviderTests {
     // MARK: - Conformance
 
     @Test("DeepSeekProvider conforms to AIModelProvider")
-    func conformsToAIModelProvider() {
-        let provider = DeepSeekProvider.deepSeek(apiKey: "test-key", httpClient: MockHTTPClient())
+    func conformsToAIModelProvider() throws {
+        let provider = try #require(DeepSeekProvider.deepSeek(apiKey: "test-key", httpClient: MockHTTPClient()))
         // Compile-time check: passing to AIModelProvider-constrained function
         func assertProvider<T: AIModelProvider>(_: T) {}
         assertProvider(provider)
@@ -18,16 +18,16 @@ struct DeepSeekProviderTests {
     // MARK: - name
 
     @Test("name returns 'deepseek'")
-    func nameReturnsDeepSeek() {
-        let provider = DeepSeekProvider.deepSeek(apiKey: "test-key", httpClient: MockHTTPClient())
+    func nameReturnsDeepSeek() throws {
+        let provider = try #require(DeepSeekProvider.deepSeek(apiKey: "test-key", httpClient: MockHTTPClient()))
         #expect(provider.name == "deepseek")
     }
 
     // MARK: - capabilities
 
     @Test("capabilities includes textToSearch, resultSummary, querySuggestion, intentAnalysis")
-    func capabilitiesCorrect() {
-        let provider = DeepSeekProvider.deepSeek(apiKey: "test-key", httpClient: MockHTTPClient())
+    func capabilitiesCorrect() throws {
+        let provider = try #require(DeepSeekProvider.deepSeek(apiKey: "test-key", httpClient: MockHTTPClient()))
         #expect(provider.capabilities.contains(.textToSearch))
         #expect(provider.capabilities.contains(.resultSummary))
         #expect(provider.capabilities.contains(.querySuggestion))
@@ -57,7 +57,7 @@ struct DeepSeekProviderTests {
                 data: Data(sseResponse.utf8)
             )
         )
-        let provider = DeepSeekProvider.deepSeek(apiKey: "test-key", httpClient: mock)
+        let provider = try #require(DeepSeekProvider.deepSeek(apiKey: "test-key", httpClient: mock))
         let stream = provider.complete(prompt: "hi", context: nil)
         var chunks: [String] = []
         for try await chunk in stream {
@@ -82,7 +82,7 @@ struct DeepSeekProviderTests {
                 data: Data(sseResponse.utf8)
             )
         )
-        let provider = DeepSeekProvider.deepSeek(apiKey: "test-key", httpClient: mock)
+        let provider = try #require(DeepSeekProvider.deepSeek(apiKey: "test-key", httpClient: mock))
         let stream = provider.complete(prompt: "hi", context: nil)
         var chunks: [String] = []
         for try await chunk in stream {
@@ -108,7 +108,7 @@ struct DeepSeekProviderTests {
                 data: Data(sseResponse.utf8)
             )
         )
-        let provider = DeepSeekProvider.deepSeek(apiKey: "test-key", httpClient: mock)
+        let provider = try #require(DeepSeekProvider.deepSeek(apiKey: "test-key", httpClient: mock))
         let result = try await provider.translateToSearchSyntax(naturalLanguage: "PDF files from last week")
         #expect(result == "ext:pdf dm:lastweek")
     }
@@ -127,7 +127,7 @@ struct DeepSeekProviderTests {
                 data: Data(sseResponse.utf8)
             )
         )
-        let provider = DeepSeekProvider.deepSeek(apiKey: "test-key", httpClient: mock)
+        let provider = try #require(DeepSeekProvider.deepSeek(apiKey: "test-key", httpClient: mock))
         let result = try await provider.translateToSearchSyntax(naturalLanguage: "today's PDFs")
         #expect(result == "ext:pdf dm:today")
     }
@@ -135,14 +135,14 @@ struct DeepSeekProviderTests {
     // MARK: - Error handling
 
     @Test("HTTP 429 throws AIError.rateLimited")
-    func rateLimitedThrows() async {
+    func rateLimitedThrows() async throws {
         let mock = MockHTTPClient(
             response: HTTPClientResponse(
                 statusCode: 429,
                 data: Data("{\"error\":\"rate limited\"}".utf8)
             )
         )
-        let provider = DeepSeekProvider.deepSeek(apiKey: "test-key", httpClient: mock)
+        let provider = try #require(DeepSeekProvider.deepSeek(apiKey: "test-key", httpClient: mock))
         let stream = provider.complete(prompt: "hi", context: nil)
         do {
             for try await _ in stream {}
@@ -155,14 +155,14 @@ struct DeepSeekProviderTests {
     }
 
     @Test("HTTP 401 throws AIError.networkError")
-    func unauthorizedThrows() async {
+    func unauthorizedThrows() async throws {
         let mock = MockHTTPClient(
             response: HTTPClientResponse(
                 statusCode: 401,
                 data: Data("{\"error\":\"invalid api key\"}".utf8)
             )
         )
-        let provider = DeepSeekProvider.deepSeek(apiKey: "test-key", httpClient: mock)
+        let provider = try #require(DeepSeekProvider.deepSeek(apiKey: "test-key", httpClient: mock))
         let stream = provider.complete(prompt: "hi", context: nil)
         do {
             for try await _ in stream {}
@@ -196,7 +196,7 @@ struct DeepSeekProviderTests {
             }
             return HTTPClientResponse(statusCode: 200, data: Data(sseResponse.utf8))
         })
-        let provider = DeepSeekProvider.deepSeek(apiKey: "test-key", httpClient: mock)
+        let provider = try #require(DeepSeekProvider.deepSeek(apiKey: "test-key", httpClient: mock))
         let stream = provider.complete(prompt: "hi", context: nil)
         var chunks: [String] = []
         for try await chunk in stream {
@@ -207,13 +207,13 @@ struct DeepSeekProviderTests {
     }
 
     @Test("retry max 3 attempts then fails with rateLimited")
-    func retryMaxAttemptsThenRateLimited() async {
+    func retryMaxAttemptsThenRateLimited() async throws {
         let counter = SendableCounter()
         let mock = MockHTTPClient(handler: { _ in
             counter.increment()
             return HTTPClientResponse(statusCode: 429, data: Data())
         })
-        let provider = DeepSeekProvider.deepSeek(apiKey: "test-key", httpClient: mock)
+        let provider = try #require(DeepSeekProvider.deepSeek(apiKey: "test-key", httpClient: mock))
         let stream = provider.complete(prompt: "hi", context: nil)
         do {
             for try await _ in stream {}
@@ -227,9 +227,9 @@ struct DeepSeekProviderTests {
     }
 
     @Test("Network failure throws AIError.networkError")
-    func networkFailureThrows() async {
+    func networkFailureThrows() async throws {
         let mock = MockHTTPClient(error: URLError(.notConnectedToInternet))
-        let provider = DeepSeekProvider.deepSeek(apiKey: "test-key", httpClient: mock)
+        let provider = try #require(DeepSeekProvider.deepSeek(apiKey: "test-key", httpClient: mock))
         let stream = provider.complete(prompt: "hi", context: nil)
         do {
             for try await _ in stream {}

@@ -199,11 +199,11 @@ enum SearchFilter: Sendable, Equatable {
             let weekday = cal.component(.weekday, from: referenceDate)
             // Sunday=1, Monday=2, ... Saturday=7 — respect locale's first weekday
             let daysSinceStart = (weekday - cal.firstWeekday + 7) % 7
-            let weekStart = cal.date(
+            guard let weekStart = cal.date(
                 byAdding: .day,
                 value: -daysSinceStart,
                 to: cal.startOfDay(for: referenceDate)
-            )!
+            ) else { return nil }
             return .dateModifiedAfter(weekStart)
 
         case "thismonth":

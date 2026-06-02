@@ -8,8 +8,8 @@ struct QwenProviderTests {
     // MARK: - Conformance
 
     @Test("QwenProvider conforms to AIModelProvider")
-    func conformsToAIModelProvider() {
-        let provider = QwenProvider.qwen(apiKey: "test-key", httpClient: MockHTTPClient())
+    func conformsToAIModelProvider() throws {
+        let provider = try #require(QwenProvider.qwen(apiKey: "test-key", httpClient: MockHTTPClient()))
         func assertProvider<T: AIModelProvider>(_: T) {}
         assertProvider(provider)
     }
@@ -17,16 +17,16 @@ struct QwenProviderTests {
     // MARK: - name
 
     @Test("name returns 'qwen'")
-    func nameReturnsQwen() {
-        let provider = QwenProvider.qwen(apiKey: "test-key", httpClient: MockHTTPClient())
+    func nameReturnsQwen() throws {
+        let provider = try #require(QwenProvider.qwen(apiKey: "test-key", httpClient: MockHTTPClient()))
         #expect(provider.name == "qwen")
     }
 
     // MARK: - capabilities
 
     @Test("capabilities includes textToSearch, resultSummary, querySuggestion, intentAnalysis")
-    func capabilitiesCorrect() {
-        let provider = QwenProvider.qwen(apiKey: "test-key", httpClient: MockHTTPClient())
+    func capabilitiesCorrect() throws {
+        let provider = try #require(QwenProvider.qwen(apiKey: "test-key", httpClient: MockHTTPClient()))
         #expect(provider.capabilities.contains(.textToSearch))
         #expect(provider.capabilities.contains(.resultSummary))
         #expect(provider.capabilities.contains(.querySuggestion))
@@ -55,7 +55,7 @@ struct QwenProviderTests {
                 data: Data(sseResponse.utf8)
             )
         )
-        let provider = QwenProvider.qwen(apiKey: "test-key", httpClient: mock)
+        let provider = try #require(QwenProvider.qwen(apiKey: "test-key", httpClient: mock))
         let stream = provider.complete(prompt: "hi", context: nil)
         var chunks: [String] = []
         for try await chunk in stream {
@@ -80,7 +80,7 @@ struct QwenProviderTests {
                 data: Data(sseResponse.utf8)
             )
         )
-        let provider = QwenProvider.qwen(apiKey: "test-key", httpClient: mock)
+        let provider = try #require(QwenProvider.qwen(apiKey: "test-key", httpClient: mock))
         let stream = provider.complete(prompt: "hi", context: nil)
         var chunks: [String] = []
         for try await chunk in stream {
@@ -105,7 +105,7 @@ struct QwenProviderTests {
                 data: Data(sseResponse.utf8)
             )
         )
-        let provider = QwenProvider.qwen(apiKey: "test-key", httpClient: mock)
+        let provider = try #require(QwenProvider.qwen(apiKey: "test-key", httpClient: mock))
         let result = try await provider.translateToSearchSyntax(naturalLanguage: "今年大于500MB的视频文件")
         #expect(result == "ext:mp4;mov size:>500mb dm:thisyear")
     }
@@ -124,7 +124,7 @@ struct QwenProviderTests {
                 data: Data(sseResponse.utf8)
             )
         )
-        let provider = QwenProvider.qwen(apiKey: "test-key", httpClient: mock)
+        let provider = try #require(QwenProvider.qwen(apiKey: "test-key", httpClient: mock))
         let result = try await provider.translateToSearchSyntax(naturalLanguage: "PDF文件")
         #expect(result == "ext:pdf")
     }
@@ -132,14 +132,14 @@ struct QwenProviderTests {
     // MARK: - Error handling
 
     @Test("HTTP 429 throws AIError.rateLimited")
-    func rateLimitedThrows() async {
+    func rateLimitedThrows() async throws {
         let mock = MockHTTPClient(
             response: HTTPClientResponse(
                 statusCode: 429,
                 data: Data("{\"error\":\"rate limited\"}".utf8)
             )
         )
-        let provider = QwenProvider.qwen(apiKey: "test-key", httpClient: mock)
+        let provider = try #require(QwenProvider.qwen(apiKey: "test-key", httpClient: mock))
         let stream = provider.complete(prompt: "hi", context: nil)
         do {
             for try await _ in stream {}
@@ -152,14 +152,14 @@ struct QwenProviderTests {
     }
 
     @Test("HTTP 500 throws AIError.networkError")
-    func serverErrorThrows() async {
+    func serverErrorThrows() async throws {
         let mock = MockHTTPClient(
             response: HTTPClientResponse(
                 statusCode: 500,
                 data: Data("{\"error\":\"internal\"}".utf8)
             )
         )
-        let provider = QwenProvider.qwen(apiKey: "test-key", httpClient: mock)
+        let provider = try #require(QwenProvider.qwen(apiKey: "test-key", httpClient: mock))
         let stream = provider.complete(prompt: "hi", context: nil)
         do {
             for try await _ in stream {}
@@ -191,7 +191,7 @@ struct QwenProviderTests {
                 data: Data(sseResponse.utf8)
             )
         )
-        let provider = QwenProvider.qwen(apiKey: "test-key", httpClient: mock)
+        let provider = try #require(QwenProvider.qwen(apiKey: "test-key", httpClient: mock))
         let result = try await provider.translateToSearchSyntax(
             naturalLanguage: "这个月的Excel表格"
         )

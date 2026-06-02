@@ -260,8 +260,10 @@ extension QuickLookPreviewController: QLPreviewPanelDataSource {
     }
 
     nonisolated func previewPanel(_ panel: QLPreviewPanel!, previewItemAt index: Int) -> (any QLPreviewItem)! {
-        // Must access state synchronously -- this is called on the main thread by QL.
-        // We use a MainActor-assumed pattern since the controller is @MainActor.
+        // QLPreviewPanel DataSource protocol requires nonisolated conformance (Objective-C).
+        // QLPreviewPanel delegate callbacks are invoked on the main thread by AppKit,
+        // so MainActor.assumeIsolated is safe here. If macOS ever calls this from a
+        // background thread, assumeIsolated will crash — this is an intentional guard.
         guard let previewIndex = MainActor.assumeIsolated({
             self.state.previewIndex
         }) else {

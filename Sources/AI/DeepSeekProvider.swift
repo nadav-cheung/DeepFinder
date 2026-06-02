@@ -308,11 +308,15 @@ struct OpenAICompatibleProvider: AIModelProvider, Sendable {
 typealias DeepSeekProvider = OpenAICompatibleProvider
 
 extension DeepSeekProvider {
-    static func deepSeek(apiKey: String, httpClient: any HTTPClient = URLSessionHTTPClient()) -> DeepSeekProvider {
-        let info = ProviderRegistry.allProviders.first(where: { $0.name == "deepseek" })!
+    static func deepSeek(apiKey: String, httpClient: any HTTPClient = URLSessionHTTPClient()) -> DeepSeekProvider? {
+        guard let info = ProviderRegistry.allProviders.first(where: { $0.name == "deepseek" }),
+              let endpoint = info.defaultEndpoint,
+              let url = URL(string: endpoint + "/chat/completions") else {
+            return nil
+        }
         return DeepSeekProvider(
             name: "deepseek",
-            endpoint: URL(string: info.defaultEndpoint! + "/chat/completions")!,
+            endpoint: url,
             apiKey: apiKey,
             model: info.defaultModel,
             httpClient: httpClient
@@ -324,11 +328,15 @@ extension DeepSeekProvider {
 typealias QwenProvider = OpenAICompatibleProvider
 
 extension QwenProvider {
-    static func qwen(apiKey: String, httpClient: any HTTPClient = URLSessionHTTPClient()) -> QwenProvider {
-        let info = ProviderRegistry.allProviders.first(where: { $0.name == "qwen" })!
+    static func qwen(apiKey: String, httpClient: any HTTPClient = URLSessionHTTPClient()) -> QwenProvider? {
+        guard let info = ProviderRegistry.allProviders.first(where: { $0.name == "qwen" }),
+              let endpoint = info.defaultEndpoint,
+              let url = URL(string: endpoint + "/chat/completions") else {
+            return nil
+        }
         return QwenProvider(
             name: "qwen",
-            endpoint: URL(string: info.defaultEndpoint! + "/chat/completions")!,
+            endpoint: url,
             apiKey: apiKey,
             model: info.defaultModel,
             httpClient: httpClient

@@ -155,7 +155,10 @@ final class SystemVolumeMonitor: VolumeMonitor {
 
     func monitorVolumes() -> AsyncStream<VolumeEvent> {
         AsyncStream { continuation in
-            // Store mounted volumes snapshot for diffing
+            // Store mounted volumes snapshot for diffing.
+            // Both `nonisolated(unsafe)` variables are only mutated from NotificationCenter
+            // observers dispatched to `.main` queue (serial), so mutations are serialized
+            // and no data race occurs in practice.
             nonisolated(unsafe) var knownVolumes = Set(
                 Self.currentMountPaths()
             )

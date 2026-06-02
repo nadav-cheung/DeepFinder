@@ -33,7 +33,10 @@ struct GeminiProvider: AIModelProvider, Sendable {
         let baseURL = ProviderRegistry.allProviders
             .first(where: { $0.name == "gemini" })?.defaultEndpoint
             ?? "https://generativelanguage.googleapis.com/v1beta"
-        self.endpoint = URL(string: "\(baseURL)/models/\(model):streamGenerateContent?alt=sse")!
+        guard let url = URL(string: "\(baseURL)/models/\(model):streamGenerateContent?alt=sse") else {
+            preconditionFailure("Invalid Gemini endpoint URL for model: \(model)")
+        }
+        self.endpoint = url
     }
 
     // MARK: - complete()
