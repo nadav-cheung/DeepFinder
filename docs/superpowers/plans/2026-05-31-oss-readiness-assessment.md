@@ -1,7 +1,7 @@
 # DeepFinder 开源准备度评估报告
 
 **项目**: DeepFinder v3.0.0
-**评估日期**: 2026-05-31
+**评估日期**: 2026-05-31 *(updated 2026-06-02)*
 **评估人**: Bruce (布鲁斯) — 自动化分析
 **语言**: 简体中文
 
@@ -71,11 +71,11 @@ DeepFinder 是一款 macOS 26 文件搜索引擎，对标 Windows Everything。*
 | AI (人工智能) | 21 | 20 | 204 |
 | Media (媒体元数据) | 7 | 8 | 56 |
 | Services (服务集成) | 4 | 5 | 62 |
-| **总计** | **99** | **87** | **973** |
+| **总计** | **99** | **101** | **1142** |
 
-- 测试文件率: 87/99 = 87.9%
+- 测试文件率: 101/99 = 102% (some modules have more test files than source files)
 - 所有测试通过，项目 clean 编译
-- 需求文档: 72 个 REQ，覆盖 v0.1 到 v3.1 共 18 个版本模块
+- 需求文档: 121 个 REQ，覆盖 v0.1 到 v3.1 共 18 个版本模块
 
 ---
 
@@ -84,13 +84,13 @@ DeepFinder 是一款 macOS 26 文件搜索引擎，对标 Windows Everything。*
 | 评估维度 | 评分 (满分10) | 等级 | 关键问题 |
 |---------|-------------|------|---------|
 | 架构设计 | 7.0 | 良好 | 单体编译目标与文档矛盾 |
-| 功能完整度 | 6.0 | 中等 | v1.2 元数据过滤未接线 |
+| 功能完整度 | 8.0 | 良好 | v1.2 和 v1.0 缺口已修复 (2026-06-01/02) |
 | 代码质量 | 7.0 | 良好 | 无日志框架，try? 过度使用 |
 | 测试质量 | 5.8 | 待改进 | 无 CI, 无 Index 层性能基准 |
-| 文档完整度 | 5.5 | 待改进 | 文档与实现严重脱节 |
+| 文档完整度 | 6.5 | 中等 | 2026-06-02 review fixed many doc/impl mismatches |
 | 安全评估 | 6.6 | 中等 | IPC 无认证，数据库明文 |
 | 性能评估 | 5.6 | 待改进 | 缺少规模化基准测试 |
-| 总体开源准备度 | **5.2** | **基本就绪，有待完善** | 缺 LICENSE/CI/社区文件 |
+| 总体开源准备度 | **6.0** | **基本就绪，基础设施完善中** | v1.0/v1.2 修复，文档更新，仍缺 CI/LICENSE |
 
 **综合雷达图描述** (文本格式):
 
@@ -108,7 +108,7 @@ DeepFinder 是一款 macOS 26 文件搜索引擎，对标 Windows Everything。*
    文档(5.5)------性能(5.6)
 ```
 
-**总体评分: 5.2/10 — 代码和架构质量较高，但开源基础设施严重缺失。**
+**总体评分: 6.0/10 — 代码和架构质量较高，开源基础设施逐步完善中 (updated 2026-06-02)。**
 
 ---
 
@@ -175,9 +175,9 @@ CLI / GUI → Daemon (IPC) → Search (SearchCoordinator) → Index (InMemoryInd
 | v0.5 (CLI 单次搜索) | 100% | ✅ 完成 |
 | v0.6 (交互式 REPL) | 100% | ✅ 完成 |
 | v0.7 (守护进程管理) | 100% | ✅ 完成 |
-| v1.0 (CLI 正式发布) | 70% | ⚠️ 缺 Homebrew formula, man page, shell completions |
+| v1.0 (CLI 正式发布) | 100% | ✅ 完成 (Homebrew formula, man page, shell completions added) |
 | v1.1 (高级语法) | 100% | ✅ 完成 |
-| v1.2 (元数据过滤) | **30%** | 🔴 FilterPipeline 基础设施完成但**未接入搜索流程** |
+| v1.2 (元数据过滤) | **100%** | ✅ FilterPipeline 已接入 SearchCoordinator (lines 129-130) |
 | v1.3 (搜索体验) | 100% | ✅ 完成 |
 | v1.4 (内容搜索) | 100% | ✅ 完成 |
 | v1.5 (重复查找) | 100% | ✅ 完成 |
@@ -189,9 +189,14 @@ CLI / GUI → Daemon (IPC) → Search (SearchCoordinator) → Index (InMemoryInd
 
 ### 4.2 已知功能缺口
 
-#### 🔴 Critical: v1.2 元数据过滤未接线
+#### ~~🔴 Critical: v1.2 元数据过滤未接线~~ ✅ 已修复 (2026-06-01)
 
-这是最大的功能性 bug——不是缺失功能，而是**已完成、已测试的功能被结构性地断开了连接**。
+~~这是最大的功能性 bug——不是缺失功能，而是**已完成、已测试的功能被结构性地断开了连接**。~~
+
+**已修复**: FilterPipeline 已接入 SearchCoordinator.search() (lines 129-130)。所有 8 个 v1.2 REQs 确认完成。详见 REQ_STATUS.md 变更日志 2026-06-01 条目。
+
+<details>
+<summary>原始发现（已过时）</summary>
 
 **问题链路**:
 1. `FilterPipeline.parse()` 正确处理 17+ 修饰键（size, ext, dm, depth, width, height, duration, fps, bitRate, artist, album, title, genre, codec 等），有 10 个通过的单元测试
@@ -201,6 +206,8 @@ CLI / GUI → Daemon (IPC) → Search (SearchCoordinator) → Index (InMemoryInd
 5. **结果**: 用户输入 `"report size:>10mb"` 或 `"photo dm:thisweek"` 时，修饰符被**静默丢弃**，结果等同于只搜索 `"report"` 或 `"photo"`
 
 **预计修复工作量**: 2-3 天
+
+</details>
 
 #### 🟡 Other Gaps
 
@@ -317,12 +324,12 @@ CLI / GUI → Daemon (IPC) → Search (SearchCoordinator) → Index (InMemoryInd
 | AI | 21 | 20 | 204 | 0.95 |
 | Media | 7 | 8 | 56 | 1.14 |
 | Services | 4 | 5 | 62 | 1.25 |
-| **总计** | **99** | **87** | **973** | **0.88** |
+| **总计** | **99** | **101** | **1142** | **0.88** |
 
 ### 6.2 测试质量评估
 
 **优势**:
-- 973 total tests, 所有文件都有测试 — 无空壳文件
+- 1142 total tests, 所有文件都有测试 — 无空壳文件
 - 边界/错误/异常路径覆盖扎实: 162 边缘测试, 64 错误测试, 38 边界测
 - 国际化: 32 测试覆盖中文拼音、跨语言搜索
 - 有集成测试: CLI IntegrationTests (16 tests), FilterPipeline, ServeMode, REPL
@@ -389,7 +396,7 @@ Index: (无性能基准), FS: FSEventStreamImpl, Search: AutocompleteProvider, C
 
 这是信任摧毁级的问题:
 
-1. **CLAUDE.md 第 13 行**说项目是 v0.1.0，76 tests，"Next: v0.2 File system"。实际代码是 v3.0.0，11 个源模块，99+ 源文件，87 个测试文件，973 tests。
+1. **CLAUDE.md 第 13 行** ~~说项目是 v0.1.0，76 tests，"Next: v0.2 File system"~~ *(已修复 2026-06-01: CLAUDE.md 现正确显示 v3.0.0)*。实际代码是 v3.0.0，11 个源模块，99+ 源文件，101 个测试文件，1142 tests。
 2. **设计 spec** 描述了多 target Package.swift (DeepFinderIndex library, DeepFinderDaemon executable, DeepFinderCLI executable) — 实际是单体 target
 3. **所有 v1.1-v3.1 REQ 文件**标记"规划中"，但代码丰富已实现
 4. **Sources 目录结构**与 CLAUDE.md 描述的完全不匹配
@@ -509,7 +516,7 @@ README 已声明 MIT，这是正确选择。
 
 1. **macOS 26 + M4+ 要求严重限制贡献者基数**: 只有运行最新 macOS 当前代 Apple Silicon 的开发者能构建测试。理智估计这将抑制 80-90% 的潜在贡献者。必须在 README/CONTRIBUTING 中明确记录这一约束的技术原因。
 
-2. **无 CI 意味着无质量门**: 没有自动化测试，所有变更依赖人工审查。对有 973 测试的项目来说回归风险显著。
+2. **无 CI 意味着无质量门**: 没有自动化测试，所有变更依赖人工审查。对有 1142 测试的项目来说回归风险显著。
 
 3. **Full Disk Access 创建设信任障碍**: 守护进程需要 FDA，这是 macOS 上最高权限之一。无已发布的安全审计、安全策略或第三方验证时，隐私敏感用户会犹豫。
 

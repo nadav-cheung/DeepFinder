@@ -31,10 +31,10 @@ Status: See REQ_STATUS.md for the implementation status of all requirements.
 | [`reqs/v1.3-search-exp.md`](reqs/v1.3-search-exp.md) | v1.3 | 搜索体验 (7 REQ) |
 | [`reqs/v1.4-content-search.md`](reqs/v1.4-content-search.md) | v1.4 | 内容搜索 (4 REQ) |
 | [`reqs/v1.5-duplicate.md`](reqs/v1.5-duplicate.md) | v1.5 | 重复查找 (6 REQ) |
-| [`reqs/v2.0-gui.md`](reqs/v2.0-gui.md) | v2.0 | GUI + 扩展索引 (13 REQ) |
+| [`reqs/v2.0-gui.md`](reqs/v2.0-gui.md) | v2.0 | GUI + 扩展索引 (18 REQ) |
 | [`reqs/v2.1-media-metadata.md`](reqs/v2.1-media-metadata.md) | v2.1 | 媒体元数据 (7 REQ) |
 | [`reqs/v2.2-service-integration.md`](reqs/v2.2-service-integration.md) | v2.2 | 服务集成 (5 REQ) |
 | [`reqs/v3.0-ai.md`](reqs/v3.0-ai.md) | v3.0 | AI 辅助搜索 (16 REQ) |
 | [`reqs/v3.1-rag.md`](reqs/v3.1-rag.md) | v3.1 | 本地 RAG (7 REQ) |
 
-**合计**：116 项 REQ（P0: 75, P1: 35, P2: 6）。详见 [`reqs/00-overview.md`](reqs/00-overview.md)。
+**合计**：121 项 REQ（P0: 77, P1: 37, P2: 7）。详见 [`reqs/00-overview.md`](reqs/00-overview.md)。

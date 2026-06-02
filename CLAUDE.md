@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-DeepFinder — a macOS file search app rivaling Windows Everything. **v1.0 = CLI-first** (daemon + interactive REPL + single-shot), v2.0 adds GUI. Apple Silicon M4+ only, arm64, minimum macOS 26 (Tahoe). **Speed is the #1 priority — memory and CPU are not constraints.**
+DeepFinder — a macOS file search app rivaling Windows Everything. **v1.0 = CLI-first** (daemon + interactive REPL + single-shot), v2.0 adds GUI, v3.0 adds AI semantic search. Apple Silicon M4+ only, arm64, minimum macOS 26 (Tahoe). **Speed is the #1 priority — memory and CPU are not constraints.**
 
 **Organization**: nadav.com.cn
 
@@ -35,14 +35,14 @@ swift run deepfinder                     # CLI interactive REPL (after v0.6)
 | `v0.1`–`v0.7` | Index → FS → Search → Daemon+IPC → CLI | ✅ 完成并打标签 |
 | `v1.0` | **CLI Release** | ✅ 完成并打标签 |
 | `v1.1`–`v1.5` | 高级语法/元数据过滤/搜索体验/内容搜索/重复查找 | ✅ 完成并打标签 |
-| **`v2.0`** | **GUI + 扩展索引** | ✅ Liquid Glass + 全局热键 + 外置卷 |
+| **`v2.0`** | **GUI + 扩展索引** | ✅ 完成并打标签 — Liquid Glass + 全局热键 + 外置卷 |
 | `v2.1` | 媒体元数据 | ✅ 完成并打标签 |
 | `v2.2` | 服务集成 | ✅ 完成并打标签 |
-| **`v3.0`** | **AI 语义** | ✅ 完成 |
+| **`v3.0`** | **AI 语义** | ✅ 完成并打标签 |
 
 **Workflow**: Each version develops on its `dev/vX.Y` branch. When deliverables pass all tests and review, merge to `main` and tag `vX.Y.Z`. Next version branches from `main`.
 
-**Version file**: `VERSION` at repo root — single line, e.g. `0.1.0-dev`. Bump on milestone completion.
+**Version file**: `VERSION` at repo root — single line, e.g. `3.0.0`. Bump on milestone completion.
 
 ## Development Workflow
 
@@ -127,6 +127,7 @@ When subagents (Agent tool, Workflow agents) encounter API rate limits (HTTP 429
 Sources/
   CLIEntry/                  # CLI executable entry point (main.swift)
   DaemonEntry/               # Daemon executable entry point (main.swift)
+  AppEntry/                  # GUI app executable entry point (main.swift)
   Index/                      # FileRecord, Trie, FullSubstringMap, TrigramIndex, PinyinIndex, InMemoryIndex
   Search/                     # SearchProvider, SearchCoordinator, SearchQuery, SearchResult, FilterPipeline, SearchSorter, ContentScanner
   FS/                         # FileSystemEventStream, FileScanner, FSEventWatcher, MockEventStream, VolumeManager
@@ -169,7 +170,7 @@ Index layer has zero UI/CLI dependencies and can be tested in isolation.
 
 **Concurrency model:**
 - `InMemoryIndex`: actor — all read/write via actor isolation
-- `IndexingEngine`: actor — coordinates FileScanner + FSEventWatcher
+- `IndexingEngine`: *(note: not a separate actor; FileScanner + FSEventWatcher coordination handled directly by DaemonMain)*
 - `SearchCoordinator`: plain actor (NOT @MainActor) — works in both daemon and future GUI contexts
 
 **Key design decisions:**
@@ -193,7 +194,7 @@ Index layer has zero UI/CLI dependencies and can be tested in isolation.
 
 **Search behavior**: Case-insensitive by default (preserves original case for display). NFC normalized. Paginated results (100 per page). No debounce for in-memory queries. External and network volumes indexed (removed on unmount).
 
-**Exit codes**: 0=success, 1=no results, 2=daemon error, 3=query error, 4=argument error.
+**Exit codes**: 0=success, 1=no results, 2=daemon error, 3=query error.
 
 **Daemon lifecycle**: LaunchAgent (launchd plist in ~/Library/LaunchAgents/). Auto-started by CLI if not running. PID file at `~/.deep-finder/daemon.pid`. SIGTERM handler: flush SQLite + save FSEvents cursor + remove socket + exit.
 
@@ -205,7 +206,7 @@ Index layer has zero UI/CLI dependencies and can be tested in isolation.
 |------|-----------|------|----------|
 | **架构师** | `architect` | 技术决策、spec 维护、代码检视、版本规划、二轮确认 | 全局 |
 | **算法工程师** | `algo-dev` | 数据结构实现、搜索语法解析、性能优化、基准测试 | Index (Trie/FullSubstringMap/TrigramIndex/PinyinIndex), Search 语法 |
-| **macOS 工程师** | `macos-dev` | FSEvents、SQLite WAL、LaunchAgent、权限模型、打包分发、Unix socket IPC | IndexingEngine, IndexPersistence, DaemonMain, IPCServer |
+| **macOS 工程师** | `macos-dev` | FSEvents、SQLite WAL、LaunchAgent、权限模型、打包分发、Unix socket IPC | IndexPersistence, DaemonMain, IPCServer |
 | **CLI 工程师** | `cli-dev` | CLI 参数解析、REPL 交互、终端格式化、ANSI 颜色、readline | DeepFinderCLI: CLIMain, REPL, TerminalFormatter, IPCClient |
 | **UI 工程师** | `ui-dev` | SwiftUI 动画、Liquid Glass、无障碍、键盘交互、Quick Look (v2.0) | SearchPanel, IntelligenceGlow, ResultRowView, Settings |
 | **AI 工程师** | `ai-dev` | CoreML、Vision、LLM API、向量索引、RAG pipeline、隐私边界 | AI/, v3.0-v3.1 |

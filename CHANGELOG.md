@@ -182,7 +182,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - REQ-0.5-07: Color control — `--color=auto|always|never` with `isatty()` auto-detection and `NO_COLOR`/`FORCE_COLOR` support.
 - REQ-0.5-08: Match highlighting in terminal output.
 - REQ-0.5-09: IPC client connecting to daemon Unix socket (4-byte length prefix + JSON protocol).
-- REQ-0.5-10: Standardized exit codes (0=success, 1=no results, 2=daemon error, 3=query error, 4=arg error).
+- REQ-0.5-10: Standardized exit codes (0=success, 1=no results, 2=daemon error, 3=query error).
 
 ## [0.4.0] — 2026-05-30
 

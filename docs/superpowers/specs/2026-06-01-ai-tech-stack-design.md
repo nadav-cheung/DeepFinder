@@ -2,7 +2,7 @@
 
 **日期**: 2026-06-01
 **版本**: v3.1-design
-**状态**: draft
+**状态**: planning
 **与 v3.1-rag.md 的关系**: 本文档定义 v3.1→v3.3 完整 AI 技术栈演进路线（多提供商、Embedding、VectorStore、OCR、SpeechAnalyzer 等）。`reqs/v3.1-rag.md` 是 v3.1 RAG 部分的 REQ 文件，覆盖文件分块、Embedding、向量索引、语义搜索、本地生成。本设计文档中 Phase 1 的 RAG 相关步骤对应 v3.1-rag.md 中的 REQ-3.1-01~07；Phase 1 中多提供商、OCR、SpeechAnalyzer 等非 RAG 功能目前无独立 REQ 文件，待 v3.1 开发时按需补充。
 **作者**: AI Architect Team (Bruce + workflow agents)
 
@@ -10,14 +10,12 @@
 
 ### 1.1 背景
 
-DeepFinder v3.0 已完成基础 AI 能力：DeepSeek + Qwen 云 LLM、Vision 图像标记、Speech 语音识别、NL 搜索翻译、结果摘要、语义分组、跨语言搜索。当前 AI 模块共 21 个源文件，架构上采用 `AIModelProvider` 协议抽象所有 AI 后端。
+DeepFinder v3.0 已完成基础 AI 能力：DeepSeek + Qwen 云 LLM、Vision 图像标记、Speech 语音识别、NL 搜索翻译、结果摘要、语义分组、跨语言搜索。当前 AI 模块共 29 个源文件，架构上采用 `AIModelProvider` 协议抽象所有 AI 后端。
 
 v3.0 的局限：
 - **无本地文本 LLM**：所有文本 AI（翻译、摘要、分组）依赖云 API
 - **无向量 Embedding**：语义搜索靠 LLM 翻译成关键词，非稠密向量检索
 - **暴力图像相似度**：O(n) 线性扫描，不可扩展
-- **Prompt 硬编码**：所有 system prompt 是字符串字面量，不便于迭代
-- **无重试/退避**：瞬时 API 失败直接报错
 
 ### 1.2 目标
 
@@ -327,26 +325,31 @@ Embedding 路由 (独立于 LLM):
 
 ### 4.1 新增文件
 
+#### Already implemented in v3.0
+
 | 文件 | 用途 |
 |------|------|
 | `Sources/AI/EmbeddingProvider.swift` | Embedding 生成协议 |
 | `Sources/AI/VectorStore.swift` | 向量存储协议 |
 | `Sources/AI/NLEmbeddingProvider.swift` | NLContextualEmbedding 实现 (双模型 .cjk+.latin) |
 | `Sources/AI/CloudEmbeddingProvider.swift` | 云 Embedding 通用实现 (OAI 兼容: Qwen/智谱/OpenAI) |
-| `Sources/AI/FlatFileVectorStore.swift` | mmap + BNNSVectorSearch 实现 |
-| `Sources/AI/AppleOnDeviceProvider.swift` | FoundationModels LanguageModelSession 实现 |
 | `Sources/AI/AnthropicProvider.swift` | Claude Messages API 实现 |
 | `Sources/AI/GeminiProvider.swift` | Google Gemini API 实现 |
 | `Sources/AI/ProviderRegistry.swift` | 提供商注册/发现/auto 路由 |
+| `Sources/AI/PromptLoader.swift` | Prompt 外部化加载器 |
+| `Sources/AI/Prompts/*.txt` | 外部化 prompt 文件 (search_translation, result_summary, query_suggestion, semantic_grouping) |
+
+#### New for v3.1+
+
+| 文件 | 用途 |
+|------|------|
+| `Sources/AI/FlatFileVectorStore.swift` | mmap + BNNSVectorSearch 实现 |
+| `Sources/AI/AppleOnDeviceProvider.swift` | FoundationModels LanguageModelSession 实现 |
 | `Sources/AI/OCRPipeline.swift` | RecognizeDocumentsRequest OCR 管道 |
 | `Sources/AI/SemanticImageEmbedder.swift` | ViTDet-L 语义图像嵌入 |
 | `Sources/AI/VideoFrameExtractor.swift` | AVAssetImageGenerator 视频帧提取 |
 | `Sources/AI/SpeechAnalyzerProvider.swift` | SpeechAnalyzer (macOS 26) 实现 |
 | `Sources/AI/AITelemetry.swift` | 隐私保护的 AI 遥测 (OSLog, opt-in) |
-| `Sources/AI/Prompts/search_translation.txt` | 外部化 NL 翻译 prompt |
-| `Sources/AI/Prompts/result_summary.txt` | 外部化结果摘要 prompt |
-| `Sources/AI/Prompts/query_suggestion.txt` | 外部化查询建议 prompt |
-| `Sources/AI/Prompts/semantic_grouping.txt` | 外部化语义分组 prompt |
 
 ### 4.2 现有文件修改
 

@@ -6,7 +6,7 @@
 # Usage:
 #   brew install ./packaging/homebrew/deepfinder.rb
 #
-# After the first Homebrew release:
+# Or via tap:
 #   brew tap nadav-cheung/deepfinder
 #   brew install deepfinder
 
@@ -14,8 +14,7 @@ class Deepfinder < Formula
   desc "Instant file search for macOS — like Everything but native"
   homepage "https://github.com/nadav-cheung/DeepFinder"
   url "https://github.com/nadav-cheung/DeepFinder/archive/refs/tags/v3.0.0.tar.gz"
-  # TODO: Replace with actual tarball SHA256 before release
-  sha256 "REPLACE_WITH_ACTUAL_TARBALL_SHA256"
+  sha256 "PLACEHOLDER_REPLACE_BEFORE_RELEASE"
   license "MIT"
   head "https://github.com/nadav-cheung/DeepFinder.git", branch: "main"
 

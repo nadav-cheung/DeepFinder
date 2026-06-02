@@ -55,20 +55,17 @@ Sub-millisecond queries against a full in-memory index. Background daemon archit
 ### Build
 
 ```bash
-git clone https://github.com/nadav/deep-finder.git
-cd deep-finder
+git clone https://github.com/nadav-cheung/DeepFinder.git
+cd DeepFinder
 swift build
 ```
 
 ### Install
 
 ```bash
-# Build and symlink to /usr/local/bin
-make install
-
-# Or manually:
 swift build -c release
-cp .build/release/DeepFinder /usr/local/bin/deepfinder
+cp .build/release/deepfinder /usr/local/bin/deepfinder
+cp .build/release/deepfinder-daemon /usr/local/bin/deepfinder-daemon
 ```
 
 ### First Run
@@ -189,7 +186,7 @@ Sources/
   Services/       # HTTPSearchService, URLSchemeHandler, SearchScriptCommand
   AI/             # AIModelProvider, NLSearchTranslator, LocalVisionProvider, etc.
 Tests/
-  DeepFinderTests/  # 900+ tests covering all modules
+  DeepFinderTests/  # 1100+ tests covering all modules
 ```
 
 ## AI Features
@@ -215,7 +212,7 @@ DeepFinder's AI features are designed with a privacy-first philosophy:
 # Build
 swift build
 
-# Run all tests (900+)
+# Run all tests (1100+)
 swift test
 
 # Run specific test suite

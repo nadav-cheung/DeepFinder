@@ -11,7 +11,7 @@
 | 最低系统 | macOS 26 (Tahoe) |
 | 架构 | arm64 only |
 | 技术栈 | Swift (zero external deps) |
-| 应用形态 | v1.0 CLI（daemon + REPL + single-shot），v2.0 加 GUI（Menu Bar App） |
+| 应用形态 | v1.0 CLI（daemon + REPL + single-shot），v2.0 加 GUI（Menu Bar App），v3.0 加 AI 语义搜索 |
 | 开源 | 是 |
 | 数据目录 | ~/.deep-finder/ |
 | 分发渠道 | v1.0: GitHub Releases + Homebrew formula, v2.0: + Cask |
@@ -318,25 +318,21 @@ v3.1 及后续版本的 AI 技术栈演进路线见独立设计文档：
 
 ### 模块职责
 
+> **Note**: The following table describes logical module responsibilities. Currently all modules live in a single `DeepFinder` library target (see Section 8). Splitting into separate sub-library targets is planned to improve build parallelism and enforce module boundaries.
+
 | 模块 | 职责 | Target |
 |------|------|--------|
-| **DeepFinderIndex** | 共享库：Index + Search + FS + Persist | library |
-| **DaemonMain** | Daemon 入口：加载索引 → bind socket → 运行循环 | executable |
-| **IPCServer** | Unix socket accept loop + JSON 请求分发 | executable |
-| **IPCProtocol** | IPC 消息 Codable 类型（共享） | executable |
-| **IPCClient** | CLI 端连接 daemon socket | executable |
-| **CLIMain** | CLI 入口：参数解析 → 模式选择 | executable |
-| **SingleShot** | 单次查询模式 | executable |
-| **REPL** | 交互循环：readline + 命令分发 | executable |
-| **TerminalFormatter** | ANSI 颜色、列布局、匹配高亮 | executable |
-| **ArgParser** | 手动 CommandLine.arguments 解析 | executable |
+| **DeepFinder** (library) | 共享库：Index + Search + FS + Persist + Daemon + CLI + GUI + AI + Media + Services | library |
+| **DeepFinderCLI** | CLI 入口：main.swift → CLIMain | executable |
+| **DeepFinderDaemon** | Daemon 入口：main.swift → DaemonMain | executable |
+| **DeepFinderApp** | GUI App 入口：main.swift → AppDelegate (v2.0+) | executable |
 
 ### 依赖方向
 
 ```
-DeepFinderCLI ──depends on──→ DeepFinderIndex (shared types only)
-DeepFinderDaemon ──depends on──→ DeepFinderIndex (full dependency)
-IPCProtocol types shared between CLI and Daemon via DeepFinderIndex
+DeepFinderCLI ──depends on──→ DeepFinder (library)
+DeepFinderDaemon ──depends on──→ DeepFinder (library)
+DeepFinderApp ──depends on──→ DeepFinder (library)
 ```
 
 依赖单向向下，无循环。Index 层不依赖 CLI/Daemon，可独立测试。
@@ -1032,17 +1028,18 @@ deep-finder/
 ├── Package.swift
 ├── Sources/
 │   ├── Index/                    # FileRecord, Trie, FullSubstringMap, TrigramIndex, PinyinIndex, InMemoryIndex, ProductConfig
-│   ├── Search/                   # SearchProvider, SearchCoordinator, FilterPipeline, SearchSorter, ContentScanner, AutocompleteProvider, DuplicateFinder, SearchBookmark
+│   ├── Search/                   # SearchProvider, SearchCoordinator, FilterPipeline, SearchSorter, ContentScanner, AutocompleteProvider, DuplicateFinder, SearchBookmark, QueryTerm, PatternMatcher, ContentSearchProvider, FileHasher, FileIndexProvider, SearchFilter, SearchTypes
 │   ├── FS/                       # FileScanner, FSEventWatcher, FileSystemEventStream, FSEventStreamImpl, MockEventStream, VolumeManager
 │   ├── Persist/                  # IndexPersistence, IndexRecovery, PathEncryption
 │   ├── Daemon/                   # DaemonMain, IPCServer, IPCClient, IPCProtocol, IPCFraming, ConfigStore, LaunchAgent
-│   ├── CLI/                      # CLIMain, ArgParser, SingleShot, REPL, REPLCommands, REPLHistory, TerminalFormatter, ConfigCommands, DaemonCommands, InstallCommands, FuzzyCorrection, ServeMode
+│   ├── CLI/                      # CLIMain, ArgParser, SingleShot, REPL, REPLCommands, REPLHistory, TerminalFormatter, ConfigCommands, DaemonCommands, InstallCommands, FuzzyCorrection, ServeMode, IPCClientProtocol, CLIOutputWriter
 │   ├── GUI/                      # SearchPanelView, SearchBarView, ResultsListView, SearchViewModel, AppDelegate, GlobalHotkey, IntelligenceGlow, StatusBarController (v2.0+)
-│   ├── AI/                       # NLSearchTranslator, AIConfig, AIModelProvider, DeepSeekProvider, QwenProvider, SemanticGrouper, VisionTaggingCoordinator
+│   ├── AI/                       # AIConfig, AIContext, AIModelProvider, AnthropicProvider, CloudEmbeddingProvider, CrossLanguageSearch, DeepSeekProvider, EmbeddingProvider, FileMetadataSummary, GeminiProvider, HTTPClient, ImageSimilaritySearch, KeychainStore, LocalSpeechProvider, LocalVisionProvider, MatchExplainer, NLEmbeddingProvider, NLOperations, NLSearchTranslator, OpenAICompatibleProvider, PromptLoader, ProviderRegistry, QwenProvider, ResultSummarizer, SearchAdvisor, SemanticGrouper, SpeechAuthorization, VectorStore, VisionTaggingCoordinator
 │   ├── Media/                    # ImageMetadataExtractor, AudioMetadataExtractor, VideoMetadataExtractor, PDFMetadataExtractor, MediaMetadataIndex
 │   ├── Services/                 # HTTPSearchService, URLSchemeHandler, SearchIntent, SearchScriptCommand
 │   ├── CLIEntry/                 # Thin executable entry point: main.swift → CLIMain
-│   └── DaemonEntry/              # Thin executable entry point: main.swift → DaemonMain
+│   ├── DaemonEntry/              # Thin executable entry point: main.swift → DaemonMain
+│   └── AppEntry/                 # GUI app entry point: main.swift → AppDelegate (v2.0+)
 ├── Tests/
 │   ├── IndexTests/
 │   ├── SearchTests/

@@ -9,8 +9,8 @@
 
 | Status | Count | Modules |
 |--------|-------|---------|
-| Done | 105 | v0.1, v0.2, v0.3, v0.4, v0.5, v0.6, v0.7, v1.1, v1.2, v1.3, v1.4, v1.5, v2.0 (13 GUI REQs), v2.1, v2.2, v3.0 |
-| Partial | 4 | v1.0 (missing Homebrew/man/completions) |
+| Done | 109 | v0.1, v0.2, v0.3, v0.4, v0.5, v0.6, v0.7, v1.0, v1.1, v1.2, v1.3, v1.4, v1.5, v2.0 (13 GUI REQs), v2.1, v2.2, v3.0 |
+| Partial | 0 | -- |
 | Not Started | 12 | v2.0 (5 app target REQs), v3.1 (Local RAG) |
 | **Total** | **121** | |
 
@@ -25,7 +25,7 @@
 | v0.5 CLI Single-Shot | 4 | 4 | 0 | 0 |
 | v0.6 Interactive REPL | 3 | 3 | 0 | 0 |
 | v0.7 Daemon Management | 3 | 3 | 0 | 0 |
-| v1.0 CLI Release | 4 | 0 | 4 | 0 |
+| v1.0 CLI Release | 4 | 4 | 0 | 0 |
 | v1.1 Advanced Syntax | 7 | 7 | 0 | 0 |
 | v1.2 Metadata Filter | 8 | 8 | 0 | 0 |
 | v1.3 Search Experience | 7 | 7 | 0 | 0 |
@@ -41,8 +41,8 @@
 
 | Priority | Total | Done | Partial | Not Started |
 |----------|-------|------|---------|-------------|
-| P0 | 77 | 66 | 3 | 8 |
-| P1 | 37 | 33 | 1 | 3 |
+| P0 | 77 | 71 | 0 | 6 |
+| P1 | 37 | 32 | 0 | 5 |
 | P2 | 7 | 6 | 0 | 1 |
 
 ---
@@ -128,16 +128,14 @@
 
 ---
 
-## v1.0 -- CLI Release (4 REQs, partial)
+## v1.0 -- CLI Release (4 REQs, done)
 
 | REQ ID | Description | Status | Source Files | Test Files | Notes |
 |--------|-------------|--------|-------------|------------|-------|
 | REQ-1.0-01 | CLI integration tests | done | -- | `Tests/CLITests/IntegrationTests.swift` | End-to-end single-shot, exit codes, pipe mode |
-| REQ-1.0-02 | Release packaging | partial | -- | -- | Homebrew formula NOT created, man page NOT created, shell completions NOT created |
+| REQ-1.0-02 | Release packaging | done | `packaging/homebrew/deepfinder.rb`, `packaging/deepfinder.1`, `packaging/completions/` | -- | Homebrew formula (67 lines), man page (230 lines), shell completions (bash/zsh/fish) |
 | REQ-1.0-03 | Fuzzy correction | done | `Sources/CLI/FuzzyCorrection.swift` | `Tests/CLITests/FuzzyCorrectionTests.swift` | Edit distance <= 2, suggestions to stderr |
 | REQ-1.0-04 | ANSI highlighting (enhanced) | done | `Sources/CLI/TerminalFormatter.swift` | `Tests/CLITests/TerminalFormatterTests.swift` | Multi-match highlight, pinyin highlight, pipe detection |
-
-> **Blockers for v1.0 release**: Homebrew formula (`deepfinder.rb`), man page (`deepfinder.1`), and shell completions (bash/zsh/fish) are not yet created.
 
 ---
 
@@ -308,3 +306,4 @@
 | 2026-06-01 | v1.2 REQs (01-08) corrected: FilterPipeline IS wired to SearchCoordinator (lines 129-130). All 8 v1.2 REQs moved from partial to done. Total done: 97→105. |
 | 2026-06-02 | Priority breakdown corrected: P0 73→75, P1 38→35, P2 5→6. Verified against per-module REQ files. |
 | 2026-06-02 | Added REQ-2.0-14 through REQ-2.0-18: standalone app target, Info.plist, build script, daemon discovery, Homebrew Cask. Total 116→121 REQs. |
+| 2026-06-02 | REQ-1.0-02 (Release packaging) changed from partial to done: Homebrew formula, man page, and shell completions now exist in packaging/. All v1.0 REQs done. |
