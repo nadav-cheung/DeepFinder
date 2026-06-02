@@ -173,6 +173,7 @@ actor HTTPSearchService {
         let tokenDir = (tokenPath as NSString).deletingLastPathComponent
         try? FileManager.default.createDirectory(atPath: tokenDir, withIntermediateDirectories: true)
         try? authToken.write(toFile: tokenPath, atomically: true, encoding: .utf8)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tokenPath)
 
         // Wait for the listener to become ready (or fail)
         for await _ in readyContinuation.stream {

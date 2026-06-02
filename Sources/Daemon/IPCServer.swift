@@ -30,7 +30,7 @@ enum IPCServerError: Error, Sendable, Equatable {
 ///
 /// **Platform note**: Unix domain sockets are POSIX-specific. The socket path
 /// length is limited to `sizeof(sockaddr_un.sun_path) - 1` bytes (103 on macOS).
-/// The default path `~/.deep-finder/ipc.sock` is well within this limit.
+/// The default path `~/.deep-finder/session/ipc.sock` is well within this limit.
 ///
 /// Thread-safe via actor isolation.
 actor IPCServer {
@@ -79,7 +79,7 @@ actor IPCServer {
     /// Create an IPC server.
     ///
     /// - Parameters:
-    ///   - socketPath: File path for the Unix domain socket (e.g. `~/.deep-finder/ipc.sock`).
+    ///   - socketPath: File path for the Unix domain socket (e.g. `~/.deep-finder/session/ipc.sock`).
     ///   - coordinator: The search coordinator that processes queries.
     ///   - statsProvider: Async closure that returns current daemon statistics when called.
     ///   - indexStatusProvider: Async closure that returns current index status when called.

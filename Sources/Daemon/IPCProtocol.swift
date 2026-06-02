@@ -232,7 +232,7 @@ enum IPCResponse: Codable, Sendable, Equatable {
 /// JSON payload. This allows the receiver to detect message boundaries on a stream
 /// socket without relying on connection boundaries.
 ///
-/// Debuggable via `nc -U ~/.deep-finder/ipc.sock` — the payload is human-readable JSON.
+/// Debuggable via `nc -U ~/.deep-finder/session/ipc.sock` — the payload is human-readable JSON.
 enum IPCFraming {
     /// Prepend a 4-byte big-endian UInt32 length header to `payload`.
     static func addLengthPrefix(to payload: Data) -> Data {

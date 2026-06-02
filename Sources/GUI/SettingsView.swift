@@ -63,9 +63,9 @@ protocol SettingsAIProvider: Sendable {
     func modelName() async -> String
     /// Set the selected AI model.
     func setModel(_ model: String) async
-    /// Retrieve the stored API key (from Keychain).
+    /// Retrieve the stored API key (from secrets file).
     func getAPIKey() async -> String
-    /// Store the API key (to Keychain).
+    /// Store the API key (to secrets file).
     func setAPIKey(_ key: String) async throws
     /// Whether metadata is sent to cloud providers.
     func sendMetadata() async -> Bool
@@ -158,7 +158,7 @@ final class SettingsViewModel {
     /// Selected AI model ("off", "deepseek", "qwen").
     var aiModel: AIModelOption = .off
 
-    /// The API key text (masked in UI, stored in Keychain).
+    /// The API key text (masked in UI, stored in secrets file).
     var aiAPIKeyText: String = ""
 
     /// Whether metadata is sent to cloud AI providers.
@@ -276,7 +276,7 @@ final class SettingsViewModel {
         await aiProvider?.setModel(model.rawValue)
     }
 
-    /// Persist API key to Keychain. Errors are logged but not propagated to avoid
+    /// Persist API key to secrets file. Errors are logged but not propagated to avoid
     /// disrupting the UI binding flow (SecureField calls this on every keystroke).
     func setAIKey(_ key: String) async {
         aiAPIKeyText = key

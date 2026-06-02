@@ -7,7 +7,7 @@
 /// - ``IndexRecovery`` -- database corruption detection and recovery utilities
 ///
 /// ## Design
-/// - Database location: `~/.deep-finder/index.db` (permissions 600)
+/// - Database location: `~/.deep-finder/cache/index.db` (permissions 600)
 /// - Journal mode: WAL (Write-Ahead Logging) for concurrent reads + serialized writes
 /// - Batch writes: explicit transactions for throughput (INSERT OR REPLACE)
 /// - Schema migration: versioned via `PRAGMA user_version` with transactional upgrades
@@ -66,7 +66,7 @@ enum PersistenceError: Error, CustomStringConvertible {
 
 /// SQLite WAL persistence layer for FileRecords.
 ///
-/// Stores FileRecord data durably on disk at `~/.deep-finder/index.db`.
+/// Stores FileRecord data durably on disk at `~/.deep-finder/cache/index.db`.
 /// Index structures (Trie, FullSubstringMap, etc.) are rebuilt in memory on startup.
 ///
 /// **Concurrency**: actor-isolated. All public methods are called from the actor's
@@ -136,7 +136,7 @@ actor IndexPersistence {
     private let _dbPath: String?
 
     /// AES-256-GCM encryption for file paths. Initialized lazily via ``ensureEncryption()``
-    /// so that in-memory databases (":memory:") skip Keychain access entirely.
+    /// so that in-memory databases (":memory:") skip secrets file access entirely.
     private var pathEncryption: PathEncryption?
 
     // MARK: - Init / Deinit
@@ -179,7 +179,7 @@ actor IndexPersistence {
         logger.debug("Schema migration complete")
 
         // Initialize path encryption for on-disk databases.
-        // In-memory databases (":memory:") skip Keychain access — paths are stored unencrypted.
+        // In-memory databases (":memory:") skip secrets file access — paths are stored unencrypted.
         if _dbPath != nil {
             do {
                 self.pathEncryption = try PathEncryption()
@@ -618,7 +618,7 @@ actor IndexPersistence {
     ///
     /// Existing plaintext paths in the `path` and `parent_path` columns will be
     /// encrypted by ``encryptExistingPathsIfNeeded()`` after the migration transaction
-    /// commits and the AES-256 key is loaded from Keychain.
+    /// commits and the AES-256 key is loaded from secrets file.
     private static func migrateToV3(_ db: OpaquePointer) throws {
         // No ALTER TABLE needed — same columns, just encrypted at application layer.
         // The version bump happens in migrateSchema via PRAGMA user_version.

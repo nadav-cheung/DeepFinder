@@ -17,7 +17,7 @@
 /// ```
 ///
 /// ## Lifecycle
-/// 1. Ensure data directory (`~/.deep-finder`, permissions 700)
+/// 1. Ensure data directory and subdirectories (~/.deep-finder, permissions 700)
 /// 2. Atomically acquire PID file (O_CREAT|O_EXCL + flock)
 /// 3. Load SQLite index, rebuild InMemoryIndex
 /// 4. Start IPCServer
