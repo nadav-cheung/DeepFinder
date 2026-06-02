@@ -25,8 +25,15 @@ final class FSEventStreamImpl: FileSystemEventStream, @unchecked Sendable {
     private static let latency: TimeInterval = Constants.Scan.fsEventLatency
 
     /// Flags for FSEventStreamCreate.
+    ///
+    /// `kFSEventStreamCreateFlagUseCFTypes` is required: without it the callback
+    /// receives a raw C array of `char *` strings, but our callback treats
+    /// `eventPaths` as a `CFArray` of `CFStringRef` via `unsafeBitCast`.
+    /// Missing this flag causes a SIGSEGV when the code sends `objc_retain`
+    /// to what is actually C-string bytes.
     private static let streamFlags: FSEventStreamCreateFlags =
         FSEventStreamCreateFlags(
+            kFSEventStreamCreateFlagUseCFTypes |
             kFSEventStreamCreateFlagFileEvents |
             kFSEventStreamCreateFlagNoDefer |
             kFSEventStreamCreateFlagWatchRoot
