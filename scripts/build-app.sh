@@ -28,7 +28,8 @@ mkdir -p "$APP_BUNDLE/Contents/MacOS"
 mkdir -p "$APP_BUNDLE/Contents/Resources"
 
 # Copy executables.
-cp "$BUILD_DIR/DeepFinderApp" "$APP_BUNDLE/Contents/MacOS/DeepFinderApp"
+# SwiftPM product names are lowercase-hyphen; binaries match those names.
+cp "$BUILD_DIR/deepfinder-app" "$APP_BUNDLE/Contents/MacOS/DeepFinderApp"
 cp "$BUILD_DIR/deepfinder-daemon" "$APP_BUNDLE/Contents/MacOS/deepfinder-daemon"
 
 # Generate Info.plist with version substituted.
