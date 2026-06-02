@@ -54,24 +54,46 @@ struct AIConfigTests {
     }
 }
 
-@Suite("AIConfig Keychain Integration")
-struct AIConfigKeychainTests {
+@Suite("AIConfig Secrets Integration")
+struct AIConfigSecretsTests {
 
-    @Test("getAPIKey returns Keychain value when present")
-    func testGetAPIKeyFromKeychain() throws {
-        let service = "com.nadav.deepfinder.test.\(UUID().uuidString.prefix(8))"
-        let store = KeychainStore(service: service)
-        try store.save(key: "ai.apiKey", value: "sk-test-from-keychain")
-        let key = AIConfig.getAPIKey(config: ["ai.apiKey": "unused"], keychainStore: store)
-        #expect(key == "sk-test-from-keychain")
-        store.delete(key: "ai.apiKey")
+    /// Create a test-scoped SecretsStore backed by a temp file.
+    private func makeStore() -> (SecretsStore, cleanup: () -> Void) {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("deepfinder-test-aiconfig-\(UUID().uuidString)")
+        let filePath = tmpDir.appendingPathComponent("secrets.json").path
+        try? FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        let store = SecretsStore(filePath: filePath)
+        let cleanup: () -> Void = { try? FileManager.default.removeItem(at: tmpDir) }
+        return (store, cleanup)
     }
 
-    @Test("getAPIKey falls back to config dict when Keychain empty")
+    @Test("getAPIKey returns secrets file value when present")
+    func testGetAPIKeyFromSecrets() throws {
+        let (store, cleanup) = makeStore()
+        defer { cleanup() }
+
+        try store.save(key: "ai.apiKey", value: "sk-test-from-secrets")
+        let key = AIConfig.getAPIKey(config: ["ai.apiKey": "unused"], secretsStore: store)
+        #expect(key == "sk-test-from-secrets")
+    }
+
+    @Test("getAPIKey falls back to config dict when secrets file empty")
     func testFallbackToConfig() {
-        let store = KeychainStore(service: "com.nadav.deepfinder.test.nonexistent")
-        let key = AIConfig.getAPIKey(config: ["ai.apiKey": "sk-fallback"], keychainStore: store)
+        let (store, cleanup) = makeStore()
+        defer { cleanup() }
+
+        let key = AIConfig.getAPIKey(config: ["ai.apiKey": "sk-fallback"], secretsStore: store)
         #expect(key == "sk-fallback")
+    }
+
+    @Test("saveAPIKey writes to secrets file")
+    func testSaveAPIKey() throws {
+        let (store, cleanup) = makeStore()
+        defer { cleanup() }
+
+        try AIConfig.saveAPIKey("sk-new-key", secretsStore: store)
+        #expect(store.load(key: "ai.apiKey") == "sk-new-key")
     }
 
     @Test("dataPreview returns JSON sample of sent data")

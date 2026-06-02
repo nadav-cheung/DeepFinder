@@ -72,35 +72,35 @@ struct AIConfig: Sendable {
         config["ai.model"] ?? "off"
     }
 
-    /// Retrieve the API key. Checks Keychain first (secure storage), falls back
-    /// to config dict (legacy/plaintext). Returns empty string if neither has a key.
+    /// Retrieve the API key. Checks secrets file first, falls back to config dict
+    /// (legacy/plaintext). Returns empty string if neither has a key.
     ///
-    /// When a Keychain value is found, any stale plaintext entry in the config
+    /// When a secrets file value is found, any stale plaintext entry in the config
     /// dictionary is cleaned up by calling the removal callback. The caller is
     /// responsible for persisting the updated config.
     static func getAPIKey(
         config: [String: String],
-        keychainStore: KeychainStore = KeychainStore(),
+        secretsStore: SecretsStore = SecretsStore(),
         onPlaintextCleanup: ((String) -> Void)? = nil
     ) -> String {
-        if let keychainValue = keychainStore.load(key: "ai.apiKey"), !keychainValue.isEmpty {
+        if let secretsValue = secretsStore.load(key: "ai.apiKey"), !secretsValue.isEmpty {
             // Clean up any stale plaintext copy from config
             if config["ai.apiKey"] != nil {
                 onPlaintextCleanup?("ai.apiKey")
             }
-            return keychainValue
+            return secretsValue
         }
         return config["ai.apiKey"] ?? ""
     }
 
-    /// Save the API key to Keychain (secure storage) and remove any plaintext
-    /// copy from the config dictionary via the removal callback.
+    /// Save the API key to secrets file and remove any plaintext copy from the
+    /// config dictionary via the removal callback.
     static func saveAPIKey(
         _ value: String,
-        keychainStore: KeychainStore = KeychainStore(),
+        secretsStore: SecretsStore = SecretsStore(),
         onPlaintextCleanup: ((String) -> Void)? = nil
     ) throws {
-        try keychainStore.save(key: "ai.apiKey", value: value)
+        try secretsStore.save(key: "ai.apiKey", value: value)
         // Remove any stale plaintext copy
         onPlaintextCleanup?("ai.apiKey")
     }
