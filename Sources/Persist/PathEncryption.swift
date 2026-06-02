@@ -5,8 +5,8 @@ import CryptoKit
 
 /// Errors thrown by ``PathEncryption`` during encrypt/decrypt operations.
 enum PathEncryptionError: Error, CustomStringConvertible {
-    case keychainReadFailed
-    case keychainWriteFailed(Error)
+    case keyReadFailed
+    case keyWriteFailed(Error)
     case keyInvalid
     case encodingFailed
     case decodingFailed
@@ -16,12 +16,12 @@ enum PathEncryptionError: Error, CustomStringConvertible {
 
     var description: String {
         switch self {
-        case .keychainReadFailed:
-            return "Failed to read encryption key from Keychain"
-        case .keychainWriteFailed(let error):
-            return "Failed to write encryption key to Keychain: \(error.localizedDescription)"
+        case .keyReadFailed:
+            return "Failed to read encryption key from secrets store"
+        case .keyWriteFailed(let error):
+            return "Failed to write encryption key to secrets store: \(error.localizedDescription)"
         case .keyInvalid:
-            return "Encryption key stored in Keychain is invalid (not valid Base64)"
+            return "Encryption key is invalid (not valid Base64 or wrong length)"
         case .encodingFailed:
             return "Failed to encode/decode string as UTF-8"
         case .decodingFailed:
@@ -47,10 +47,11 @@ enum PathEncryptionError: Error, CustomStringConvertible {
 ///
 /// ## Key Management
 ///
-/// A random 256-bit AES key is generated on first use and stored in the macOS
-/// Keychain via ``KeychainStore``. The key persists across daemon restarts and
-/// system reboots. If the key is lost (Keychain reset, migration to a new Mac),
-/// the database becomes unreadable and must be rebuilt via full rescan.
+/// A random 256-bit AES key is generated on first use and stored in the secrets
+/// file (`~/.deep-finder/secrets.json`) via ``SecretsStore``. The key persists
+/// across daemon restarts and system reboots. If the key is lost (file deleted,
+/// migration to a new Mac), the database becomes unreadable and must be rebuilt
+/// via full rescan.
 ///
 /// ## Wire Format
 ///
@@ -68,11 +69,11 @@ enum PathEncryptionError: Error, CustomStringConvertible {
 /// REQ-3.0-18: Path encryption at the persistence layer.
 struct PathEncryption: Sendable {
 
-    /// Keychain key used to store the AES-256 key.
-    private static let keychainKey = "path_encryption_key_v1"
+    /// Secrets file key used to store the AES-256 key.
+    private static let secretsKey = "path_encryption_key_v1"
 
-    /// The Keychain store used to persist the encryption key.
-    private let keychain: KeychainStore
+    /// The secrets store used to persist the encryption key.
+    private let secretsStore: SecretsStore
 
     /// Cached symmetric key, loaded once on first use.
     private let symmetricKey: SymmetricKey
@@ -81,14 +82,14 @@ struct PathEncryption: Sendable {
 
     /// Initialize the path encryption service.
     ///
-    /// Loads the encryption key from Keychain, or generates a new one if none exists.
+    /// Loads the encryption key from the secrets file, or generates a new one if none exists.
     ///
-    /// - Parameter keychain: The Keychain store to use. Defaults to the standard
-    ///   DeepFinder service (`com.nadav.deepfinder`).
+    /// - Parameter secretsStore: The secrets store to use. Defaults to the standard
+    ///   secrets file (`~/.deep-finder/secrets.json`).
     /// - Throws: ``PathEncryptionError`` if the key cannot be loaded or created.
-    init(keychain: KeychainStore = KeychainStore()) throws {
-        self.keychain = keychain
-        self.symmetricKey = try Self.loadOrCreateKey(using: keychain)
+    init(secretsStore: SecretsStore = SecretsStore()) throws {
+        self.secretsStore = secretsStore
+        self.symmetricKey = try Self.loadOrCreateKey(using: secretsStore)
     }
 
     // MARK: - Public API
@@ -177,9 +178,9 @@ struct PathEncryption: Sendable {
 
     // MARK: - Key Management
 
-    /// Load the AES-256 key from Keychain, or generate and store a new one.
-    private static func loadOrCreateKey(using keychain: KeychainStore) throws -> SymmetricKey {
-        if let stored = keychain.load(key: keychainKey) {
+    /// Load the AES-256 key from the secrets file, or generate and store a new one.
+    private static func loadOrCreateKey(using secretsStore: SecretsStore) throws -> SymmetricKey {
+        if let stored = secretsStore.load(key: secretsKey) {
             guard let keyData = Data(base64Encoded: stored) else {
                 throw PathEncryptionError.keyInvalid
             }
@@ -193,9 +194,9 @@ struct PathEncryption: Sendable {
         let key = SymmetricKey(size: .bits256)
         let keyString = key.withUnsafeBytes { Data($0).base64EncodedString() }
         do {
-            try keychain.save(key: keychainKey, value: keyString)
+            try secretsStore.save(key: secretsKey, value: keyString)
         } catch {
-            throw PathEncryptionError.keychainWriteFailed(error)
+            throw PathEncryptionError.keyWriteFailed(error)
         }
         return key
     }

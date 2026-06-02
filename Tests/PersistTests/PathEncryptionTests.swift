@@ -8,31 +8,32 @@ struct PathEncryptionTests {
 
     // MARK: - Helpers
 
-    /// Test-scoped Keychain service to avoid colliding with real app data.
-    private static let testService = "com.nadav.deepfinder.test.path-encryption"
-
-    /// The Keychain key used by PathEncryption internally.
-    private static let keychainKey = "path_encryption_key_v1"
-
-    /// Create a PathEncryption instance using a test-scoped Keychain.
-    /// Cleans up any leftover test key before and after.
-    private func makeEncryption() throws -> PathEncryption {
-        let kc = KeychainStore(service: Self.testService)
-        kc.delete(key: Self.keychainKey)
-        return try PathEncryption(keychain: kc)
+    /// Create a test-scoped SecretsStore backed by a temp file.
+    private func makeStore() -> (SecretsStore, cleanup: () -> Void) {
+        let tmpDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("deepfinder-test-pathenc-\(UUID().uuidString)")
+        let filePath = tmpDir.appendingPathComponent("secrets.json").path
+        try? FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
+        let store = SecretsStore(filePath: filePath)
+        let cleanup: () -> Void = { try? FileManager.default.removeItem(at: tmpDir) }
+        return (store, cleanup)
     }
 
-    /// Clean up test Keychain entries.
-    private func cleanup() {
-        let kc = KeychainStore(service: Self.testService)
-        kc.delete(key: Self.keychainKey)
+    /// The secrets key used by PathEncryption internally.
+    private static let secretsKey = "path_encryption_key_v1"
+
+    /// Create a PathEncryption instance using a test-scoped secrets store.
+    private func makeEncryption() throws -> (PathEncryption, cleanup: () -> Void) {
+        let (store, cleanup) = makeStore()
+        let enc = try PathEncryption(secretsStore: store)
+        return (enc, cleanup)
     }
 
     // MARK: - Encrypt/Decrypt Round-Trip
 
     @Test("encrypt then decrypt returns original plaintext")
     func roundTrip() throws {
-        let enc = try makeEncryption()
+        let (enc, cleanup) = try makeEncryption()
         defer { cleanup() }
 
         let plaintext = "/Users/test/Documents/readme.md"
@@ -43,7 +44,7 @@ struct PathEncryptionTests {
 
     @Test("each encryption produces unique ciphertext")
     func uniqueCiphertextPerCall() throws {
-        let enc = try makeEncryption()
+        let (enc, cleanup) = try makeEncryption()
         defer { cleanup() }
 
         let plaintext = "/same/path/file.txt"
@@ -56,7 +57,7 @@ struct PathEncryptionTests {
 
     @Test("encrypt and decrypt empty string")
     func emptyString() throws {
-        let enc = try makeEncryption()
+        let (enc, cleanup) = try makeEncryption()
         defer { cleanup() }
 
         let encrypted = try enc.encrypt("")
@@ -68,7 +69,7 @@ struct PathEncryptionTests {
 
     @Test("handles paths with spaces")
     func spacesInPath() throws {
-        let enc = try makeEncryption()
+        let (enc, cleanup) = try makeEncryption()
         defer { cleanup() }
 
         let plaintext = "/Users/test/My Documents/project final.txt"
@@ -79,7 +80,7 @@ struct PathEncryptionTests {
 
     @Test("handles paths with special shell characters")
     func specialShellChars() throws {
-        let enc = try makeEncryption()
+        let (enc, cleanup) = try makeEncryption()
         defer { cleanup() }
 
         let plaintext = "/Users/test/$HOME/file (copy) [2].txt"
@@ -90,7 +91,7 @@ struct PathEncryptionTests {
 
     @Test("handles paths with percent and hash symbols")
     func percentAndHash() throws {
-        let enc = try makeEncryption()
+        let (enc, cleanup) = try makeEncryption()
         defer { cleanup() }
 
         let plaintext = "/Users/test/100% progress #final.md"
@@ -103,7 +104,7 @@ struct PathEncryptionTests {
 
     @Test("handles Chinese characters in path")
     func chinesePath() throws {
-        let enc = try makeEncryption()
+        let (enc, cleanup) = try makeEncryption()
         defer { cleanup() }
 
         let plaintext = "/Users/test/文档/项目报告.txt"
@@ -114,7 +115,7 @@ struct PathEncryptionTests {
 
     @Test("handles Japanese characters in path")
     func japanesePath() throws {
-        let enc = try makeEncryption()
+        let (enc, cleanup) = try makeEncryption()
         defer { cleanup() }
 
         let plaintext = "/Users/test/書類/プロジェクト.pdf"
@@ -125,7 +126,7 @@ struct PathEncryptionTests {
 
     @Test("handles emoji in path")
     func emojiPath() throws {
-        let enc = try makeEncryption()
+        let (enc, cleanup) = try makeEncryption()
         defer { cleanup() }
 
         let plaintext = "/Users/test/🎉 party 🎊/fun.txt"
@@ -136,7 +137,7 @@ struct PathEncryptionTests {
 
     @Test("handles Arabic RTL characters in path")
     func arabicPath() throws {
-        let enc = try makeEncryption()
+        let (enc, cleanup) = try makeEncryption()
         defer { cleanup() }
 
         let plaintext = "/Users/test/مستندات/ملف.txt"
@@ -147,7 +148,7 @@ struct PathEncryptionTests {
 
     @Test("handles decomposed Unicode (NFD) in path")
     func decomposedUnicode() throws {
-        let enc = try makeEncryption()
+        let (enc, cleanup) = try makeEncryption()
         defer { cleanup() }
 
         // e + combining acute accent (NFD form of é)
@@ -161,7 +162,7 @@ struct PathEncryptionTests {
 
     @Test("handles long path (1024 characters)")
     func longPath() throws {
-        let enc = try makeEncryption()
+        let (enc, cleanup) = try makeEncryption()
         defer { cleanup() }
 
         let longComponent = String(repeating: "a", count: 900)
@@ -175,7 +176,7 @@ struct PathEncryptionTests {
 
     @Test("decrypting garbage Base64 throws decodingFailed")
     func garbageBase64() throws {
-        let enc = try makeEncryption()
+        let (enc, cleanup) = try makeEncryption()
         defer { cleanup() }
 
         #expect(throws: PathEncryptionError.self) {
@@ -185,7 +186,7 @@ struct PathEncryptionTests {
 
     @Test("decrypting valid Base64 that is too short throws invalidCiphertext")
     func ciphertextTooShort() throws {
-        let enc = try makeEncryption()
+        let (enc, cleanup) = try makeEncryption()
         defer { cleanup() }
 
         // 16 bytes encoded as Base64 — less than the minimum 28 bytes
@@ -197,7 +198,7 @@ struct PathEncryptionTests {
 
     @Test("decrypting ciphertext with corrupted payload throws decryptionFailed")
     func corruptedPayload() throws {
-        let enc = try makeEncryption()
+        let (enc, cleanup) = try makeEncryption()
         defer { cleanup() }
 
         let encrypted = try enc.encrypt("/Users/test/file.txt")
@@ -219,7 +220,7 @@ struct PathEncryptionTests {
 
     @Test("decrypting with tampered nonce throws decryptionFailed")
     func tamperedNonce() throws {
-        let enc = try makeEncryption()
+        let (enc, cleanup) = try makeEncryption()
         defer { cleanup() }
 
         let encrypted = try enc.encrypt("/Users/test/file.txt")
@@ -239,7 +240,7 @@ struct PathEncryptionTests {
 
     @Test("decrypting with tampered GCM tag throws decryptionFailed")
     func tamperedTag() throws {
-        let enc = try makeEncryption()
+        let (enc, cleanup) = try makeEncryption()
         defer { cleanup() }
 
         let encrypted = try enc.encrypt("/Users/test/file.txt")
@@ -262,16 +263,14 @@ struct PathEncryptionTests {
 
     @Test("decrypting with a different key fails")
     func wrongKey() throws {
-        let enc1 = try makeEncryption()
-        defer { cleanup() }
+        let (enc1, cleanup1) = try makeEncryption()
+        defer { cleanup1() }
 
         let encrypted = try enc1.encrypt("/Users/test/secret.txt")
 
-        // Create a second instance with a fresh key (delete the old one first)
-        let kc = KeychainStore(service: Self.testService)
-        kc.delete(key: Self.keychainKey)
-        let enc2 = try PathEncryption(keychain: kc)
-        defer { let kc2 = KeychainStore(service: Self.testService); kc2.delete(key: Self.keychainKey) }
+        // Create a second instance with a fresh secrets store (different file = different key)
+        let (enc2, cleanup2) = try makeEncryption()
+        defer { cleanup2() }
 
         #expect(throws: PathEncryptionError.self) {
             try enc2.decrypt(encrypted)
@@ -282,7 +281,7 @@ struct PathEncryptionTests {
 
     @Test("encrypted output is valid Base64")
     func outputIsBase64() throws {
-        let enc = try makeEncryption()
+        let (enc, cleanup) = try makeEncryption()
         defer { cleanup() }
 
         let encrypted = try enc.encrypt("/Users/test/file.txt")
@@ -292,7 +291,7 @@ struct PathEncryptionTests {
 
     @Test("encrypted output decoded length is at least 28 bytes (nonce + tag)")
     func outputMinLength() throws {
-        let enc = try makeEncryption()
+        let (enc, cleanup) = try makeEncryption()
         defer { cleanup() }
 
         // Empty string encrypts to nonce(12) + ciphertext(0) + tag(16) = 28 bytes
@@ -306,7 +305,7 @@ struct PathEncryptionTests {
 
     @Test("encrypted non-empty path is longer than 28 bytes")
     func nonEmptyOutputLength() throws {
-        let enc = try makeEncryption()
+        let (enc, cleanup) = try makeEncryption()
         defer { cleanup() }
 
         let encrypted = try enc.encrypt("/Users/test/file.txt")
@@ -322,7 +321,7 @@ struct PathEncryptionTests {
 
     @Test("looksEncrypted returns true for valid encrypted data")
     func looksEncryptedTrue() throws {
-        let enc = try makeEncryption()
+        let (enc, cleanup) = try makeEncryption()
         defer { cleanup() }
 
         let encrypted = try enc.encrypt("/Users/test/file.txt")
@@ -353,14 +352,13 @@ struct PathEncryptionTests {
 
     // MARK: - Key Management
 
-    @Test("reusing same Keychain returns same key (idempotent init)")
+    @Test("reusing same secrets store returns same key (idempotent init)")
     func sameKeyOnReuse() throws {
-        let kc = KeychainStore(service: Self.testService)
-        kc.delete(key: Self.keychainKey)
+        let (store, cleanup) = makeStore()
         defer { cleanup() }
 
-        let enc1 = try PathEncryption(keychain: kc)
-        let enc2 = try PathEncryption(keychain: kc)
+        let enc1 = try PathEncryption(secretsStore: store)
+        let enc2 = try PathEncryption(secretsStore: store)
 
         // If both instances use the same key, enc1-encrypted data can be
         // decrypted by enc2.
@@ -371,15 +369,14 @@ struct PathEncryptionTests {
 
     @Test("key persisting across instances: first encrypt, second decrypt")
     func keyPersistsAcrossInstances() throws {
-        let kc = KeychainStore(service: Self.testService)
-        kc.delete(key: Self.keychainKey)
+        let (store, cleanup) = makeStore()
         defer { cleanup() }
 
-        let enc1 = try PathEncryption(keychain: kc)
+        let enc1 = try PathEncryption(secretsStore: store)
         let encrypted = try enc1.encrypt("/Users/test/persistent.txt")
 
         // New instance loading the same persisted key
-        let enc2 = try PathEncryption(keychain: kc)
+        let enc2 = try PathEncryption(secretsStore: store)
         let decrypted = try enc2.decrypt(encrypted)
         #expect(decrypted == "/Users/test/persistent.txt")
     }
@@ -389,8 +386,8 @@ struct PathEncryptionTests {
     @Test("all PathEncryptionError cases have non-empty descriptions")
     func errorDescriptions() {
         let errors: [PathEncryptionError] = [
-            .keychainReadFailed,
-            .keychainWriteFailed(NSError(domain: "test", code: -1)),
+            .keyReadFailed,
+            .keyWriteFailed(NSError(domain: "test", code: -1)),
             .keyInvalid,
             .encodingFailed,
             .decodingFailed,
@@ -405,7 +402,7 @@ struct PathEncryptionTests {
 
     @Test("error descriptions contain useful context")
     func errorDescriptionContent() {
-        #expect(PathEncryptionError.keychainReadFailed.description.contains("Keychain"))
+        #expect(PathEncryptionError.keyReadFailed.description.contains("secrets"))
         #expect(PathEncryptionError.invalidCiphertext.description.contains("28"))
         #expect(PathEncryptionError.keyInvalid.description.contains("Base64"))
         #expect(PathEncryptionError.decodingFailed.description.contains("Base64"))
@@ -415,7 +412,7 @@ struct PathEncryptionTests {
 
     @Test("encrypting and decrypting multiple distinct paths")
     func multiplePaths() throws {
-        let enc = try makeEncryption()
+        let (enc, cleanup) = try makeEncryption()
         defer { cleanup() }
 
         let paths = [
@@ -435,7 +432,7 @@ struct PathEncryptionTests {
 
     @Test("decrypting all encrypted paths in batch succeeds")
     func batchRoundTrip() throws {
-        let enc = try makeEncryption()
+        let (enc, cleanup) = try makeEncryption()
         defer { cleanup() }
 
         let paths = [
