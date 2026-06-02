@@ -75,25 +75,25 @@ actor FSEventWatcher {
     // MARK: - Configuration
 
     /// Maximum number of retry attempts before degrading to polling.
-    static let maxRetryAttempts = 5
+    static let maxRetryAttempts = Constants.Watcher.maxRetryAttempts
 
     /// Initial retry delay in seconds.
-    static let initialRetryDelay: TimeInterval = 2.0
+    static let initialRetryDelay: TimeInterval = Constants.Watcher.initialRetryDelay
 
     /// Maximum retry delay in seconds.
-    static let maxRetryDelay: TimeInterval = 60.0
+    static let maxRetryDelay: TimeInterval = Constants.Watcher.maxRetryDelay
 
     /// Jitter factor (+/-20%).
-    static let jitterFactor: Double = 0.2
+    static let jitterFactor: Double = Constants.Watcher.jitterFactor
 
     /// Polling interval in seconds when degraded.
-    static let pollingInterval: TimeInterval = 30.0
+    static let pollingInterval: TimeInterval = Constants.Watcher.pollingInterval
 
     /// Maximum stream restarts within the restart window before degrading to polling.
-    static let maxRestartsInWindow = 3
+    static let maxRestartsInWindow = Constants.Watcher.maxRestartsInWindow
 
     /// Time window (seconds) for counting restarts.
-    static let restartWindow: TimeInterval = 600.0 // 10 minutes
+    static let restartWindow: TimeInterval = Constants.Watcher.restartWindow
 
     // MARK: - Dependencies
 

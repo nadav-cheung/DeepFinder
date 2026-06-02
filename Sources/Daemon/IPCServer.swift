@@ -183,8 +183,8 @@ actor IPCServer {
             throw IPCServerError.bindFailed(err)
         }
 
-        // Listen (backlog of 16)
-        guard listen(fd, 16) == 0 else {
+        // Listen
+        guard listen(fd, Constants.IPC.listenBacklog) == 0 else {
             let err = String(cString: strerror(errno))
             logger.error("Socket listen failed: \(err, privacy: .public)")
             close(fd)
@@ -197,7 +197,7 @@ actor IPCServer {
         // Ignore SIGPIPE — handle write errors explicitly
         signal(SIGPIPE, SIG_IGN)
 
-        logger.debug("Socket fd \(fd) bound and listening, backlog 16")
+        logger.debug("Socket fd \(fd) bound and listening, backlog \(Constants.IPC.listenBacklog)")
 
         // Accept loop runs in background Task
         let capturedFD = fd

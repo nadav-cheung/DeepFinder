@@ -330,8 +330,7 @@ actor IPCClient {
             // 1. Next to the current CLI executable (SPM .build/debug/ or install dir)
             cliDir.map { ($0 as NSString).appendingPathComponent(binaryName) },
             // 2. Standard Homebrew / Unix install location
-            // TODO: Hardcoded path — only works for Homebrew installs. Consider resolving via CLI binary location.
-            "/usr/local/bin/\(binaryName)",
+            "\(Product.defaultBinDir)/\(binaryName)",
         ].compactMap { $0 }
 
         let resolvedPath: String

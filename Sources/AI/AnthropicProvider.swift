@@ -22,7 +22,7 @@ struct AnthropicProvider: AIModelProvider, Sendable {
     private let httpClient: any HTTPClient
     private let endpoint: URL
 
-    private static let maxOutputTokens = 1024
+    private static let maxOutputTokens = Constants.AI.maxOutputTokens
 
     init(apiKey: String, model: String, httpClient: any HTTPClient = URLSessionHTTPClient()) {
         self.apiKey = apiKey
@@ -45,7 +45,7 @@ struct AnthropicProvider: AIModelProvider, Sendable {
                     request.httpMethod = "POST"
                     request.setValue("application/json", forHTTPHeaderField: "content-type")
                     request.setValue(apiKey, forHTTPHeaderField: "x-api-key")
-                    request.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version")
+                    request.setValue(Constants.AI.anthropicAPIVersion, forHTTPHeaderField: "anthropic-version")
                     request.httpBody = body
 
                     let response = try await httpClient.perform(request)

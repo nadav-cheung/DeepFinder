@@ -45,7 +45,7 @@ enum BookmarkError: Error, Equatable {
 /// When `filePath` is provided, bookmarks are persisted as JSON with atomic writes.
 actor BookmarkStore {
 
-    private static let maxBookmarks = 100
+    private static let maxBookmarks = Constants.Search.maxBookmarks
 
     /// In-memory bookmark list. Persisted to disk when `filePath` is non-nil.
     private var bookmarks: [SearchBookmark] = []

@@ -24,7 +24,7 @@ struct GeminiProvider: AIModelProvider, Sendable {
     private let httpClient: any HTTPClient
     let endpoint: URL
 
-    private static let maxOutputTokens = 1024
+    private static let maxOutputTokens = Constants.AI.maxOutputTokens
 
     init(apiKey: String, model: String, httpClient: any HTTPClient = URLSessionHTTPClient()) {
         self.apiKey = apiKey

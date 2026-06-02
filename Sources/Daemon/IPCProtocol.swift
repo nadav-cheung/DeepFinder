@@ -13,7 +13,7 @@ let ipcProtocolVersion = 1
 /// excessive memory allocation in the search pipeline. The IPC framing
 /// layer enforces a 16 MB message limit; this guard rejects unreasonably
 /// long queries much earlier, well before the search engine processes them.
-let maxQueryLength = 10_240
+let maxQueryLength = Constants.IPC.maxQueryLength
 
 // MARK: - IPCError
 

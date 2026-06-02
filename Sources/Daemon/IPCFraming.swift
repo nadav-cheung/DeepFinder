@@ -35,7 +35,7 @@ enum IPCFramingIOError: Error, LocalizedError {
 enum IPCFramingIO {
 
     /// Default maximum framed message payload size (16 MB).
-    static let defaultMaxMessageSize = 16 * 1024 * 1024
+    static let defaultMaxMessageSize = Constants.IPC.maxMessageSize
 
     // MARK: - Write
 

@@ -34,7 +34,7 @@ enum Constants {
 
         /// Socket listen backlog. Controls how many pending connections
         /// the kernel queues before refusing new ones.
-        static let listenBacklog = 16
+        static let listenBacklog: Int32 = 16
 
         /// Maximum allowed query string length in characters (10 KB).
         /// Queries exceeding this limit are rejected before parsing to prevent

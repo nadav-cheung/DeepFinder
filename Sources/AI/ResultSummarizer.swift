@@ -106,7 +106,7 @@ private final class ManagedCache: @unchecked Sendable {
     private var store: [String: (value: String, timestamp: Date)] = [:]
 
     /// Maximum entries before triggering proactive eviction.
-    private static let maxEntries = 100
+    private static let maxEntries = Constants.AI.summarizerCacheMaxEntries
 
     func get(_ key: String) -> String? {
         lock.lock()

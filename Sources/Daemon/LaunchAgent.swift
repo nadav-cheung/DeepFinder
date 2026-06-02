@@ -63,8 +63,7 @@ enum LaunchAgent {
     ///
     /// - Returns: A complete XML plist string.
     static func generatePlist() -> String {
-        // TODO: Hardcoded path — only works for Homebrew installs. Consider resolving via CLI binary location.
-        let binaryPath = "/usr/local/bin/\(Product.daemonCommand)"
+        let binaryPath = "\(Product.defaultBinDir)/\(Product.daemonCommand)"
         let logOut = "\(Product.logsDir)/daemon-stdout.log"
         let logErr = "\(Product.logsDir)/daemon-stderr.log"
 

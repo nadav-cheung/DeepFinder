@@ -12,7 +12,7 @@ struct ScanOptions: Sendable, Equatable {
     /// pathological input (e.g. minified files). Default is `10000`.
     var maxLineLength: Int
 
-    init(caseSensitive: Bool = false, maxLineLength: Int = 10_000) {
+    init(caseSensitive: Bool = false, maxLineLength: Int = Constants.ContentScanner.defaultMaxLineLength) {
         self.caseSensitive = caseSensitive
         self.maxLineLength = maxLineLength
     }
@@ -94,8 +94,8 @@ enum ContentScanner: Sendable {
             return []
         }
 
-        // Skip likely binary files: if the first 8KB contain a NUL byte, treat as binary
-        let probeSize = min(rawData.count, 8192)
+        // Skip likely binary files: if the first N bytes contain a NUL byte, treat as binary
+        let probeSize = min(rawData.count, Constants.Scan.binaryProbeSize)
         if probeSize > 0 {
             let probe = rawData[0..<probeSize]
             if probe.contains(where: { $0 == 0 }) {

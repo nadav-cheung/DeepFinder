@@ -11,7 +11,7 @@ final class ResultsListState {
     // MARK: - Constants
 
     static let pageSize = 100
-    static let maxResults = 10_000
+    static let maxResults = Constants.GUI.maxResults
 
     // MARK: - Stored properties
 

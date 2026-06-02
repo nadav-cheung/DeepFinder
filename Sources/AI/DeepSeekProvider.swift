@@ -149,7 +149,7 @@ struct OpenAICompatibleProvider: AIModelProvider, Sendable {
     ///   or `AIError.networkError` respectively
     private func performWithRetry(request: URLRequest) async throws -> HTTPClientResponse {
         var lastError: Error = AIError.networkError("Unknown")
-        let maxAttempts = 3
+        let maxAttempts = Constants.AI.maxRetryAttempts
         for attempt in 0..<maxAttempts {
             do {
                 let response = try await httpClient.perform(request)

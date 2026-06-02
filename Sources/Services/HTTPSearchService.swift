@@ -135,7 +135,7 @@ actor HTTPSearchService {
             // A single receive() may only get a TCP fragment.
             var buffer = Data()
             func readNext() {
-                connection.receive(minimumIncompleteLength: 1, maximumLength: 65536) { data, _, _, error in
+                connection.receive(minimumIncompleteLength: 1, maximumLength: Constants.HTTP.maxReceiveSize) { data, _, _, error in
                     guard let data, error == nil else {
                         connection.cancel()
                         return

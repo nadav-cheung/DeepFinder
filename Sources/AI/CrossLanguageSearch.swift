@@ -107,7 +107,7 @@ private final class ManagedTermCache: @unchecked Sendable {
     private static let ttl: TimeInterval = Constants.AI.crossLanguageCacheTTL
 
     /// Maximum entries before triggering proactive eviction.
-    private static let maxEntries = 100
+    private static let maxEntries = Constants.AI.crossLanguageCacheMaxEntries
 
     func get(_ key: String) -> [String]? {
         lock.lock()
