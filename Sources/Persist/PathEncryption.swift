@@ -48,7 +48,7 @@ enum PathEncryptionError: Error, CustomStringConvertible {
 /// ## Key Management
 ///
 /// A random 256-bit AES key is generated on first use and stored in the secrets
-/// file (`~/.deep-finder/secrets.json`) via ``SecretsStore``. The key persists
+/// file (`~/.deep-finder/.env`) via ``SecretsStore``. The key persists
 /// across daemon restarts and system reboots. If the key is lost (file deleted,
 /// migration to a new Mac), the database becomes unreadable and must be rebuilt
 /// via full rescan.
@@ -85,7 +85,7 @@ struct PathEncryption: Sendable {
     /// Loads the encryption key from the secrets file, or generates a new one if none exists.
     ///
     /// - Parameter secretsStore: The secrets store to use. Defaults to the standard
-    ///   secrets file (`~/.deep-finder/secrets.json`).
+    ///   secrets file (`~/.deep-finder/.env`).
     /// - Throws: ``PathEncryptionError`` if the key cannot be loaded or created.
     init(secretsStore: SecretsStore = SecretsStore()) throws {
         self.secretsStore = secretsStore

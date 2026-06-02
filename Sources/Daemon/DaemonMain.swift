@@ -168,9 +168,9 @@ public actor DaemonMain {
         self.eventStreamProvider = eventStreamProvider
         let resolved = Self.expandTilde(dataDir)
         self.resolvedDataDir = resolved
-        self.resolvedPidPath = (resolved as NSString).appendingPathComponent("daemon.pid")
-        self.resolvedSocketPath = (resolved as NSString).appendingPathComponent("ipc.sock")
-        self.resolvedDbPath = (resolved as NSString).appendingPathComponent("index.db")
+        self.resolvedPidPath = Self.expandTilde(Product.pidPath)
+        self.resolvedSocketPath = Self.expandTilde(Product.socketPath)
+        self.resolvedDbPath = Self.expandTilde(Product.databasePath)
     }
 
     /// Public no-arg convenience initializer for executable entry points.
@@ -202,13 +202,16 @@ public actor DaemonMain {
         return Double(info.resident_size) / (1024 * 1024)
     }
 
-    /// Ensure the data directory exists with permissions 700.
+    /// Ensure the data directory and all subdirectories exist with correct permissions.
     ///
-    /// Creates the directory and all intermediate directories if needed.
+    /// Creates the root directory (permissions 700) and standard subdirectories:
+    /// `cache/`, `logs/`, `session/`. Intermediate directories are created as needed.
     /// - Throws: `DaemonError.dataDirectoryCreationFailed` if creation fails.
     static func ensureDataDir(_ path: String) throws {
         let resolved = expandTilde(path)
         let fm = FileManager.default
+
+        // Create root directory
         if !fm.fileExists(atPath: resolved) {
             try fm.createDirectory(
                 atPath: resolved,
@@ -221,6 +224,22 @@ public actor DaemonMain {
                 [.posixPermissions: 0o700],
                 ofItemAtPath: resolved
             )
+        }
+
+        // Create standard subdirectories
+        let subdirs = [
+            expandTilde(Product.cacheDir),
+            expandTilde(Product.logsDir),
+            expandTilde(Product.sessionDir),
+        ]
+        for dir in subdirs {
+            if !fm.fileExists(atPath: dir) {
+                try fm.createDirectory(
+                    atPath: dir,
+                    withIntermediateDirectories: true,
+                    attributes: [.posixPermissions: 0o700]
+                )
+            }
         }
     }
 

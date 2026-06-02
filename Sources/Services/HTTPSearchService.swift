@@ -169,12 +169,10 @@ actor HTTPSearchService {
         self.listener = listener
 
         // Write auth token to file so local trusted clients can read it
-        if let tokenDir = FileManager.default.homeDirectoryForCurrentUser
-            .appendingPathComponent(".deep-finder").path as String?,
-           FileManager.default.fileExists(atPath: tokenDir) {
-            let tokenPath = tokenDir + "/http-token"
-            try? authToken.write(toFile: tokenPath, atomically: true, encoding: .utf8)
-        }
+        let tokenPath = NSString(string: Product.httpTokenPath).expandingTildeInPath
+        let tokenDir = (tokenPath as NSString).deletingLastPathComponent
+        try? FileManager.default.createDirectory(atPath: tokenDir, withIntermediateDirectories: true)
+        try? authToken.write(toFile: tokenPath, atomically: true, encoding: .utf8)
 
         // Wait for the listener to become ready (or fail)
         for await _ in readyContinuation.stream {

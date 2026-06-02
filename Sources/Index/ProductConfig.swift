@@ -28,23 +28,42 @@ enum Product {
 
     // MARK: - Paths
 
-    /// Root data directory for index, config, logs, and IPC socket.
+    /// Root data directory for all DeepFinder runtime data.
     static let dataDir = "~/.deep-finder"
 
-    /// Unix domain socket path for daemon IPC communication.
-    static let socketPath = "~/.deep-finder/ipc.sock"
+    // MARK: Subdirectories
 
-    /// Daemon PID file for singleton enforcement.
-    static let pidPath = "~/.deep-finder/daemon.pid"
+    /// Cache directory for rebuildable data (SQLite index).
+    static let cacheDir = "~/.deep-finder/cache"
+
+    /// Logs directory for daemon and CLI log output.
+    static let logsDir = "~/.deep-finder/logs"
+
+    /// Session directory for runtime files (PID, socket, auth token).
+    static let sessionDir = "~/.deep-finder/session"
+
+    // MARK: Files
 
     /// User configuration file (JSON).
-    static let configPath = "~/.deep-finder/config.json"
+    static let configPath = "~/.deep-finder/settings.json"
+
+    /// Secrets file for API keys and encryption keys (JSON, permissions 600).
+    static let secretsPath = "~/.deep-finder/.env"
+
+    /// Unix domain socket path for daemon IPC communication.
+    static let socketPath = "~/.deep-finder/session/ipc.sock"
+
+    /// Daemon PID file for singleton enforcement.
+    static let pidPath = "~/.deep-finder/session/daemon.pid"
+
+    /// HTTP API authentication token file.
+    static let httpTokenPath = "~/.deep-finder/session/http-token"
 
     /// REPL command history file.
     static let historyPath = "~/.deep-finder/history"
 
     /// SQLite database path for persistent FileRecord storage.
-    static let databasePath = "~/.deep-finder/index.db"
+    static let databasePath = "~/.deep-finder/cache/index.db"
 
     // MARK: - Version
 

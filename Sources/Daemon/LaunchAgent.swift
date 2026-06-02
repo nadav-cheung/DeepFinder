@@ -59,14 +59,13 @@ enum LaunchAgent {
     /// - Arguments: (none)
     /// - RunAtLoad: `true` (start on login)
     /// - KeepAlive: `true` (restart on crash)
-    /// - StandardOutPath / StandardErrorPath: log files in `~/.deep-finder/log/`
+    /// - StandardOutPath / StandardErrorPath: log files in `~/.deep-finder/logs/`
     ///
     /// - Returns: A complete XML plist string.
     static func generatePlist() -> String {
         let binaryPath = "/usr/local/bin/\(Product.daemonCommand)"
-        let logDir = "\(Product.dataDir)/log"
-        let logOut = "\(logDir)/daemon-stdout.log"
-        let logErr = "\(logDir)/daemon-stderr.log"
+        let logOut = "\(Product.logsDir)/daemon-stdout.log"
+        let logErr = "\(Product.logsDir)/daemon-stderr.log"
 
         return """
         <?xml version="1.0" encoding="UTF-8"?>

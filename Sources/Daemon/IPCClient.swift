@@ -371,13 +371,9 @@ actor IPCClient {
         let nullHandle = try? FileHandle(forReadingFrom: URL(fileURLWithPath: "/dev/null"))
         process.standardInput = nullHandle
 
-        let logDir = (dataDir as NSString).appendingPathComponent("logs")
-        let logPath: String
-        if FileManager.default.fileExists(atPath: logDir) {
-            logPath = (logDir as NSString).appendingPathComponent("daemon.log")
-        } else {
-            logPath = (dataDir as NSString).appendingPathComponent("daemon.log")
-        }
+        let logDir = NSString(string: Product.logsDir).expandingTildeInPath
+        try? FileManager.default.createDirectory(atPath: logDir, withIntermediateDirectories: true)
+        let logPath = (logDir as NSString).appendingPathComponent("daemon.log")
         // Create the log file if it doesn't exist, then open for append.
         // We preserve existing log contents (crash diagnostics from previous runs).
         if !FileManager.default.fileExists(atPath: logPath) {

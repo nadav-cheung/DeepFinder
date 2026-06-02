@@ -41,7 +41,7 @@ struct SecretsStore: Sendable {
 
     private static let logger = Logger(subsystem: "com.nadav.deepfinder", category: "secrets")
 
-    init(filePath: String = "~/.deep-finder/secrets.json") {
+    init(filePath: String = Product.secretsPath) {
         self.filePath = NSString(string: filePath).expandingTildeInPath
     }
 

@@ -4,7 +4,7 @@ import Foundation
 
 /// Persistent daemon configuration.
 ///
-/// Stored as JSON at `~/.deep-finder/config.json` with file permissions 600.
+/// Stored as JSON at `~/.deep-finder/settings.json` with file permissions 600.
 /// When the file is missing or corrupted, defaults are used.
 struct DaemonConfig: Codable, Sendable, Equatable {
 

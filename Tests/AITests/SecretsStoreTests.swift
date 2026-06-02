@@ -174,12 +174,12 @@ struct SecretsStoreTests {
 
     // MARK: - Tilde Expansion
 
-    @Test("Default init uses tilde path")
+    @Test("Default init uses Product.secretsPath")
     func testDefaultInit() {
         let store = SecretsStore()
         // Path should be expanded from ~
         #expect(store.filePath.contains(".deep-finder"))
-        #expect(store.filePath.contains("secrets.json"))
+        #expect(store.filePath.contains(".env"))
         // Should NOT start with ~
         #expect(!store.filePath.hasPrefix("~"))
     }
