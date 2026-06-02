@@ -193,7 +193,7 @@ Index layer has zero UI/CLI dependencies and can be tested in isolation.
 
 **Search behavior**: Case-insensitive by default (preserves original case for display). NFC normalized. Paginated results (100 per page). No debounce for in-memory queries. External and network volumes indexed (removed on unmount).
 
-**Exit codes**: 0=success, 1=no results, 2=daemon error, 3=query error.
+**Exit codes**: 0=success, 1=no results, 2=daemon error, 3=query error, 4=argument error.
 
 **Daemon lifecycle**: LaunchAgent (launchd plist in ~/Library/LaunchAgents/). Auto-started by CLI if not running. PID file at `~/.deep-finder/daemon.pid`. SIGTERM handler: flush SQLite + save FSEvents cursor + remove socket + exit.
 

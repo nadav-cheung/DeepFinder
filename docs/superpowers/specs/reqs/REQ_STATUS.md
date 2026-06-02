@@ -1,6 +1,6 @@
 # REQ Status Tracking Matrix
 
-**Last updated**: 2026-05-31
+**Last updated**: 2026-06-02
 **Total REQs**: 116 across 18 version modules
 
 ---
@@ -41,9 +41,9 @@
 
 | Priority | Total | Done | Partial | Not Started |
 |----------|-------|------|---------|-------------|
-| P0 | 73 | 64 | 3 | 6 |
-| P1 | 38 | 36 | 1 | 1 |
-| P2 | 5 | 5 | 0 | 0 |
+| P0 | 75 | 66 | 3 | 6 |
+| P1 | 35 | 33 | 1 | 1 |
+| P2 | 6 | 6 | 0 | 0 |
 
 ---
 
@@ -299,3 +299,4 @@
 |------|--------|
 | 2026-05-31 | Initial REQ status matrix created. 116 REQs across 18 modules. |
 | 2026-06-01 | v1.2 REQs (01-08) corrected: FilterPipeline IS wired to SearchCoordinator (lines 129-130). All 8 v1.2 REQs moved from partial to done. Total done: 97→105. |
+| 2026-06-02 | Priority breakdown corrected: P0 73→75, P1 38→35, P2 5→6. Verified against per-module REQ files. |

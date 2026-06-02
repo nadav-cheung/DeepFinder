@@ -21,11 +21,11 @@
 | [v0.6-repl.md](v0.6-repl.md) | v0.6 | REQ-0.6-01 ~ 03 | Interactive REPL：REPL 循环, REPL 命令, 历史与导航 |
 | [v0.7-daemon-mgmt.md](v0.7-daemon-mgmt.md) | v0.7 | REQ-0.7-01 ~ 03 | Daemon 管理：daemon 子命令, config 子命令, install 子命令 |
 | [v1.0-cli-release.md](v1.0-cli-release.md) | v1.0 | REQ-1.0-01 ~ 04 | CLI Release：集成测试, 打包, 模糊纠错, ANSI 高亮 |
-| [v1.1-advanced-syntax.md](v1.1-advanced-syntax.md) | v1.1 | 待补充 | 高级搜索语法 |
-| [v1.2-metadata-filter.md](v1.2-metadata-filter.md) | v1.2 | 待补充 | 元数据过滤 |
-| [v1.3-search-exp.md](v1.3-search-exp.md) | v1.3 | 待补充 | 搜索体验 |
-| [v1.4-content-search.md](v1.4-content-search.md) | v1.4 | 待补充 | 内容搜索 |
-| [v1.5-duplicate.md](v1.5-duplicate.md) | v1.5 | 待补充 | 重复查找 |
+| [v1.1-advanced-syntax.md](v1.1-advanced-syntax.md) | v1.1 | REQ-1.1-01 ~ 07 | 高级搜索语法 |
+| [v1.2-metadata-filter.md](v1.2-metadata-filter.md) | v1.2 | REQ-1.2-01 ~ 08 | 元数据过滤 |
+| [v1.3-search-exp.md](v1.3-search-exp.md) | v1.3 | REQ-1.3-01 ~ 07 | 搜索体验 |
+| [v1.4-content-search.md](v1.4-content-search.md) | v1.4 | REQ-1.4-01 ~ 04 | 内容搜索 |
+| [v1.5-duplicate.md](v1.5-duplicate.md) | v1.5 | REQ-1.5-01 ~ 06 | 重复查找 |
 | [v2.0-gui.md](v2.0-gui.md) | v2.0 | REQ-2.0-01 ~ 13 | GUI + 扩展索引：SearchPanel, SearchBar, ResultsList, GlobalHotkey, Settings |
 | [v2.1-media-metadata.md](v2.1-media-metadata.md) | v2.1 | REQ-2.1-01 ~ 07 | 媒体元数据：图片/音频/视频/PDF |
 | [v2.2-service-integration.md](v2.2-service-integration.md) | v2.2 | REQ-2.2-01 ~ 05 | 服务集成：HTTP/URL Scheme/Shortcuts/AppleScript |
@@ -71,12 +71,17 @@
 | v0.6 | 2 | 1 | 0 | 0 | 3 |
 | v0.7 | 1 | 2 | 0 | 0 | 3 |
 | v1.0 | 2 | 2 | 0 | 0 | 4 |
+| v1.1 | 6 | 1 | 0 | 0 | 7 |
+| v1.2 | 7 | 1 | 0 | 0 | 8 |
+| v1.3 | 5 | 2 | 0 | 0 | 7 |
+| v1.4 | 3 | 1 | 0 | 0 | 4 |
+| v1.5 | 5 | 1 | 0 | 0 | 6 |
 | v2.0 | 7 | 5 | 1 | 0 | 13 |
+| v2.1 | 4 | 3 | 0 | 0 | 7 |
+| v2.2 | 2 | 2 | 1 | 0 | 5 |
 | v3.0 | 4 | 8 | 4 | 0 | 16 |
 | v3.1 | 4 | 3 | 0 | 0 | 7 |
-| **合计** | **44** | **24** | **5** | **0** | **72** |
-
-> v1.1-v1.5 和 v2.1-v2.2 需求待详细展开后补充统计。
+| **合计** | **75** | **35** | **6** | **0** | **116** |
 
 ---
 
@@ -88,3 +93,4 @@
 | 2026-05-29 | v1.1 | v0.1-v1.0 需求补充用户场景、操作流程、验收标准。改用结构化需求卡格式 |
 | 2026-05-29 | v2.0 | CLI-first 重构：v0.4 (Daemon+IPC), v0.5 (CLI single-shot), v0.6 (REPL), v0.7 (daemon 管理)。v1.0 改为 CLI Release。旧 v0.4-v0.5 UI REQs 迁移至 v2.0。v3.0/v3.1 AI REQs 更新 CLI 上下文。72 项 REQ |
 | 2026-05-29 | v2.1 | 拆分 monolithic requirements.md 为 per-module 文件。原文件替换为索引 |
+| 2026-06-02 | v3.0 | 补充 v1.1-v1.5 和 v2.1-v2.2 统计。总计从 72 更正为 116 项 REQ |

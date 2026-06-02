@@ -3,6 +3,7 @@
 **日期**: 2026-06-01
 **版本**: v3.1-design
 **状态**: draft
+**与 v3.1-rag.md 的关系**: 本文档定义 v3.1→v3.3 完整 AI 技术栈演进路线（多提供商、Embedding、VectorStore、OCR、SpeechAnalyzer 等）。`reqs/v3.1-rag.md` 是 v3.1 RAG 部分的 REQ 文件，覆盖文件分块、Embedding、向量索引、语义搜索、本地生成。本设计文档中 Phase 1 的 RAG 相关步骤对应 v3.1-rag.md 中的 REQ-3.1-01~07；Phase 1 中多提供商、OCR、SpeechAnalyzer 等非 RAG 功能目前无独立 REQ 文件，待 v3.1 开发时按需补充。
 **作者**: AI Architect Team (Bruce + workflow agents)
 
 ## 1. 概述
