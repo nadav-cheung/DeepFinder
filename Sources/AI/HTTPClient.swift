@@ -43,7 +43,7 @@ struct URLSessionHTTPClient: HTTPClient {
     let requestTimeout: TimeInterval
     private let session: URLSession
 
-    init(timeout: TimeInterval = 30, session: URLSession = .shared) {
+    init(timeout: TimeInterval = Constants.AI.requestTimeout, session: URLSession = .shared) {
         self.requestTimeout = timeout
         self.session = session
     }

@@ -273,7 +273,7 @@ enum SearchFilter: Sendable, Equatable {
     private static func parseDateOnly(_ input: String, calendar cal: Calendar) -> Date? {
         let formatter = DateFormatter()
         formatter.calendar = cal
-        formatter.dateFormat = "yyyy-MM-dd"
+        formatter.dateFormat = Product.isoDateFormat
         formatter.locale = Locale(identifier: "en_US_POSIX")
         return formatter.date(from: input.trimmingCharacters(in: .whitespaces))
     }

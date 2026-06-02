@@ -65,7 +65,7 @@ enum ContentScanner: Sendable {
 
     // MARK: - Logging
 
-    private static let logger = Logger(subsystem: "com.nadav.deepfinder.daemon", category: "content-scan")
+    private static let logger = Logger(subsystem: Product.daemonSubsystem, category: "content-scan")
 
     // MARK: - Public API
 

@@ -70,7 +70,7 @@ actor FSEventWatcher {
 
     // MARK: - Logging
 
-    private let logger = Logger(subsystem: "com.nadav.deepfinder.daemon", category: "fswatcher")
+    private let logger = Logger(subsystem: Product.daemonSubsystem, category: "fswatcher")
 
     // MARK: - Configuration
 

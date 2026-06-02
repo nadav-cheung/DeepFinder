@@ -46,7 +46,7 @@ struct ImageMetadataExtractor: MetadataExtractor, Sendable {
         if let exif = properties[kCGImagePropertyExifDictionary] as? [CFString: Any],
            let dateStr = exif[kCGImagePropertyExifDateTimeOriginal] as? String {
             let formatter = DateFormatter()
-            formatter.dateFormat = "yyyy:MM:dd HH:mm:ss"
+            formatter.dateFormat = Product.exifDateFormat
             if let date = formatter.date(from: dateStr) {
                 meta.fields["dateTaken"] = .date(date)
             }

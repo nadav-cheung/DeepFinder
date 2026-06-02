@@ -106,9 +106,9 @@ struct DaemonCommandRunner: Sendable {
         socketWaiter: any SocketWaiter = SystemSocketWaiter(),
         pidReader: any PIDReader = SystemPIDReader(),
         output: any CLIOutputWriter = StdoutWriter(),
-        startupTimeout: TimeInterval = 5.0,
-        shutdownTimeout: TimeInterval = 5.0,
-        shutdownPollInterval: TimeInterval = 0.1
+        startupTimeout: TimeInterval = Constants.Daemon.startupTimeout,
+        shutdownTimeout: TimeInterval = Constants.Daemon.shutdownTimeout,
+        shutdownPollInterval: TimeInterval = Constants.Daemon.shutdownPollInterval
     ) {
         self.pidPath = DaemonCommandRunner.expandTilde(pidPath)
         self.socketPath = DaemonCommandRunner.expandTilde(socketPath)
@@ -348,7 +348,7 @@ struct SystemProcessSignaler: ProcessSignaler, Sendable {
 struct SystemSocketWaiter: SocketWaiter, Sendable {
     func waitForSocket(at path: String, timeout: TimeInterval) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
-        let pollInterval: UInt64 = 100_000_000 // 100ms
+        let pollInterval: UInt64 = Constants.IPC.socketPollIntervalNs
 
         while Date() < deadline {
             if FileManager.default.fileExists(atPath: path) {

@@ -94,7 +94,7 @@ public actor DaemonMain {
     // MARK: - Properties
 
     /// Logger for daemon lifecycle events.
-    private let logger = Logger(subsystem: "com.nadav.deepfinder.daemon", category: "lifecycle")
+    private let logger = Logger(subsystem: Product.daemonSubsystem, category: "lifecycle")
 
     /// Root data directory (e.g. ~/.deep-finder).
     private let dataDir: String
@@ -216,12 +216,12 @@ public actor DaemonMain {
             try fm.createDirectory(
                 atPath: resolved,
                 withIntermediateDirectories: true,
-                attributes: [.posixPermissions: 0o700]
+                attributes: [.posixPermissions: Product.privateDirPermissions]
             )
         } else {
             // Ensure permissions are correct even if directory already exists
             try fm.setAttributes(
-                [.posixPermissions: 0o700],
+                [.posixPermissions: Product.privateDirPermissions],
                 ofItemAtPath: resolved
             )
         }
@@ -237,7 +237,7 @@ public actor DaemonMain {
                 try fm.createDirectory(
                     atPath: dir,
                     withIntermediateDirectories: true,
-                    attributes: [.posixPermissions: 0o700]
+                    attributes: [.posixPermissions: Product.privateDirPermissions]
                 )
             }
         }
@@ -263,7 +263,7 @@ public actor DaemonMain {
     /// - Throws: `DaemonError.pidWriteFailed` on I/O errors.
     static func acquirePIDFile(pidPath: String) throws -> Int32 {
         let flags: Int32 = O_CREAT | O_EXCL | O_WRONLY
-        let mode: mode_t = 0o644
+        let mode: mode_t = mode_t(Product.pidFilePermissions)
 
         while true {
             let fd = open(pidPath, flags, mode)
@@ -464,7 +464,7 @@ public actor DaemonMain {
                 let homeDir = NSHomeDirectory()
                 let scanStream = await scanner.scan(
                     rootPaths: [homeDir],
-                    config: ScanConfiguration(maxDepth: 8)
+                    config: ScanConfiguration(maxDepth: Constants.Scan.defaultMaxDepth)
                 )
                 var scannedCount = 0
                 for await event in scanStream {
@@ -477,10 +477,10 @@ public actor DaemonMain {
                     case .scanComplete:
                         let allRecords = await bgIndex.allRecords()
                         await bgPersistence.saveRecords(allRecords)
-                        let log = Logger(subsystem: "com.nadav.deepfinder.daemon", category: "lifecycle")
+                        let log = Logger(subsystem: Product.daemonSubsystem, category: "lifecycle")
                         log.info("Initial scan complete: \(scannedCount) files indexed, \(allRecords.count) total")
                     case .scanError(let error):
-                        let log = Logger(subsystem: "com.nadav.deepfinder.daemon", category: "lifecycle")
+                        let log = Logger(subsystem: Product.daemonSubsystem, category: "lifecycle")
                         log.warning("Background scan error at \(error.path, privacy: .public): \(error.reason, privacy: .public)")
                     default:
                         break
@@ -561,7 +561,7 @@ public actor DaemonMain {
     /// When triggered, these call `shutdown()` on the daemon. The handlers
     /// run on a dedicated serial queue to avoid blocking the main queue.
     private func installSignalHandlers() {
-        let queue = DispatchQueue(label: "com.nadav.deepfinder.daemon.signals")
+        let queue = DispatchQueue(label: "\(Product.identifier).daemon.signals")
 
         // SIGTERM
         let termSource = DispatchSource.makeSignalSource(signal: SIGTERM, queue: queue)

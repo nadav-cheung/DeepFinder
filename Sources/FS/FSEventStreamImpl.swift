@@ -22,7 +22,7 @@ final class FSEventStreamImpl: FileSystemEventStream, @unchecked Sendable {
 
     /// Event coalescing latency in seconds. FSEvents will wait this long
     /// before delivering events, merging duplicates within the window.
-    private static let latency: TimeInterval = 0.5
+    private static let latency: TimeInterval = Constants.Scan.fsEventLatency
 
     /// Flags for FSEventStreamCreate.
     private static let streamFlags: FSEventStreamCreateFlags =
@@ -35,7 +35,7 @@ final class FSEventStreamImpl: FileSystemEventStream, @unchecked Sendable {
     // MARK: - Mutable State (protected by queue)
 
     /// Serial queue for all FSEventStream operations and callbacks.
-    private let queue = DispatchQueue(label: "com.nadav.deepfinder.fsevents", qos: .utility)
+    private let queue = DispatchQueue(label: "\(Product.identifier).fsevents", qos: .utility)
 
     /// The underlying FSEventStream, nil when not running.
     private var stream: FSEventStreamRef?

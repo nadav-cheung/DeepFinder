@@ -133,7 +133,7 @@ struct OnboardingView: View {
                 icon: "command",
                 color: GlowColors.violet,
                 title: "Global Hotkey",
-                description: "Press ⌃⌘K anytime to open DeepFinder search, from any application."
+                description: "Press ⌃⌘K anytime to open \(Product.name) search, from any application."
             )
         }
     }

@@ -54,7 +54,7 @@ actor SearchCoordinator {
 
     /// Timeout per provider in seconds. Stored for future streaming providers.
     /// MVP providers are synchronous and always complete instantly.
-    var providerTimeout: TimeInterval = 5.0
+    var providerTimeout: TimeInterval = Constants.Search.providerTimeout
 
     // MARK: - Init
 
@@ -63,7 +63,7 @@ actor SearchCoordinator {
     /// - Parameters:
     ///   - providers: Search backends to dispatch queries to.
     ///   - resultLimit: Maximum number of results returned per query. Default 1000.
-    init(providers: [any SearchProvider], resultLimit: Int = 1000) {
+    init(providers: [any SearchProvider], resultLimit: Int = Constants.Daemon.maxResults) {
         self.providers = providers
         self.resultLimit = resultLimit
     }

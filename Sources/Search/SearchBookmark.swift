@@ -111,7 +111,7 @@ actor BookmarkStore {
         }
         try FileManager.default.moveItem(atPath: tmp, toPath: filePath)
         try FileManager.default.setAttributes(
-            [.posixPermissions: 0o600], ofItemAtPath: filePath
+            [.posixPermissions: Product.privateFilePermissions], ofItemAtPath: filePath
         )
     }
 

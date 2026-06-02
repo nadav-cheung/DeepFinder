@@ -11,7 +11,7 @@ import AppIntents
 struct SearchFilesIntent: AppIntent {
     static let title: LocalizedStringResource = "Search Files"
     static let description: IntentDescription? = IntentDescription(
-        "Search for files by name using DeepFinder and return matching file paths."
+        "Search for files by name using \(Product.name) and return matching file paths."
     )
 
     @Parameter(title: "Query")

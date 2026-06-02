@@ -10,9 +10,9 @@ import OSLog
 /// to signal each other without direct references.
 extension Notification.Name {
     /// Toggle the search panel visibility.
-    static let toggleSearchPanel = Notification.Name("com.nadav.deepfinder.toggleSearchPanel")
+    static let toggleSearchPanel = Notification.Name("\(Product.identifier).toggleSearchPanel")
     /// Show the settings window.
-    static let showSettings = Notification.Name("com.nadav.deepfinder.showSettings")
+    static let showSettings = Notification.Name("\(Product.identifier).showSettings")
 }
 
 // MARK: - DaemonSpawner
@@ -287,7 +287,7 @@ private final class DaemonSpawnerViaIPCClient: DaemonSpawner {
 /// `IPCRequest.configSet` messages and parses the daemon's responses.
 private final class IPCSettingsConfigProvider: SettingsConfigProvider {
     private let ipcClient: IPCClient
-    private let logger = Logger(subsystem: "com.nadav.deepfinder.daemon", category: "settings-ipc")
+    private let logger = Logger(subsystem: Product.daemonSubsystem, category: "settings-ipc")
 
     init(ipcClient: IPCClient) {
         self.ipcClient = ipcClient

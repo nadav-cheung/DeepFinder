@@ -38,7 +38,7 @@ actor IPCServer {
     // MARK: - Logging
 
     /// Structured logger for IPC server events.
-    private let logger = Logger(subsystem: "com.nadav.deepfinder.daemon", category: "ipc")
+    private let logger = Logger(subsystem: Product.daemonSubsystem, category: "ipc")
 
     // MARK: - Properties
 
@@ -94,8 +94,8 @@ actor IPCServer {
         indexStatusProvider: @escaping @Sendable () async -> DaemonIndexStatus = {
             DaemonIndexStatus(state: "unknown", filesIndexed: 0, lastScanDate: nil)
         },
-        maxConnsPerSecond: Int = 10,
-        maxConcurrentClients: Int = 50
+        maxConnsPerSecond: Int = Constants.IPC.maxConnsPerSecond,
+        maxConcurrentClients: Int = Constants.IPC.maxConcurrentClients
     ) {
         self.socketPath = socketPath
         self.coordinator = coordinator
@@ -303,13 +303,13 @@ actor IPCServer {
                 if self.listenFD < 0 { break }
                 // No pending connections — yield and retry
                 if err == EAGAIN || err == EWOULDBLOCK {
-                    try? await Task.sleep(nanoseconds: 1_000_000) // 1ms
+                    try? await Task.sleep(nanoseconds: Constants.IPC.acceptPollIntervalNs)
                     continue
                 }
                 // Other transient errors (e.g. EMFILE when out of file descriptors).
                 // Brief pause prevents busy-looping; persistent errors will eventually
                 // resolve or the server will be stopped via stop().
-                try? await Task.sleep(nanoseconds: 1_000_000)
+                try? await Task.sleep(nanoseconds: Constants.IPC.acceptPollIntervalNs)
                 continue
             }
 
@@ -336,13 +336,13 @@ actor IPCServer {
                     "Rate limit: Rejecting connection on fd \(clientFD) — \(reason ?? "unknown", privacy: .public)")
                 close(clientFD)
                 // Brief back-off to slow down a flooder
-                try? await Task.sleep(nanoseconds: 100_000_000) // 100 ms
+                try? await Task.sleep(nanoseconds: Constants.IPC.acceptBackoffNs)
                 continue
             }
 
             // Prune cancelled tasks so the array does not grow without bound
             clientTasks.removeAll(where: \.isCancelled)
-            if clientTasks.count > 200 {
+            if clientTasks.count > Constants.IPC.maxTaskArraySize {
                 // Safety cap: if >200 tasks remain after pruning cancelled ones,
                 // something is wrong — clear the array to prevent unbounded growth.
                 logger.warning("clientTasks exceeded 200 entries (\(self.clientTasks.count)), forcing prune")
@@ -429,7 +429,7 @@ actor IPCServer {
         // client can otherwise send data one byte at a time to keep the
         // connection open indefinitely, consuming a slot in the concurrent-
         // client limit (default 50) and blocking legitimate clients.
-        var rcvTimeout = timeval(tv_sec: 30, tv_usec: 0)
+        var rcvTimeout = timeval(tv_sec: Constants.IPC.receiveTimeoutSeconds, tv_usec: 0)
         setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO,
                    &rcvTimeout, socklen_t(MemoryLayout<timeval>.size))
 

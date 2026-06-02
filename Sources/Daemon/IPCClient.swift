@@ -184,8 +184,8 @@ actor IPCClient {
     func ensureDaemonRunning(
         pidPath: String = Product.pidPath,
         daemonBinaryPath: String = Product.daemonCommand,
-        timeout: TimeInterval = 10.0,
-        pollInterval: TimeInterval = 0.5,
+        timeout: TimeInterval = Constants.IPC.daemonReadyTimeout,
+        pollInterval: TimeInterval = Constants.IPC.daemonPollInterval,
         maxRetries: Int = 3
     ) async throws {
         let resolvedPidPath = Self.expandTilde(pidPath)
@@ -210,7 +210,7 @@ actor IPCClient {
             case .failure(let err):
                 lastError = err.description
                 if attempt < maxRetries {
-                    try? await Task.sleep(nanoseconds: 1_000_000_000) // 1s between retries
+                    try? await Task.sleep(nanoseconds: Constants.IPC.retryDelayNs)
                     continue
                 }
                 throw IPCClientError.daemonSpawnFailed(lastError ?? "Unknown spawn error")
@@ -256,7 +256,7 @@ actor IPCClient {
 
             lastError = "Daemon did not become ready within \(timeout)s (attempt \(attempt)/\(maxRetries))"
             if attempt < maxRetries {
-                try? await Task.sleep(nanoseconds: 1_000_000_000)
+                try? await Task.sleep(nanoseconds: Constants.IPC.retryDelayNs)
             }
         }
 
@@ -330,6 +330,7 @@ actor IPCClient {
             // 1. Next to the current CLI executable (SPM .build/debug/ or install dir)
             cliDir.map { ($0 as NSString).appendingPathComponent(binaryName) },
             // 2. Standard Homebrew / Unix install location
+            // TODO: Hardcoded path — only works for Homebrew installs. Consider resolving via CLI binary location.
             "/usr/local/bin/\(binaryName)",
         ].compactMap { $0 }
 

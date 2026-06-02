@@ -53,7 +53,7 @@ struct OpenAICompatibleProvider: AIModelProvider, Sendable {
         model: String,
         capabilities: Set<AICapability> = [.textToSearch, .resultSummary, .querySuggestion, .intentAnalysis],
         httpClient: any HTTPClient = URLSessionHTTPClient(),
-        timeout: TimeInterval = 30
+        timeout: TimeInterval = Constants.AI.requestTimeout
     ) {
         self.name = name
         self.endpoint = endpoint
@@ -276,14 +276,14 @@ struct OpenAICompatibleProvider: AIModelProvider, Sendable {
 
     /// System prompt for the search syntax translation feature.
     ///
-    /// Instructs the model to output ONLY valid DeepFinder search syntax with no
+    /// Instructs the model to output ONLY valid \(Product.name) search syntax with no
     /// markdown formatting. Designed to produce parseable, directly-executable output.
     static let searchTranslationSystemPrompt = """
-        You are a search syntax translator for DeepFinder, a macOS file search app.
+        You are a search syntax translator for \(Product.name), a macOS file search app.
 
-        Translate the user's natural language query into DeepFinder search syntax.
+        Translate the user's natural language query into \(Product.name) search syntax.
 
-        DeepFinder search syntax supports:
+        \(Product.name) search syntax supports:
         - Plain text for substring matching (e.g. "report")
         - ext:pdf or ext:pdf;doc;xls for file extension filtering
         - size:>100mb or size:<1kb for size filtering
@@ -309,11 +309,12 @@ typealias DeepSeekProvider = OpenAICompatibleProvider
 
 extension DeepSeekProvider {
     static func deepSeek(apiKey: String, httpClient: any HTTPClient = URLSessionHTTPClient()) -> DeepSeekProvider {
-        DeepSeekProvider(
+        let info = ProviderRegistry.allProviders.first(where: { $0.name == "deepseek" })!
+        return DeepSeekProvider(
             name: "deepseek",
-            endpoint: URL(string: "https://api.deepseek.com/chat/completions")!,
+            endpoint: URL(string: info.defaultEndpoint! + "/chat/completions")!,
             apiKey: apiKey,
-            model: "deepseek-v4-flash",
+            model: info.defaultModel,
             httpClient: httpClient
         )
     }
@@ -324,11 +325,12 @@ typealias QwenProvider = OpenAICompatibleProvider
 
 extension QwenProvider {
     static func qwen(apiKey: String, httpClient: any HTTPClient = URLSessionHTTPClient()) -> QwenProvider {
-        QwenProvider(
+        let info = ProviderRegistry.allProviders.first(where: { $0.name == "qwen" })!
+        return QwenProvider(
             name: "qwen",
-            endpoint: URL(string: "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions")!,
+            endpoint: URL(string: info.defaultEndpoint! + "/chat/completions")!,
             apiKey: apiKey,
-            model: "qwen-plus",
+            model: info.defaultModel,
             httpClient: httpClient
         )
     }

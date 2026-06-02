@@ -27,10 +27,10 @@ struct DaemonConfig: Codable, Sendable, Equatable {
 
     /// Default configuration values used when the config file is missing or corrupted.
     static let defaults = DaemonConfig(
-        excludedPaths: ["/System", "/Library"],
+        excludedPaths: Constants.Scan.alwaysExcludedPrefixes,
         excludedVolumes: [],
-        indexBatchSize: 100,
-        maxResults: 1000,
+        indexBatchSize: Constants.Daemon.indexBatchSize,
+        maxResults: Constants.Daemon.maxResults,
         configVersion: 1
     )
 }
@@ -175,7 +175,7 @@ actor ConfigStore {
         try data.write(to: tmpURL, options: .atomic)
 
         // Set permissions before rename
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tmpURL.path)
+        try FileManager.default.setAttributes([.posixPermissions: Product.privateFilePermissions], ofItemAtPath: tmpURL.path)
 
         // Atomic rename: remove existing file first (moveItem refuses to overwrite)
         if FileManager.default.fileExists(atPath: url.path) {

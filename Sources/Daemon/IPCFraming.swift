@@ -85,7 +85,7 @@ enum IPCFramingIO {
     static func readFramedMessage(
         from fd: Int32,
         maxMessageSize: Int = defaultMaxMessageSize,
-        timeoutSeconds: Int = 30
+        timeoutSeconds: Int = Constants.IPC.receiveTimeoutSeconds
     ) throws -> Data {
         // Read 4-byte header
         var header = Data(capacity: 4)

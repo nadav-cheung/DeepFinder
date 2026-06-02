@@ -41,19 +41,9 @@ struct ScanConfiguration: Sendable {
     var followSymlinks: Bool
 
     init(
-        skipPaths: Set<String> = [
-            "/.git",
-            "/node_modules",
-            "/.Trash",
-            "/.Spotlight-V100",
-            "/System",
-            "/Library",
-        ],
-        privacySkipPaths: Set<String> = [
-            "/Library/Caches",
-            "/Library/Cookies",
-            "/Library/Keychains",
-        ],
+        skipPaths: Set<String> = Set(Constants.Scan.alwaysSkippedNames.map { "/" + $0 })
+            .union(Constants.Scan.alwaysExcludedPrefixes),
+        privacySkipPaths: Set<String> = Constants.Scan.alwaysExcludedPaths,
         maxDepth: Int? = nil,
         followSymlinks: Bool = false
     ) {

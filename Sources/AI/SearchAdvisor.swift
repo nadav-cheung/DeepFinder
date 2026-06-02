@@ -42,7 +42,7 @@ struct SearchAdvisor: Sendable {
 
         let prompt = """
             Given the search query "\(query)" and results (\(resultDesc)), \
-            suggest ONE refined search query in DeepFinder syntax. \
+            suggest ONE refined search query in \(Product.name) syntax. \
             Output ONLY the suggested search syntax, nothing else. \
             No explanations, no markdown.
             """

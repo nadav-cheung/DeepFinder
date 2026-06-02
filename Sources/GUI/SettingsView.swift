@@ -131,7 +131,7 @@ final class SettingsViewModel {
 
     // MARK: - Logging
 
-    private let logger = Logger(subsystem: "com.nadav.deepfinder.daemon", category: "settings")
+    private let logger = Logger(subsystem: Product.daemonSubsystem, category: "settings")
 
     // MARK: - State
 

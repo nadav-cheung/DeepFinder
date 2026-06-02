@@ -21,7 +21,7 @@ struct ResultSummarizer: Sendable {
 
     /// Cache expiration interval (5 minutes).
     /// Prevents redundant API calls for repeated queries within a short session.
-    static let cacheTTL: TimeInterval = 300
+    static let cacheTTL: TimeInterval = Constants.AI.summarizerCacheTTL
 
     /// Thread-safe, bounded cache. See `ManagedCache` below for implementation details.
     private let cache: ManagedCache

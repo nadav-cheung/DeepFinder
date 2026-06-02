@@ -27,7 +27,7 @@ struct CLIOptions: Sendable, Equatable {
     /// Enable HTTP serve mode (--serve).
     var serveMode: Bool = false
     /// Port for HTTP serve mode (--port). Default 7654.
-    var port: Int = 7654
+    var port: Int = Product.defaultHTTPPort
     /// Subcommand for v0.7+ (e.g. "daemon", "config").
     var subcommand: String?
 }
@@ -172,7 +172,7 @@ struct ArgParser {
           deepfinder <subcommand> [options]
 
         DESCRIPTION
-          DeepFinder — instant file search for macOS.
+          \(Product.name) — instant file search for macOS.
 
           When invoked with a query, performs a single search and exits.
           When invoked without a query, enters interactive REPL mode.

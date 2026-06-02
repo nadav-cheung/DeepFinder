@@ -21,7 +21,7 @@ enum SearchURL: Sendable, Equatable {
     /// - Returns: A ``SearchURL`` value, or `nil` for invalid/unrecognized URLs.
     static func parse(_ url: URL) -> SearchURL? {
         // Must have the correct scheme and host.
-        guard url.scheme == "deepfinder", url.host == "search" else {
+        guard url.scheme == Product.urlScheme, url.host == "search" else {
             return nil
         }
 

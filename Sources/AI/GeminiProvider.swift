@@ -24,11 +24,16 @@ struct GeminiProvider: AIModelProvider, Sendable {
     private let httpClient: any HTTPClient
     let endpoint: URL
 
+    private static let maxOutputTokens = 1024
+
     init(apiKey: String, model: String, httpClient: any HTTPClient = URLSessionHTTPClient()) {
         self.apiKey = apiKey
         self.model = model
         self.httpClient = httpClient
-        self.endpoint = URL(string: "https://generativelanguage.googleapis.com/v1beta/models/\(model):streamGenerateContent?alt=sse")!
+        let baseURL = ProviderRegistry.allProviders
+            .first(where: { $0.name == "gemini" })?.defaultEndpoint
+            ?? "https://generativelanguage.googleapis.com/v1beta"
+        self.endpoint = URL(string: "\(baseURL)/models/\(model):streamGenerateContent?alt=sse")!
     }
 
     // MARK: - complete()
@@ -91,7 +96,7 @@ struct GeminiProvider: AIModelProvider, Sendable {
         }
         let body: [String: Any] = [
             "contents": [["role": "user", "parts": parts]],
-            "generationConfig": ["maxOutputTokens": 1024],
+            "generationConfig": ["maxOutputTokens": Self.maxOutputTokens],
         ]
         return try JSONSerialization.data(withJSONObject: body)
     }
@@ -126,7 +131,7 @@ struct GeminiProvider: AIModelProvider, Sendable {
     }
 
     private static let searchTranslationPrompt = """
-    Translate the following natural language query into DeepFinder search syntax.
+    Translate the following natural language query into \(Product.name) search syntax.
     Query: {{query}}
     Return ONLY the search syntax, no explanation.
     """

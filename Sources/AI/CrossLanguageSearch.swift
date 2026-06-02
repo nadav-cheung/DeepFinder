@@ -104,7 +104,7 @@ private final class ManagedTermCache: @unchecked Sendable {
     private var store: [String: (value: [String], timestamp: Date)] = [:]
 
     /// TTL for cached entries (1 hour).
-    private static let ttl: TimeInterval = 3600
+    private static let ttl: TimeInterval = Constants.AI.crossLanguageCacheTTL
 
     /// Maximum entries before triggering proactive eviction.
     private static let maxEntries = 100

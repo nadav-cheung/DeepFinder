@@ -78,4 +78,45 @@ enum Product {
 
     /// Author name for packaging and documentation.
     static let author = "Nadav"
+
+    // MARK: - Identifiers
+
+    /// URL scheme for deep links (e.g., deepfinder://search?q=...).
+    static let urlScheme = "deepfinder"
+
+    /// Default HTTP API port for --serve mode.
+    static let defaultHTTPPort = 7654
+
+    /// Carbon event handler signature for global hotkey registration.
+    static let hotkeySignature = "DfHk"
+
+    // MARK: - Subsystem Helpers
+
+    /// Base subsystem for OSLog loggers.
+    static let loggingSubsystem = identifier
+
+    /// Daemon subsystem for OSLog loggers.
+    static let daemonSubsystem = "\(identifier).daemon"
+
+    /// AI subsystem for OSLog loggers.
+    static let aiSubsystem = "\(identifier).ai"
+
+    // MARK: - File Permissions
+
+    /// Standard file permissions for sensitive files (owner read/write only).
+    static let privateFilePermissions: Int = 0o600
+
+    /// Standard directory permissions for private directories.
+    static let privateDirPermissions: Int = 0o700
+
+    /// PID file permissions (owner read/write, readable by system).
+    static let pidFilePermissions: Int = 0o644
+
+    // MARK: - Date Formats
+
+    /// ISO date format used for search date filters.
+    static let isoDateFormat = "yyyy-MM-dd"
+
+    /// EXIF date format used in image metadata.
+    static let exifDateFormat = "yyyy:MM:dd HH:mm:ss"
 }

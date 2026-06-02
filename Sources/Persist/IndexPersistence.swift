@@ -118,10 +118,10 @@ actor IndexPersistence {
     // MARK: - Logging
 
     /// Structured logger for persistence operations.
-    private let logger = Logger(subsystem: "com.nadav.deepfinder.daemon", category: "persist")
+    private let logger = Logger(subsystem: Product.daemonSubsystem, category: "persist")
 
     /// Static logger for use in static methods that have no instance access.
-    private static let staticLogger = Logger(subsystem: "com.nadav.deepfinder.daemon", category: "persist")
+    private static let staticLogger = Logger(subsystem: Product.daemonSubsystem, category: "persist")
 
     // MARK: - State
 
@@ -198,7 +198,7 @@ actor IndexPersistence {
         // Set file permissions for on-disk databases
         if let path = _dbPath {
             try FileManager.default.setAttributes(
-                [.posixPermissions: 0o600],
+                [.posixPermissions: Product.privateFilePermissions],
                 ofItemAtPath: path
             )
         }

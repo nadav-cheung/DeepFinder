@@ -39,7 +39,7 @@ struct SecretsStore: Sendable {
     /// Path to the JSON secrets file on disk.
     let filePath: String
 
-    private static let logger = Logger(subsystem: "com.nadav.deepfinder", category: "secrets")
+    private static let logger = Logger(subsystem: Product.loggingSubsystem, category: "secrets")
 
     init(filePath: String = Product.secretsPath) {
         self.filePath = NSString(string: filePath).expandingTildeInPath
@@ -105,7 +105,7 @@ struct SecretsStore: Sendable {
         try data.write(to: tmpURL, options: .atomic)
 
         // Set permissions before rename
-        try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tmpURL.path)
+        try FileManager.default.setAttributes([.posixPermissions: Product.privateFilePermissions], ofItemAtPath: tmpURL.path)
 
         // Atomic rename: remove existing file first (moveItem refuses to overwrite)
         if FileManager.default.fileExists(atPath: url.path) {

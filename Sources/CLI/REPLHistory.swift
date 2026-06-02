@@ -29,7 +29,7 @@ actor REPLHistory {
     /// - Parameters:
     ///   - filePath: Absolute path to the history file.
     ///   - maxEntries: Maximum entries to retain. Defaults to 1000.
-    init(filePath: String, maxEntries: Int = 1000) {
+    init(filePath: String, maxEntries: Int = Constants.REPL.maxHistoryEntries) {
         self.filePath = filePath
         self.maxEntries = maxEntries
     }
@@ -93,7 +93,7 @@ actor REPLHistory {
 
         // Set permissions to owner-only
         try FileManager.default.setAttributes(
-            [.posixPermissions: 0o600],
+            [.posixPermissions: Product.privateFilePermissions],
             ofItemAtPath: filePath
         )
     }

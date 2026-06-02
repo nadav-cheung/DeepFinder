@@ -86,7 +86,7 @@ actor HTTPSearchService {
     // MARK: - Init
 
     init(
-        port: UInt16 = 7654,
+        port: UInt16 = UInt16(Product.defaultHTTPPort),
         searchHandler: @escaping SearchHandler,
         statsHandler: @escaping StatsHandler
     ) {
@@ -142,7 +142,7 @@ actor HTTPSearchService {
                     }
                     buffer.append(data)
                     // Guard against unbounded buffer growth from misbehaving clients
-                    let maxHeaderSize = 1_048_576 // 1 MB
+                    let maxHeaderSize = Constants.HTTP.maxHeaderSize
                     if buffer.count > maxHeaderSize {
                         connection.cancel()
                         return
@@ -173,7 +173,7 @@ actor HTTPSearchService {
         let tokenDir = (tokenPath as NSString).deletingLastPathComponent
         try? FileManager.default.createDirectory(atPath: tokenDir, withIntermediateDirectories: true)
         try? authToken.write(toFile: tokenPath, atomically: true, encoding: .utf8)
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: tokenPath)
+        try? FileManager.default.setAttributes([.posixPermissions: Product.privateFilePermissions], ofItemAtPath: tokenPath)
 
         // Wait for the listener to become ready (or fail)
         for await _ in readyContinuation.stream {
@@ -253,7 +253,7 @@ enum HTTPRouter {
 
         case "/search":
             let query = request.queryParams["q"] ?? ""
-            let limit = Int(request.queryParams["limit"] ?? "100") ?? 100
+            let limit = Int(request.queryParams["limit"] ?? "100") ?? Constants.HTTP.defaultSearchLimit
             let offset = Int(request.queryParams["offset"] ?? "0") ?? 0
             let responseDict: [String: Any] = [
                 "query": query,
@@ -315,7 +315,7 @@ enum HTTPRouter {
         switch request.path {
         case "/search":
             let query = request.queryParams["q"] ?? ""
-            let limit = Int(request.queryParams["limit"] ?? "100") ?? 100
+            let limit = Int(request.queryParams["limit"] ?? "100") ?? Constants.HTTP.defaultSearchLimit
             let offset = Int(request.queryParams["offset"] ?? "0") ?? 0
             Task {
                 let results = await searchHandler(query, limit, offset)

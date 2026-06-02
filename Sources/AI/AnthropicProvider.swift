@@ -20,12 +20,18 @@ struct AnthropicProvider: AIModelProvider, Sendable {
     private let apiKey: String
     private let model: String
     private let httpClient: any HTTPClient
-    private let endpoint = URL(string: "https://api.anthropic.com/v1/messages")!
+    private let endpoint: URL
+
+    private static let maxOutputTokens = 1024
 
     init(apiKey: String, model: String, httpClient: any HTTPClient = URLSessionHTTPClient()) {
         self.apiKey = apiKey
         self.model = model
         self.httpClient = httpClient
+        let baseURL = ProviderRegistry.allProviders
+            .first(where: { $0.name == "anthropic" })?.defaultEndpoint
+            ?? "https://api.anthropic.com/v1"
+        self.endpoint = URL(string: baseURL + "/messages")!
     }
 
     // MARK: - complete()
@@ -90,7 +96,7 @@ struct AnthropicProvider: AIModelProvider, Sendable {
 
         var body: [String: Any] = [
             "model": model,
-            "max_tokens": 1024,
+            "max_tokens": Self.maxOutputTokens,
             "messages": messages,
             "stream": true,
         ]
@@ -137,11 +143,11 @@ struct AnthropicProvider: AIModelProvider, Sendable {
     /// Uses `{{query}}` placeholder for the natural language input.
     /// Instructs Claude to output ONLY the search syntax with no explanation.
     private static let searchTranslationPrompt = """
-        You are a search syntax translator for DeepFinder, a macOS file search app.
+        You are a search syntax translator for \(Product.name), a macOS file search app.
 
-        Translate the user's natural language query into DeepFinder search syntax.
+        Translate the user's natural language query into \(Product.name) search syntax.
 
-        DeepFinder search syntax supports:
+        \(Product.name) search syntax supports:
         - Plain text for substring matching (e.g. "report")
         - ext:pdf or ext:pdf;doc;xls for file extension filtering
         - size:>100mb or size:<1kb for size filtering
