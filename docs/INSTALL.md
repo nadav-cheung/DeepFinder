@@ -208,7 +208,7 @@ The GUI requires **Accessibility** permission for the global hotkey:
 
 **Symptom:** `deepfinder daemon status` shows `error` or `Connection refused`.
 
-**Cause (1): Stale socket file.** If the daemon crashed without cleanup, the stale socket file at `~/.deep-finder/ipc.sock` blocks startup.
+**Cause (1): Stale socket file.** If the daemon crashed without cleanup, the stale socket file at `~/.deep-finder/session/ipc.sock` blocks startup.
 
 **Fix:**
 
@@ -217,7 +217,7 @@ The GUI requires **Accessibility** permission for the global hotkey:
 ps aux | grep deepfinder-daemon
 
 # If not running, remove the stale socket
-rm ~/.deep-finder/ipc.sock
+rm ~/.deep-finder/session/ipc.sock
 
 # Start the daemon again
 deepfinder daemon start
@@ -229,11 +229,11 @@ deepfinder daemon start
 
 ```bash
 # Check what is using the socket
-lsof ~/.deep-finder/ipc.sock
+lsof ~/.deep-finder/session/ipc.sock
 
 # If it is a stale/zombie process, kill it
 kill -9 <PID>
-rm ~/.deep-finder/ipc.sock
+rm ~/.deep-finder/session/ipc.sock
 deepfinder daemon start
 ```
 
@@ -266,7 +266,7 @@ Common crash causes:
 ```bash
 # Remove the corrupted index and rebuild
 deepfinder daemon stop
-rm ~/.deep-finder/index.db
+rm ~/.deep-finder/cache/index.db
 deepfinder daemon start
 # Daemon will perform a full re-index (may take several minutes)
 ```
@@ -419,12 +419,12 @@ All DeepFinder runtime data lives under `~/.deep-finder/`:
 
 | Path | Purpose | Safe to Delete? |
 |------|---------|-----------------|
-| `~/.deep-finder/index.db` | SQLite WAL database (FileRecord storage) | Yes -- triggers full re-index |
-| `~/.deep-finder/index.db-wal` | SQLite write-ahead log | Deleted with index.db |
-| `~/.deep-finder/index.db-shm` | SQLite shared memory | Deleted with index.db |
-| `~/.deep-finder/config.json` | User configuration | Yes -- reverts to defaults |
-| `~/.deep-finder/ipc.sock` | Unix domain socket (daemon running) | Only when daemon is stopped |
-| `~/.deep-finder/daemon.pid` | Daemon PID file | Only when daemon is stopped |
+| `~/.deep-finder/cache/index.db` | SQLite WAL database (FileRecord storage) | Yes -- triggers full re-index |
+| `~/.deep-finder/cache/index.db-wal` | SQLite write-ahead log | Deleted with index.db |
+| `~/.deep-finder/cache/index.db-shm` | SQLite shared memory | Deleted with index.db |
+| `~/.deep-finder/settings.json` | User configuration | Yes -- reverts to defaults |
+| `~/.deep-finder/session/ipc.sock` | Unix domain socket (daemon running) | Only when daemon is stopped |
+| `~/.deep-finder/session/daemon.pid` | Daemon PID file | Only when daemon is stopped |
 | `~/.deep-finder/history` | REPL command history | Yes -- search history lost |
 | `~/.deep-finder/log/` | Daemon runtime logs | Yes -- old logs only |
 

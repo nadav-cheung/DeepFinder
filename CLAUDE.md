@@ -118,7 +118,7 @@ When subagents (Agent tool, Workflow agents) encounter API rate limits (HTTP 429
 - **Full Disk Access**: FSEvents can't monitor all directories without Full Disk Access. Without it, ~/Documents, ~/Desktop, ~/Downloads silently skipped.
 - **Not sandboxable**: Needs Full Disk Access. Cannot go on Mac App Store. Distributed via GitHub Releases + Homebrew formula.
 - **Daemon lifecycle**: CLI auto-starts daemon on first query. LaunchAgent optional for auto-start on login. Daemon crash = CLI reconnects after restart.
-- **Socket cleanup**: If daemon crashes without cleanup, stale socket file at `~/.deep-finder/ipc.sock` must be removed before restart. PID file check handles this.
+- **Socket cleanup**: If daemon crashes without cleanup, stale socket file at `~/.deep-finder/session/ipc.sock` must be removed before restart. PID file check handles this.
 - **v2.0 GUI notes**: LSUIElement menu bar app, global hotkey (⌃⌘K) requires Accessibility permission, no Dock icon — debug via Xcode attach-to-process.
 
 ## Directory Structure
@@ -175,7 +175,7 @@ Index layer has zero UI/CLI dependencies and can be tested in isolation.
 
 **Key design decisions:**
 - **Daemon + thin CLI (Everything model)**: Background daemon holds full in-memory index. CLI is a ~1ms thin client connecting via Unix socket. Sub-millisecond query latency because indexing is done once at startup.
-- **IPC protocol**: Unix domain socket at `~/.deep-finder/ipc.sock`, 4-byte length prefix + JSON body. Codable-native. Debuggable via `nc -U`.
+- **IPC protocol**: Unix domain socket at `~/.deep-finder/session/ipc.sock`, 4-byte length prefix + JSON body. Codable-native. Debuggable via `nc -U`.
 - **CLI modes**: Single-shot (`deepfinder "query"`) and interactive REPL (`deepfinder` with no args). Manual `CommandLine.arguments` parsing (zero external deps).
 - **REPL**: Darwin.readline (libedit) for prompt, history, tab-completion. Commands: :help, :quit, :stats, :config, :daemon, :open N, :reveal N.
 - **Terminal output**: ANSI escape codes, `isatty()` auto-disables colors when piped. --json and --0 for scripting.
@@ -186,7 +186,7 @@ Index layer has zero UI/CLI dependencies and can be tested in isolation.
   - TrigramIndex: trigram → posting list for names >64 chars (rare fallback)
   - PinyinIndex: CFStringTokenizer → pinyin tokens in a Trie for Chinese filename search
 - **Unicode**: All filenames NFC-normalized on ingestion (`precomposedStringWithCanonicalMapping`). Queries normalized the same way.
-- **Persistence**: SQLite WAL at `~/.deep-finder/index.db` (permissions 600). Stores FileRecord[], rebuilds index structures in memory on startup (<1s on M4). Batch writes every 5s or 100 changes.
+- **Persistence**: SQLite WAL at `~/.deep-finder/cache/index.db` (permissions 600). Stores FileRecord[], rebuilds index structures in memory on startup (<1s on M4). Batch writes every 5s or 100 changes.
 - **FSEvents**: Abstracted behind `FileSystemEventStream` protocol. Production wraps FSEventStreamCreate, tests use MockEventStream.
 - **Index state machine**: stale → verifying → live. CLI displays state via `:stats` command.
 
@@ -196,7 +196,7 @@ Index layer has zero UI/CLI dependencies and can be tested in isolation.
 
 **Exit codes**: 0=success, 1=no results, 2=daemon error, 3=query error.
 
-**Daemon lifecycle**: LaunchAgent (launchd plist in ~/Library/LaunchAgents/). Auto-started by CLI if not running. PID file at `~/.deep-finder/daemon.pid`. SIGTERM handler: flush SQLite + save FSEvents cursor + remove socket + exit.
+**Daemon lifecycle**: LaunchAgent (launchd plist in ~/Library/LaunchAgents/). Auto-started by CLI if not running. PID file at `~/.deep-finder/session/daemon.pid`. SIGTERM handler: flush SQLite + save FSEvents cursor + remove socket + exit.
 
 ## Team
 

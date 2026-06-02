@@ -420,8 +420,8 @@ Index: (无性能基准), FS: FSEventStreamImpl, Search: AutocompleteProvider, C
 
 | 严重度 | 风险 | 详情 | 修复 |
 |--------|------|------|------|
-| **Critical** | IPC 零认证 | 任何同用户进程可连接 `~/.deep-finder/ipc.sock` 发送任意查询/config修改/资源耗尽 payload | 实现 LOCAL_PEERCRED (getsockopt) 验证连接进程身份 |
-| **High** | 索引数据库明文 | ~/.deep-finder/index.db 包含用户全部文件路径，WAL/SHM 文件也是明文 | SQLCipher 加密或 sqlite3_key + Keychain 密钥 |
+| **Critical** | IPC 零认证 | 任何同用户进程可连接 `~/.deep-finder/session/ipc.sock` 发送任意查询/config修改/资源耗尽 payload | 实现 LOCAL_PEERCRED (getsockopt) 验证连接进程身份 |
+| **High** | 索引数据库明文 | ~/.deep-finder/cache/index.db 包含用户全部文件路径，WAL/SHM 文件也是明文 | SQLCipher 加密或 sqlite3_key + Keychain 密钥 |
 | **High** | 信号处理器延迟安装 | SIGTERM/SIGINT handler 在 daemon live 之后才安装，启动窗口内信号导致无清理残留 | 将 installSignalHandlers() 移至 run() 最开头 |
 | **High** | API Key 明文内存 | DeepSeekProvider/QwenProvider 持有 apiKey: String，可能被 core dump 提取 | Keychain 即用即取，ephemeral URLSession |
 | **Medium** | PID 文件 TOCTOU | check-then-write 检查已有 daemon 后写 PID 的竞争条件 | 使用 O_EXCL\|O_CREAT + flock 原子创建 |

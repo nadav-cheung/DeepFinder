@@ -1,6 +1,9 @@
 // Sources/AI/LocalVisionProvider.swift
 import Foundation
 import Vision
+import OSLog
+
+private let logger = Logger(subsystem: Product.aiSubsystem, category: "local-vision")
 
 /// Analyzes image files locally using the Vision framework to produce
 /// text labels (scene/object tags) suitable for indexing.
@@ -44,6 +47,7 @@ struct LocalVisionProvider: Sendable {
         do {
             handler = try VNImageRequestHandler(url: url, options: [:])
         } catch {
+            logger.debug("Vision handler creation failed for \(url.lastPathComponent): \(error)")
             return nil
         }
 
@@ -53,6 +57,7 @@ struct LocalVisionProvider: Sendable {
         do {
             try handler.perform([request])
         } catch {
+            logger.debug("Vision classification failed for \(url.lastPathComponent): \(error)")
             return nil
         }
 

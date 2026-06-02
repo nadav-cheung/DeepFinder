@@ -391,8 +391,8 @@ deepfinder daemon status     # Show PID, uptime, index state, file count, memory
 ### Lifecycle
 
 - **Auto-start**: When you run `deepfinder "query"` and the daemon is not running, it starts automatically.
-- **PID file**: `~/.deep-finder/daemon.pid` -- tracks the running process.
-- **Socket**: `~/.deep-finder/ipc.sock` -- Unix domain socket for IPC.
+- **PID file**: `~/.deep-finder/session/daemon.pid` -- tracks the running process.
+- **Socket**: `~/.deep-finder/session/ipc.sock` -- Unix domain socket for IPC.
 - **Shutdown**: `daemon stop` sends SIGTERM. The daemon flushes the SQLite index and removes the socket before exiting. If it does not exit within 5 seconds, use `kill -9 <PID>`.
 - **Crash recovery**: Stale PID and socket files are cleaned up on the next `daemon start`.
 
@@ -409,7 +409,7 @@ deepfinder uninstall         # Remove the LaunchAgent plist
 
 ## Configuration
 
-Configuration is stored as JSON at `~/.deep-finder/config.json` (permissions 600, owner-only). Manage it via the `config` subcommand.
+Configuration is stored as JSON at `~/.deep-finder/settings.json` (permissions 600, owner-only). Manage it via the `config` subcommand.
 
 ### Commands
 
@@ -852,10 +852,10 @@ curl -s "http://localhost:7654/search?q=dm:today%20ext:log&limit=50" | jq '.resu
 | Path | Purpose |
 |------|---------|
 | `~/.deep-finder/` | Config and data directory |
-| `~/.deep-finder/config.json` | Daemon configuration (600 permissions) |
-| `~/.deep-finder/daemon.pid` | Running daemon PID |
-| `~/.deep-finder/ipc.sock` | Unix domain socket for IPC |
-| `~/.deep-finder/index.db` | SQLite WAL index database (600 permissions) |
+| `~/.deep-finder/settings.json` | Daemon configuration (600 permissions) |
+| `~/.deep-finder/session/daemon.pid` | Running daemon PID |
+| `~/.deep-finder/session/ipc.sock` | Unix domain socket for IPC |
+| `~/.deep-finder/cache/index.db` | SQLite WAL index database (600 permissions) |
 | `~/.deep-finder/history` | REPL command history |
 | `~/Library/LaunchAgents/com.nadav.deepfinder.plist` | LaunchAgent plist |
 

@@ -1,5 +1,8 @@
 @preconcurrency import Foundation
 @preconcurrency import NaturalLanguage
+import OSLog
+
+private let logger = Logger(subsystem: Product.aiSubsystem, category: "nl-embedding")
 
 /// On-device embedding provider using NLContextualEmbedding (NaturalLanguage framework).
 ///
@@ -23,13 +26,23 @@ struct NLEmbeddingProvider: EmbeddingProvider, Sendable {
     /// NLContextualEmbedding is @unchecked Sendable and safe for concurrent reads.
     private static let sharedLatin: NLContextualEmbedding? = {
         guard let emb = NLContextualEmbedding(script: .latin) else { return nil }
-        try? emb.load()
+        do {
+            try emb.load()
+        } catch {
+            logger.error("Failed to load latin model: \(error)")
+            return nil
+        }
         return emb
     }()
 
     private static let sharedCJK: NLContextualEmbedding? = {
         guard let emb = NLContextualEmbedding(script: .simplifiedChinese) else { return nil }
-        try? emb.load()
+        do {
+            try emb.load()
+        } catch {
+            logger.error("Failed to load simplifiedChinese model: \(error)")
+            return nil
+        }
         return emb
     }()
 
@@ -106,7 +119,11 @@ struct NLEmbeddingProvider: EmbeddingProvider, Sendable {
         using embedding: NLContextualEmbedding?
     ) -> [Float]? {
         guard let embedding else { return nil }
-        guard let result = try? embedding.embeddingResult(for: text, language: nil) else {
+        let result: NLContextualEmbeddingResult
+        do {
+            result = try embedding.embeddingResult(for: text, language: nil)
+        } catch {
+            logger.warning("Embedding failed for '\(text.prefix(20))': \(error)")
             return nil
         }
 

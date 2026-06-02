@@ -38,7 +38,7 @@
 | NFC 统一化 | 所有文件名 NFC 统一化，避免 Unicode 比较问题 |
 | 持久化索引 | SQLite WAL，启动重建 <5s |
 | Daemon 管理 | daemon start/stop/restart/install（LaunchAgent） |
-| 配置管理 | config get/set/list（~/.deep-finder/config.json） |
+| 配置管理 | config get/set/list（~/.deep-finder/settings.json） |
 | Homebrew | formula 分发（not cask，因为是 CLI 工具） |
 | Man page + completions | bash/zsh/fish shell completions |
 
@@ -257,7 +257,7 @@ v3.1 及后续版本的 AI 技术栈演进路线见独立设计文档：
 │                   IPCClient                                  │
 │             (Unix Domain Socket)                             │
 └──────────────────────┬──────────────────────────────────────┘
-                       │ ~/.deep-finder/ipc.sock
+                       │ ~/.deep-finder/session/ipc.sock
 ┌──────────────────────▼──────────────────────────────────────┐
 │                  Daemon Process (deepfinder-daemon)          │
 │                                                              │
@@ -295,8 +295,8 @@ v3.1 及后续版本的 AI 技术栈演进路线见独立设计文档：
 │  │  IndexPersistence (SQLite WAL)                        │   │
 │  └──────────────────────────────────────────────────────┘   │
 │                                                              │
-│  PID file: ~/.deep-finder/daemon.pid                        │
-│  Socket: ~/.deep-finder/ipc.sock                            │
+│  PID file: ~/.deep-finder/session/daemon.pid                        │
+│  Socket: ~/.deep-finder/session/ipc.sock                            │
 │  Signal: SIGTERM/SIGINT → graceful shutdown                 │
 └──────────────────────────────────────────────────────────────┘
 ```
@@ -498,12 +498,15 @@ final class MockEventStream: FileSystemEventStream { ... }
 
 ```
 ~/.deep-finder/
-├── index.db          # SQLite WAL 模式
-├── config.json       # 用户配置
-├── ipc.sock          # Unix domain socket (daemon 运行时)
-├── daemon.pid        # PID 文件
+├── settings.json     # 用户配置
 ├── history           # REPL 历史记录
-└── log/              # 运行日志
+├── log/              # 运行日志
+├── cache/
+│   └── index.db      # SQLite WAL 模式
+└── session/
+    ├── ipc.sock      # Unix domain socket (daemon 运行时)
+    ├── daemon.pid    # PID 文件
+    └── http-token    # HTTP API 认证令牌
 ```
 
 **权限**：目录 700，文件 600。
@@ -637,12 +640,12 @@ plain actor（NOT @MainActor）。daemon 进程无 UI 上下文。v2.0 GUI clien
 **入口**：`DaemonMain.swift`
 
 **启动序列：**
-1. 加载 `~/.deep-finder/config.json`（不存在则用默认配置）
+1. 加载 `~/.deep-finder/settings.json`（不存在则用默认配置）
 2. 加载 SQLite FileRecord[]，重建 InMemoryIndex
 3. 启动 FSEventWatcher + 后台验证
 4. 清理旧 socket 文件（unlink），创建 Unix domain socket
 5. 绑定 socket → 开始监听
-6. 写 PID 到 `~/.deep-finder/daemon.pid`
+6. 写 PID 到 `~/.deep-finder/session/daemon.pid`
 7. 注册 SIGTERM/SIGINT 处理
 8. 进入 DispatchMain() 运行循环
 
@@ -686,7 +689,7 @@ plain actor（NOT @MainActor）。daemon 进程无 UI 上下文。v2.0 GUI clien
 
 ### 4.2 IPC 协议
 
-**传输层**：Unix domain socket at `~/.deep-finder/ipc.sock`
+**传输层**：Unix domain socket at `~/.deep-finder/session/ipc.sock`
 
 **帧格式**：4-byte big-endian UInt32 长度前缀 + UTF-8 JSON body
 

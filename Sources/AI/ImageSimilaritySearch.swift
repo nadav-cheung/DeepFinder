@@ -1,6 +1,9 @@
 // Sources/AI/ImageSimilaritySearch.swift
 import Foundation
 import Vision
+import OSLog
+
+private let logger = Logger(subsystem: Product.aiSubsystem, category: "image-similarity")
 
 /// A feature vector extracted from an image by the Vision framework.
 ///
@@ -57,6 +60,7 @@ struct ImageSimilaritySearch: Sendable {
         do {
             handler = try VNImageRequestHandler(url: url, options: [:])
         } catch {
+            logger.debug("Vision handler creation failed for \(url.lastPathComponent): \(error)")
             return nil
         }
 
@@ -65,6 +69,7 @@ struct ImageSimilaritySearch: Sendable {
         do {
             try handler.perform([request])
         } catch {
+            logger.debug("Vision feature print failed for \(url.lastPathComponent): \(error)")
             return nil
         }
 

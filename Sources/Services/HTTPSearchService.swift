@@ -23,6 +23,9 @@
 /// must be supplied as a `token` query parameter or `Authorization: Bearer` header.
 import Foundation
 import Network
+import OSLog
+
+private let logger = Logger(subsystem: Product.daemonSubsystem, category: "http")
 
 // MARK: - HTTPSearchService
 
@@ -69,7 +72,7 @@ actor HTTPSearchService {
 
     /// Random auth token generated on each start. Clients must supply this
     /// as a `token` query parameter or `Authorization: Bearer <token>` header.
-    /// The token is also written to `~/.deep-finder/http-token` so local
+    /// The token is also written to `~/.deep-finder/session/http-token` so local
     /// trusted clients can read it from disk.
     let authToken: String = UUID().uuidString
 
@@ -113,10 +116,10 @@ actor HTTPSearchService {
             case .ready:
                 readyContinuation.continuation.yield()
             case .failed(let error):
-                print("[HTTPSearchService] Listener failed: \(error)")
+                logger.error("Listener failed: \(error)")
                 readyContinuation.continuation.yield()
             case .waiting(let error):
-                print("[HTTPSearchService] Listener waiting: \(error)")
+                logger.warning("Listener waiting: \(error)")
             default:
                 break
             }
@@ -171,9 +174,24 @@ actor HTTPSearchService {
         // Write auth token to file so local trusted clients can read it
         let tokenPath = NSString(string: Product.httpTokenPath).expandingTildeInPath
         let tokenDir = (tokenPath as NSString).deletingLastPathComponent
-        try? FileManager.default.createDirectory(atPath: tokenDir, withIntermediateDirectories: true)
-        try? authToken.write(toFile: tokenPath, atomically: true, encoding: .utf8)
-        try? FileManager.default.setAttributes([.posixPermissions: Product.privateFilePermissions], ofItemAtPath: tokenPath)
+        do {
+            try FileManager.default.createDirectory(atPath: tokenDir, withIntermediateDirectories: true)
+        } catch {
+            logger.error("Failed to create token directory: \(error)")
+            throw error
+        }
+        do {
+            try authToken.write(toFile: tokenPath, atomically: true, encoding: .utf8)
+        } catch {
+            logger.error("Failed to write auth token: \(error)")
+            throw error
+        }
+        do {
+            try FileManager.default.setAttributes([.posixPermissions: Product.privateFilePermissions], ofItemAtPath: tokenPath)
+        } catch {
+            logger.error("Failed to set token file permissions: \(error)")
+            throw error
+        }
 
         // Wait for the listener to become ready (or fail)
         for await _ in readyContinuation.stream {
