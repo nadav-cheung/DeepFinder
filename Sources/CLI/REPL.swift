@@ -148,7 +148,8 @@ actor REPL {
     private func handleInput(_ input: String) async -> Bool {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
-            return true  // Ignore empty input
+            showSuggestions()  // REQ-1.3-07: empty input shows recent searches + syntax tips
+            return true
         }
 
         let (command, args, isQuery) = REPLCommand.parse(trimmed)
@@ -167,11 +168,38 @@ actor REPL {
         return true
     }
 
+    // MARK: - Suggestions (REQ-1.3-07)
+
+    /// Display recent searches and syntax tips on empty input.
+    private func showSuggestions() {
+        // Recent searches from this session
+        let recent = recentQueries.suffix(5)
+        if !recent.isEmpty {
+            output.write("\u{001B}[1mRecent searches:\u{001B}[0m\n")
+            for (i, query) in recent.enumerated() {
+                output.write("  \(i + 1). \(query)\n")
+            }
+            output.write("\n")
+        }
+
+        // Syntax tips
+        output.write("\u{001B}[2mTips:\u{001B}[0m\n")
+        output.write("  \u{001B}[2mext:pdf size:>1mb   — filter by extension and size\n")
+        output.write("  \"exact phrase\"        — phrase search\n")
+        output.write("  path:~/Documents       — search in path\n")
+        output.write("  dupe: | sizedupe:      — find duplicates\n")
+        output.write("  :help                  — all commands\u{001B}[0m\n")
+    }
+
+    /// Recent queries from the current session (for suggestions).
+    private var recentQueries: [String] = []
+
     // MARK: - Query Execution
 
     /// Send a search query to the daemon and display results.
     private func executeQuery(_ query: String) async {
         lastQuery = query
+        recentQueries.append(query)
         let request = IPCRequest.query(query, limit: nil)
         let response: IPCResponse
         do {

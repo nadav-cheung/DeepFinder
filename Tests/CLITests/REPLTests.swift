@@ -451,6 +451,51 @@ struct REPLTests {
         #expect(allOutput.contains("photos"))
         #expect(allOutput.contains("/Volumes/Backup"))
     }
+
+    // MARK: - Suggestions (REQ-1.3-07)
+
+    @Test("Empty input shows syntax tips")
+    func testEmptyInputShowsSyntaxTips() async {
+        let mockClient = MockIPCClient(response: .results([], queryID: "q1"))
+        let inputSource = MockInputSource(lines: ["", ":quit"])
+        let output = REPLTestOutput()
+
+        let repl = await REPL(
+            client: mockClient,
+            inputSource: inputSource,
+            output: output,
+            historyPath: nil
+        )
+        await repl.run()
+
+        let allOutput = output.collected
+        #expect(allOutput.contains("Tips:"))
+        #expect(allOutput.contains("ext:pdf"))
+        #expect(allOutput.contains(":help"))
+    }
+
+    @Test("Empty input after queries shows recent searches")
+    func testEmptyInputShowsRecentSearches() async {
+        let result = SearchResult(
+            record: makeRecord(id: 1, name: "test.txt", path: "/test/test.txt"),
+            providerID: "file-index", score: 1.0, matchType: .exact
+        )
+        let mockClient = MockIPCClient(response: .results([result], queryID: "q1"))
+        let inputSource = MockInputSource(lines: ["hello.txt", "", ":quit"])
+        let output = REPLTestOutput()
+
+        let repl = await REPL(
+            client: mockClient,
+            inputSource: inputSource,
+            output: output,
+            historyPath: nil
+        )
+        await repl.run()
+
+        let allOutput = output.collected
+        #expect(allOutput.contains("Recent searches:"))
+        #expect(allOutput.contains("hello.txt"))
+    }
 }
 
 // MARK: - MockInputSource
