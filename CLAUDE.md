@@ -10,7 +10,7 @@ DeepFinder — a macOS file search app rivaling Windows Everything. **v1.0 = CLI
 
 **产品名配置**：`PRODUCT.toml` 是产品名的唯一来源。代码中通过 `Product` enum（`Sources/Index/ProductConfig.swift`）引用。改产品名只改 `PRODUCT.toml` + `ProductConfig.swift`，不散落到其他文件。文档中用显示名 "DeepFinder" 即可。
 
-**Status**: `v3.0.0` ✅ **完成** — CLI + daemon + GUI + AI semantic search + media metadata + services. Full roadmap v0.1 through v3.0 complete. Spec: `docs/superpowers/specs/`. OSS readiness assessment: `docs/superpowers/plans/2026-05-31-oss-readiness-assessment.md`.
+**Status**: `v3.0.0` ✅ **完成** — CLI + daemon + GUI + AI semantic search + media metadata + services. Full roadmap v0.1 through v3.0 complete. v3.2 (Search UI refinement) in progress. Spec: `docs/superpowers/specs/`. OSS readiness assessment: `docs/superpowers/plans/2026-05-31-oss-readiness-assessment.md`.
 
 Zero external dependencies — pure Swift + Apple frameworks only (Foundation, CoreServices, Carbon, SQLite3). CLI via Darwin.readline + ANSI escape codes.
 
@@ -28,7 +28,7 @@ swift run deepfinder                     # CLI interactive REPL (after v0.6)
 
 ## Version Roadmap
 
-渐进式开发，每个版本独立可用。详细功能清单见 `docs/superpowers/specs/2026-05-26-deep-finder-design.md` §功能路线图。
+渐进式开发，每个版本独立可用。详细功能清单见 `docs/superpowers/specs/design/2026-05-26-deep-finder-design.md` §功能路线图。
 
 | Version | Milestone | Status |
 |---------|-----------|--------|
@@ -141,7 +141,7 @@ Sources/
 Tests/
   IndexTests/ SearchTests/ FSTests/ PersistTests/ DaemonTests/ CLITests/ GUITests/ AITests/ MediaTests/ ServicesTests/
 docs/
-  superpowers/specs/          # requirements.md (index → reqs/), architecture design doc
+  superpowers/specs/          # design/ (architecture), ux/ (UX reqs), reqs/ (per-version REQ files, index at reqs/00-overview.md)
   superpowers/plans/          # implementation plans, OSS readiness assessment
 Package.swift                 # Single monolithic DeepFinder library target (split into sub-libraries planned)
 VERSION                       # Current: 3.0.0
@@ -244,4 +244,4 @@ Agent("实现 REPL 交互循环", subagent_type="general-purpose", name="cli-dev
 
 ## Reference
 
-Full architecture spec: `docs/superpowers/specs/2026-05-26-deep-finder-design.md`
+Full architecture spec: `docs/superpowers/specs/design/2026-05-26-deep-finder-design.md`
