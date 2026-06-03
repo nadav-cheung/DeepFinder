@@ -55,6 +55,38 @@ All changes start in `docs/superpowers/specs/` before touching code. When a requ
 
 Never modify code to introduce behavior that isn't reflected in the spec, and never leave a spec out of sync with the implementation.
 
+### Docs Maintenance
+
+文档质量规则，从 2026-06-03 全量梳理中提炼：
+
+**REQ 文件同步**：修改代码实现某个 REQ 后，必须同步更新以下 3 处：
+1. `specs/reqs/vX.Y-*.md` — 该 REQ 的内联状态图标（📋→✅）
+2. `specs/reqs/REQ_STATUS.md` — 状态矩阵和统计数字
+3. `specs/reqs/00-overview.md` — 若新增/删除 REQ 需更新统计
+
+**REQ 文件格式**：所有 REQ 文件遵循统一模板：
+- 标题 `# vX.Y — 中文名称`，紧接着 REQ 计数行
+- 每个 REQ 使用 `### REQ-X.Y-ZZ 描述 [状态图标] [执行图标] P{N}` 格式
+- 状态图标：📋规划/🔨开发/✅完成/❌取消/🔀合并
+- 含 `**用户场景**`、`**验收标准**` 节
+
+**交叉引用**：所有设计文档和 plans 必须包含：
+- 引用其依赖的 REQ 文件（相对路径）
+- 引用其依赖的设计文档
+- 引用其实现计划（如存在）
+
+**提交粒度**：docs 变更小批量多次提交，每 commit 一个逻辑变更：
+- 结构重组（move/rename/delete）— 一个 commit
+- REQ 状态同步 — 一个 commit
+- 用户文档修复 — 一个 commit
+- ADR 交叉引用 — 一个 commit
+
+**定期审计**：每完成一个 milestone 后，运行以下检查：
+- `00-overview.md` REQ 总数 = 各文件 REQ 数之和 = REQ_STATUS 总数
+- REQ_STATUS 状态统计与各文件内联图标一致
+- 所有 `*.md` 引用路径有效（无断链）
+- 竞品数据无过期（如 Raycast 版本、Alfred 版本）
+
 ### Test-first (TDD)
 
 **Write tests before implementation.** For every new component:
