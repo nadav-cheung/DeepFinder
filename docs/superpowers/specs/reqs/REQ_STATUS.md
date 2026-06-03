@@ -245,7 +245,7 @@
 | REQ-2.1-03 | AudioMetadataExtractor | done | `Sources/Media/AudioMetadataExtractor.swift` | `Tests/MediaTests/AudioMetadataExtractorTests.swift` | AVFoundation, title/artist/album/duration |
 | REQ-2.1-04 | VideoMetadataExtractor | done | `Sources/Media/VideoMetadataExtractor.swift` | `Tests/MediaTests/VideoMetadataExtractorTests.swift` | AVFoundation, width/height/duration/fps/codec |
 | REQ-2.1-05 | PDFMetadataExtractor | done | `Sources/Media/PDFMetadataExtractor.swift` | `Tests/MediaTests/PDFMetadataExtractorTests.swift` | PDFKit, title/author/pages/encrypted |
-| REQ-2.1-06 | MediaMetadataIndex | done | `Sources/Media/MediaMetadataIndex.swift` | `Tests/MediaTests/MediaMetadataIndexTests.swift` | Actor, async extraction, SQLite persistence |
+| REQ-2.1-06 | MediaMetadataIndex | done | `Sources/Media/MetadataExtractorRegistry.swift`, `Sources/Index/FileRecord.swift` | -- | Actor removed (dead code); function via ExtractedMetadata + registry + SQLite metadata_json |
 | REQ-2.1-07 | Metadata search filters | done | `Sources/Search/SearchFilter.swift` | `Tests/MediaTests/MetadataFilterTests.swift` | width:/height:/duration:/artist: etc. |
 
 ---
