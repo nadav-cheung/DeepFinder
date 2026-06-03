@@ -783,5 +783,16 @@ private struct ExtendedKeyboardHandlers: ViewModifier {
             .onKeyPress("k", phases: .down) { press in
                 view.handleKWithModifiers(press)
             }
+            // REQ-3.2-08: Ctrl+N / Ctrl+P Emacs aliases for ↓ / ↑
+            .onKeyPress("n", phases: .down) { press in
+                guard press.modifiers.contains(.control) else { return .ignored }
+                view.state.moveSelection(down: true)
+                return .handled
+            }
+            .onKeyPress("p", phases: .down) { press in
+                guard press.modifiers.contains(.control) else { return .ignored }
+                view.state.moveSelection(down: false)
+                return .handled
+            }
     }
 }

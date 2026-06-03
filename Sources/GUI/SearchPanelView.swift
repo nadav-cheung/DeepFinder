@@ -210,7 +210,8 @@ struct SearchPanelView: View {
                 return .handled
             }
             // REQ-3.2-29: Shift+Tab autocomplete parent directory.
-            .onKeyPress(.tab, modifiers: .shift) {
+            .onKeyPress(.tab, phases: .down) { press in
+                guard press.modifiers.contains(.shift) else { return .ignored }
                 guard let idx = resultsListState.selectedIndex,
                       idx < viewModel.results.count else { return .ignored }
                 let path = viewModel.results[idx].record.parentPath
@@ -292,8 +293,8 @@ struct SearchPanelView: View {
             Image(systemName: showSpeech ? "mic.fill" : "mic")
                 .foregroundStyle(
                     showSpeech ? Color.accentColor
-                        : micAuthorized ? .secondary
-                        : .tertiary
+                        : micAuthorized ? Color.secondary
+                        : Color.secondary.opacity(0.5)
                 )
                 .font(.system(size: 14))
         }
