@@ -325,4 +325,87 @@ struct IPCProtocolTests {
         #expect(group1 == group2)
         #expect(group1 != group3)
     }
+
+    // MARK: - Bookmark & Filter IPC (REQ-1.3-06)
+
+    @Test("IPCRequest.bookmarkList round-trip")
+    func testRequestBookmarkListRoundTrip() throws {
+        let original = IPCRequest.bookmarkList
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(IPCRequest.self, from: data)
+        #expect(decoded == original)
+    }
+
+    @Test("IPCRequest.bookmarkSave round-trip")
+    func testRequestBookmarkSaveRoundTrip() throws {
+        let bm = SearchBookmark(
+            id: UUID(),
+            name: "My Search",
+            query: "size:>1mb ext:pdf",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+        let original = IPCRequest.bookmarkSave(bm)
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(IPCRequest.self, from: data)
+        #expect(decoded == original)
+    }
+
+    @Test("IPCRequest.bookmarkDelete round-trip")
+    func testRequestBookmarkDeleteRoundTrip() throws {
+        let id = UUID()
+        let original = IPCRequest.bookmarkDelete(id)
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(IPCRequest.self, from: data)
+        #expect(decoded == original)
+    }
+
+    @Test("IPCRequest.filterList round-trip")
+    func testRequestFilterListRoundTrip() throws {
+        let original = IPCRequest.filterList
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(IPCRequest.self, from: data)
+        #expect(decoded == original)
+    }
+
+    @Test("IPCRequest.filterSave round-trip")
+    func testRequestFilterSaveRoundTrip() throws {
+        let original = IPCRequest.filterSave(name: "bigfiles", expression: "size:>100mb")
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(IPCRequest.self, from: data)
+        #expect(decoded == original)
+    }
+
+    @Test("IPCRequest.filterDelete round-trip")
+    func testRequestFilterDeleteRoundTrip() throws {
+        let original = IPCRequest.filterDelete(name: "bigfiles")
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(IPCRequest.self, from: data)
+        #expect(decoded == original)
+    }
+
+    @Test("IPCResponse.bookmarks round-trip")
+    func testResponseBookmarksRoundTrip() throws {
+        let bm = SearchBookmark(
+            id: UUID(),
+            name: "docs",
+            query: "ext:pdf;doc",
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000)
+        )
+        let original = IPCResponse.bookmarks([bm])
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(IPCResponse.self, from: data)
+        #expect(decoded == original)
+    }
+
+    @Test("IPCResponse.filters round-trip")
+    func testResponseFiltersRoundTrip() throws {
+        let filters = [
+            SavedFilter(name: "bigfiles", expression: "size:>100mb"),
+            SavedFilter(name: "images", expression: "ext:jpg;png;gif"),
+        ]
+        let original = IPCResponse.filters(filters)
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(IPCResponse.self, from: data)
+        #expect(decoded == original)
+    }
 }

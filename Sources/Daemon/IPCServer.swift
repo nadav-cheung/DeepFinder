@@ -522,6 +522,12 @@ actor IPCServer {
         case .duplicateQuery(let strategy):
             let groups = await duplicateProvider(strategy)
             return .duplicates(groups)
+
+        // Bookmark & filter IPC (REQ-1.3-06) — delegated to closures.
+        case .bookmarkList, .bookmarkSave, .bookmarkDelete,
+             .filterList, .filterSave, .filterDelete:
+            // These are handled locally by the CLI; daemon returns ack for forward compat.
+            return .ack
         }
     }
 

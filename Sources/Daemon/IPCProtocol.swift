@@ -65,10 +65,16 @@ enum IPCRequest: Codable, Sendable, Equatable {
         case key
         case value
         case strategy
+        case bookmark
+        case id
+        case filterName
+        case filterExpression
     }
 
     private enum Kind: String, Codable {
         case query, cancel, stats, configGet, configSet, indexStatus, duplicateQuery
+        case bookmarkList, bookmarkSave, bookmarkDelete
+        case filterList, filterSave, filterDelete
     }
 
     /// Execute a search query with an optional result limit.
@@ -85,6 +91,18 @@ enum IPCRequest: Codable, Sendable, Equatable {
     case indexStatus
     /// Find duplicate files using a given strategy (REQ-1.5-06).
     case duplicateQuery(strategy: DuplicateQueryStrategy)
+    /// List all bookmarks (REQ-1.3-06).
+    case bookmarkList
+    /// Save a bookmark (REQ-1.3-06).
+    case bookmarkSave(SearchBookmark)
+    /// Delete a bookmark by ID (REQ-1.3-06).
+    case bookmarkDelete(UUID)
+    /// List all saved filter macros (REQ-1.3-06).
+    case filterList
+    /// Save a filter macro (REQ-1.3-06).
+    case filterSave(name: String, expression: String)
+    /// Delete a filter macro by name (REQ-1.3-06).
+    case filterDelete(name: String)
 
     // Custom Codable: encodes a `kind` discriminator + `ipcProtocolVersion` field.
 
@@ -113,6 +131,23 @@ enum IPCRequest: Codable, Sendable, Equatable {
         case .duplicateQuery(let strategy):
             try c.encode(Kind.duplicateQuery, forKey: .kind)
             try c.encode(strategy, forKey: .strategy)
+        case .bookmarkList:
+            try c.encode(Kind.bookmarkList, forKey: .kind)
+        case .bookmarkSave(let bm):
+            try c.encode(Kind.bookmarkSave, forKey: .kind)
+            try c.encode(bm, forKey: .bookmark)
+        case .bookmarkDelete(let id):
+            try c.encode(Kind.bookmarkDelete, forKey: .kind)
+            try c.encode(id, forKey: .id)
+        case .filterList:
+            try c.encode(Kind.filterList, forKey: .kind)
+        case .filterSave(let name, let expr):
+            try c.encode(Kind.filterSave, forKey: .kind)
+            try c.encode(name, forKey: .filterName)
+            try c.encode(expr, forKey: .filterExpression)
+        case .filterDelete(let name):
+            try c.encode(Kind.filterDelete, forKey: .kind)
+            try c.encode(name, forKey: .filterName)
         }
     }
 
@@ -156,6 +191,23 @@ enum IPCRequest: Codable, Sendable, Equatable {
         case .duplicateQuery:
             let strategy = try c.decode(DuplicateQueryStrategy.self, forKey: .strategy)
             self = .duplicateQuery(strategy: strategy)
+        case .bookmarkList:
+            self = .bookmarkList
+        case .bookmarkSave:
+            let bm = try c.decode(SearchBookmark.self, forKey: .bookmark)
+            self = .bookmarkSave(bm)
+        case .bookmarkDelete:
+            let id = try c.decode(UUID.self, forKey: .id)
+            self = .bookmarkDelete(id)
+        case .filterList:
+            self = .filterList
+        case .filterSave:
+            let name = try c.decode(String.self, forKey: .filterName)
+            let expr = try c.decode(String.self, forKey: .filterExpression)
+            self = .filterSave(name: name, expression: expr)
+        case .filterDelete:
+            let name = try c.decode(String.self, forKey: .filterName)
+            self = .filterDelete(name: name)
         }
     }
 }
@@ -186,16 +238,26 @@ struct DaemonIndexStatus: Codable, Sendable, Equatable {
     let lastScanDate: Date?
 }
 
+// MARK: - SavedFilter
+
+/// A named filter macro for IPC transport (REQ-1.3-06).
+struct SavedFilter: Codable, Sendable, Equatable {
+    let name: String
+    let expression: String
+}
+
 // MARK: - IPCResponse
 
 /// All message types the daemon can send back to a client.
 enum IPCResponse: Codable, Sendable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case kind, results, queryID, error, stats, indexStatus, duplicates
+        case bookmarks, filters
     }
 
     private enum Kind: String, Codable {
         case results, error, stats, ack, indexStatus, duplicates
+        case bookmarks, filters
     }
 
     /// Search results for a completed query, with the corresponding query identifier.
@@ -210,6 +272,10 @@ enum IPCResponse: Codable, Sendable, Equatable {
     case indexStatus(DaemonIndexStatus)
     /// Duplicate file groups (REQ-1.5-06).
     case duplicates([DuplicateGroup])
+    /// Bookmark list response (REQ-1.3-06).
+    case bookmarks([SearchBookmark])
+    /// Saved filter macro list response (REQ-1.3-06).
+    case filters([SavedFilter])
 
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -232,6 +298,12 @@ enum IPCResponse: Codable, Sendable, Equatable {
         case .duplicates(let groups):
             try c.encode(Kind.duplicates, forKey: .kind)
             try c.encode(groups, forKey: .duplicates)
+        case .bookmarks(let bms):
+            try c.encode(Kind.bookmarks, forKey: .kind)
+            try c.encode(bms, forKey: .bookmarks)
+        case .filters(let fs):
+            try c.encode(Kind.filters, forKey: .kind)
+            try c.encode(fs, forKey: .filters)
         }
     }
 
@@ -257,6 +329,12 @@ enum IPCResponse: Codable, Sendable, Equatable {
         case .duplicates:
             let groups = try c.decode([DuplicateGroup].self, forKey: .duplicates)
             self = .duplicates(groups)
+        case .bookmarks:
+            let bms = try c.decode([SearchBookmark].self, forKey: .bookmarks)
+            self = .bookmarks(bms)
+        case .filters:
+            let fs = try c.decode([SavedFilter].self, forKey: .filters)
+            self = .filters(fs)
         }
     }
 }
