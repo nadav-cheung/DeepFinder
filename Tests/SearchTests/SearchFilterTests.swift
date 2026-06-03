@@ -305,4 +305,58 @@ struct SearchFilterTests {
         #expect(filter.matches(atLimit))
         #expect(filter.matches(deeper))
     }
+
+    // MARK: - Filename Length Filters (REQ-1.5-05)
+
+    @Test("nameLengthMin filter matches records with name length >= threshold")
+    func nameLengthMinFilterMatches() {
+        let filter = SearchFilter.nameLengthMin(5)
+        let matching = makeFile(name: "hello.txt")    // "hello.txt" = 9 scalars
+        let tooShort = makeFile(name: "ab")            // 2 scalars
+        let exact = makeFile(name: "abcde")            // 5 scalars
+
+        #expect(filter.matches(matching))
+        #expect(!filter.matches(tooShort))
+        #expect(filter.matches(exact))
+    }
+
+    @Test("nameLengthMax filter matches records with name length <= threshold")
+    func nameLengthMaxFilterMatches() {
+        let filter = SearchFilter.nameLengthMax(5)
+        let matching = makeFile(name: "hi")            // 2 scalars
+        let tooLong = makeFile(name: "hello world")    // 11 scalars
+        let exact = makeFile(name: "abcde")             // 5 scalars
+
+        #expect(filter.matches(matching))
+        #expect(!filter.matches(tooLong))
+        #expect(filter.matches(exact))
+    }
+
+    @Test("nameLengthRange filter matches records with name length in range")
+    func nameLengthRangeFilterMatches() {
+        let filter = SearchFilter.nameLengthRange(3...6)
+        let inRange = makeFile(name: "test")            // 4 scalars
+        let tooShort = makeFile(name: "ab")             // 2 scalars
+        let tooLong = makeFile(name: "abcdefgh")        // 8 scalars
+        let lowerBound = makeFile(name: "abc")          // 3 scalars
+        let upperBound = makeFile(name: "abcdef")       // 6 scalars
+
+        #expect(filter.matches(inRange))
+        #expect(!filter.matches(tooShort))
+        #expect(!filter.matches(tooLong))
+        #expect(filter.matches(lowerBound))
+        #expect(filter.matches(upperBound))
+    }
+
+    @Test("nameLength uses Unicode scalar count, not byte count")
+    func nameLengthUnicodeScalarCount() {
+        let filter = SearchFilter.nameLengthMin(3)
+        // "café" = 4 Unicode scalars (c, a, f, é)
+        let withAccent = makeFile(name: "café", ext: nil)
+        #expect(filter.matches(withAccent))
+
+        // "🎉" = 1 Unicode scalar
+        let emoji = makeFile(name: "🎉", ext: nil)
+        #expect(!filter.matches(emoji))
+    }
 }

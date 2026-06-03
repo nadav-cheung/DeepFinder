@@ -71,6 +71,10 @@ struct FilterPipeline: Sendable {
                 }
             case "artist", "album", "title", "genre", "codec":
                 parsedFilters.append(.metadataMatch(lowerKey, value))
+            case "len":
+                if let filter = parseNameLengthFilter(value) {
+                    parsedFilters.append(filter)
+                }
             default:
                 break
             }
@@ -146,5 +150,36 @@ extension FilterPipeline {
         // Exact match
         guard let n = Int(trimmed) else { return nil }
         return .metadataRange(key, n...n)
+    }
+
+    /// Parse filename length filter value (REQ-1.5-05).
+    /// Examples: ">100", "<50", "10..200", "30"
+    private static func parseNameLengthFilter(_ value: String) -> SearchFilter? {
+        let trimmed = value.trimmingCharacters(in: .whitespaces).lowercased()
+        if trimmed.hasPrefix(">=") {
+            guard let n = Int(trimmed.dropFirst(2)) else { return nil }
+            return .nameLengthMin(n)
+        }
+        if trimmed.hasPrefix(">") {
+            guard let n = Int(trimmed.dropFirst()) else { return nil }
+            return .nameLengthMin(n + 1)
+        }
+        if trimmed.hasPrefix("<=") {
+            guard let n = Int(trimmed.dropFirst(2)) else { return nil }
+            return .nameLengthMax(n)
+        }
+        if trimmed.hasPrefix("<") {
+            guard let n = Int(trimmed.dropFirst()) else { return nil }
+            return .nameLengthMax(n - 1)
+        }
+        // Range: "10..200"
+        if let sep = trimmed.range(of: "..") {
+            let lo = Int(trimmed[..<sep.lowerBound])
+            let hi = Int(trimmed[sep.upperBound...])
+            if let lo, let hi { return .nameLengthRange(lo...hi) }
+        }
+        // Exact match
+        guard let n = Int(trimmed) else { return nil }
+        return .nameLengthRange(n...n)
     }
 }

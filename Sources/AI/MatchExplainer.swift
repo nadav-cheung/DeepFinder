@@ -130,6 +130,12 @@ enum MatchExplainer: Sendable {
             return "\(field) \(range.lowerBound)...\(range.upperBound)"
         case .metadataMatch(let field, let query):
             return "\(field) contains '\(query)'"
+        case .nameLengthMin(let n):
+            return "name length >= \(n)"
+        case .nameLengthMax(let n):
+            return "name length <= \(n)"
+        case .nameLengthRange(let range):
+            return "name length \(range.lowerBound)...\(range.upperBound)"
         }
     }
 

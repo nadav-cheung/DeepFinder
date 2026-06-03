@@ -288,4 +288,51 @@ struct FilterPipelineTests {
         #expect(filtered[1].record.name == "alpha.txt")
         #expect(filtered[2].record.name == "beta.txt")
     }
+
+    // MARK: - Filename Length Filter Parsing Tests (REQ-1.5-05)
+
+    @Test("Parse len filter: >100 returns nameLengthMin(101)")
+    func testParseLenGreaterThan() {
+        let pipeline = FilterPipeline.parse(from: [("len", ">100")])
+        #expect(pipeline.filters == [.nameLengthMin(101)])
+    }
+
+    @Test("Parse len filter: <=50 returns nameLengthMax(50)")
+    func testParseLenLessThanOrEqual() {
+        let pipeline = FilterPipeline.parse(from: [("len", "<=50")])
+        #expect(pipeline.filters == [.nameLengthMax(50)])
+    }
+
+    @Test("Parse len filter: 10..200 returns nameLengthRange")
+    func testParseLenRange() {
+        let pipeline = FilterPipeline.parse(from: [("len", "10..200")])
+        #expect(pipeline.filters == [.nameLengthRange(10...200)])
+    }
+
+    @Test("Parse len filter: bare number returns exact range")
+    func testParseLenExact() {
+        let pipeline = FilterPipeline.parse(from: [("len", "30")])
+        #expect(pipeline.filters == [.nameLengthRange(30...30)])
+    }
+
+    @Test("Parse len filter: invalid returns empty pipeline")
+    func testParseLenInvalid() {
+        let pipeline = FilterPipeline.parse(from: [("len", "abc")])
+        #expect(pipeline.filters.isEmpty)
+    }
+
+    @Test("Parse len filter: >5 end-to-end filters short names")
+    func testParseLenEndToEnd() {
+        let pipeline = FilterPipeline.parse(from: [("len", ">5")])
+        let results = [
+            makeResult(id: 1, name: "ab"),             // 2 scalars
+            makeResult(id: 2, name: "abcdef"),          // 6 scalars
+            makeResult(id: 3, name: "hello world"),     // 11 scalars
+        ]
+
+        let filtered = pipeline.apply(to: results)
+        #expect(filtered.count == 2)
+        #expect(filtered[0].record.name == "abcdef")
+        #expect(filtered[1].record.name == "hello world")
+    }
 }

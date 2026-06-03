@@ -74,6 +74,12 @@ enum SearchFilter: Sendable, Equatable {
     case metadataRange(String, ClosedRange<Int>)
     /// Metadata string field contains substring
     case metadataMatch(String, String)
+    /// Filename Unicode scalar count >= N (REQ-1.5-05)
+    case nameLengthMin(Int)
+    /// Filename Unicode scalar count <= N (REQ-1.5-05)
+    case nameLengthMax(Int)
+    /// Filename Unicode scalar count in closed range (REQ-1.5-05)
+    case nameLengthRange(ClosedRange<Int>)
 
     // MARK: - Matching
 
@@ -126,6 +132,12 @@ enum SearchFilter: Sendable, Equatable {
             guard let meta = record.metadata,
                   let value = meta.fields[field]?.stringValue else { return false }
             return value.localizedCaseInsensitiveContains(query)
+        case .nameLengthMin(let min):
+            return record.name.unicodeScalars.count >= min
+        case .nameLengthMax(let max):
+            return record.name.unicodeScalars.count <= max
+        case .nameLengthRange(let range):
+            return range.contains(record.name.unicodeScalars.count)
         }
     }
 
