@@ -51,7 +51,7 @@ private struct FeatureCard: View {
     var body: some View {
         HStack(spacing: 14) {
             Image(systemName: icon)
-                .font(.system(size: 22))
+                .font(.system(size: 22, weight: .medium))
                 .foregroundStyle(color)
                 .frame(width: 30)
 
@@ -66,7 +66,7 @@ private struct FeatureCard: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 12))
+        .glassEffect(.regular, in: .rect(cornerRadius: 12))
     }
 }
 
@@ -99,7 +99,7 @@ struct OnboardingView: View {
     private var headerSection: some View {
         VStack(spacing: 8) {
             Image(systemName: "magnifyingglass")
-                .font(.system(size: 40))
+                .font(.system(size: 40, weight: .light))
                 .foregroundStyle(GlowColors.teal)
 
             Text("Welcome to \(Product.name)")
@@ -119,7 +119,7 @@ struct OnboardingView: View {
         VStack(spacing: 10) {
             FeatureCard(
                 icon: "bolt.fill",
-                color: .yellow,
+                color: GlowColors.amber,
                 title: "Instant Search",
                 description: "Find any file instantly across your entire Mac with sub-millisecond search."
             )
@@ -133,7 +133,7 @@ struct OnboardingView: View {
                 icon: "command",
                 color: GlowColors.violet,
                 title: "Global Hotkey",
-                description: "Press ⌃⌘K anytime to open \(Product.name) search, from any application."
+                description: "Press \u{2303}\u{2318}K anytime to open \(Product.name) search, from any application."
             )
         }
     }

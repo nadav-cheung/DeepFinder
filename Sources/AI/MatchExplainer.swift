@@ -1,3 +1,7 @@
+/// Local, rule-based explanation of why a search result matched a query.
+///
+/// Purely heuristic (no AI required): inspects MatchType, file name, query text, and
+/// active filters to produce a human-readable reason string. O(1) per result.
 import Foundation
 
 // MARK: - MatchExplanation

@@ -81,9 +81,9 @@ final class SpeechOverlayViewModel {
         startWaveformAnimation()
 
         listeningTask = Task { [speechProvider] in
-            guard let stream = await speechProvider.startRecognition() else {
+            guard let stream = speechProvider.startRecognition() else {
                 // Speech recognition unavailable — dismiss.
-                await stopAndDismiss()
+                stopAndDismiss()
                 return
             }
 
@@ -96,14 +96,14 @@ final class SpeechOverlayViewModel {
                     // Auto-trigger search after the Speech framework detects
                     // silence (~1.5 s, per LocalSpeechProvider.speechAutoTriggerInterval).
                     let query = result.text
-                    await stopAndDismiss()
+                    stopAndDismiss()
                     await actions.triggerSearch(query)
                     return
                 }
             }
 
             // Stream ended without a final result (e.g., no speech detected).
-            await stopAndDismiss()
+            stopAndDismiss()
         }
     }
 
@@ -236,7 +236,13 @@ private struct WaveformBar: View {
 
     var body: some View {
         RoundedRectangle(cornerRadius: 2)
-            .fill(Color.accentColor)
+            .fill(
+                LinearGradient(
+                    colors: [GlowColors.teal, GlowColors.violet],
+                    startPoint: .bottom,
+                    endPoint: .top
+                )
+            )
             .frame(width: 4, height: barHeight)
             .animation(.easeInOut(duration: 0.08), value: phase)
     }

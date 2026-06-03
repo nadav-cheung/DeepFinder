@@ -10,7 +10,6 @@ struct StatusBarControllerTests {
     /// Records which actions were called during a test.
     @MainActor
     private final class ActionRecorder: @unchecked Sendable {
-        var toggleCalled = false
         var showCalled = false
         var hideCalled = false
         var settingsCalled = false
@@ -21,7 +20,6 @@ struct StatusBarControllerTests {
     @MainActor
     private func makeController(recorder: ActionRecorder) -> StatusBarController {
         StatusBarController(
-            onToggleSearchPanel: { recorder.toggleCalled = true },
             onShowSearchPanel: { recorder.showCalled = true },
             onHideSearchPanel: { recorder.hideCalled = true },
             onOpenSettings: { recorder.settingsCalled = true },
@@ -39,21 +37,7 @@ struct StatusBarControllerTests {
         #expect(controller.indexStatus == .idle)
     }
 
-    // MARK: - 2. toggleSearchPanel invokes callback
-
-    @Test("toggleSearchPanel invokes callback")
-    @MainActor
-    func testToggleSearchPanelInvokesCallback() {
-        let recorder = ActionRecorder()
-        let controller = makeController(recorder: recorder)
-        controller.toggleSearchPanel()
-        #expect(recorder.toggleCalled == true)
-        #expect(recorder.showCalled == false)
-        #expect(recorder.settingsCalled == false)
-        #expect(recorder.quitCalled == false)
-    }
-
-    // MARK: - 3. showSearchPanel invokes callback
+    // MARK: - 2. showSearchPanel invokes callback
 
     @Test("showSearchPanel invokes callback")
     @MainActor
@@ -62,10 +46,11 @@ struct StatusBarControllerTests {
         let controller = makeController(recorder: recorder)
         controller.showSearchPanel()
         #expect(recorder.showCalled == true)
-        #expect(recorder.toggleCalled == false)
+        #expect(recorder.settingsCalled == false)
+        #expect(recorder.quitCalled == false)
     }
 
-    // MARK: - 4. hideSearchPanel invokes callback
+    // MARK: - 3. hideSearchPanel invokes callback
 
     @Test("hideSearchPanel invokes callback")
     @MainActor
@@ -74,10 +59,9 @@ struct StatusBarControllerTests {
         let controller = makeController(recorder: recorder)
         controller.hideSearchPanel()
         #expect(recorder.hideCalled == true)
-        #expect(recorder.toggleCalled == false)
     }
 
-    // MARK: - 5. openSettings invokes callback
+    // MARK: - 4. openSettings invokes callback
 
     @Test("openSettings invokes callback")
     @MainActor
@@ -86,11 +70,10 @@ struct StatusBarControllerTests {
         let controller = makeController(recorder: recorder)
         controller.openSettings()
         #expect(recorder.settingsCalled == true)
-        #expect(recorder.toggleCalled == false)
         #expect(recorder.quitCalled == false)
     }
 
-    // MARK: - 6. quitApp invokes callback
+    // MARK: - 5. quitApp invokes callback
 
     @Test("quitApp invokes callback")
     @MainActor
@@ -99,11 +82,10 @@ struct StatusBarControllerTests {
         let controller = makeController(recorder: recorder)
         controller.quitApp()
         #expect(recorder.quitCalled == true)
-        #expect(recorder.toggleCalled == false)
         #expect(recorder.settingsCalled == false)
     }
 
-    // MARK: - 7. updateIndexStatus with badge
+    // MARK: - 6. updateIndexStatus with badge
 
     @Test("updateIndexStatus with badge updates status")
     @MainActor
@@ -124,7 +106,7 @@ struct StatusBarControllerTests {
         #expect(controller.indexStatus == .idle)
     }
 
-    // MARK: - 8. updateIndexStatus from state string
+    // MARK: - 7. updateIndexStatus from state string
 
     @Test("updateIndexStatus from state string maps correctly")
     @MainActor
@@ -151,7 +133,7 @@ struct StatusBarControllerTests {
         #expect(controller.indexStatus == .idle)
     }
 
-    // MARK: - 9. Install and remove lifecycle
+    // MARK: - 8. Install and remove lifecycle
 
     @Test("Install and remove lifecycle do not crash")
     @MainActor
@@ -169,24 +151,24 @@ struct StatusBarControllerTests {
         controller.remove()
     }
 
-    // MARK: - 10. Multiple toggle calls
+    // MARK: - 9. Multiple show calls
 
-    @Test("Multiple toggle calls each invoke callback")
+    @Test("Multiple showSearchPanel calls each invoke callback")
     @MainActor
-    func testMultipleToggleCalls() {
+    func testMultipleShowCalls() {
         var count = 0
         let controller = StatusBarController(
-            onToggleSearchPanel: { count += 1 }
+            onShowSearchPanel: { count += 1 }
         )
 
-        controller.toggleSearchPanel()
-        controller.toggleSearchPanel()
-        controller.toggleSearchPanel()
+        controller.showSearchPanel()
+        controller.showSearchPanel()
+        controller.showSearchPanel()
 
         #expect(count == 3)
     }
 
-    // MARK: - 11. Default closures do not crash
+    // MARK: - 10. Default closures do not crash
 
     @Test("Default closures do not crash")
     @MainActor
@@ -194,14 +176,13 @@ struct StatusBarControllerTests {
         let controller = StatusBarController()
 
         // All actions with default empty closures should be safe.
-        controller.toggleSearchPanel()
         controller.showSearchPanel()
         controller.hideSearchPanel()
         controller.openSettings()
         controller.quitApp()
     }
 
-    // MARK: - 12. Update status after install
+    // MARK: - 11. Update status after install
 
     @Test("Update index status after install does not crash")
     @MainActor
@@ -213,7 +194,7 @@ struct StatusBarControllerTests {
         controller.remove()
     }
 
-    // MARK: - 13. Update status before install does not crash
+    // MARK: - 12. Update status before install does not crash
 
     @Test("Update index status before install does not crash")
     @MainActor

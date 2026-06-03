@@ -1,3 +1,8 @@
+/// Manages the macOS LaunchAgent plist for auto-starting the DeepFinder daemon on login.
+///
+/// Generates, installs, and uninstalls the launchd plist at
+/// `~/Library/LaunchAgents/com.nadav.deepfinder.daemon.plist`. The plist configures
+/// `RunAtLoad` and `KeepAlive` so launchd starts the daemon at login and restarts it on crash.
 import Foundation
 
 // MARK: - LaunchAgentError

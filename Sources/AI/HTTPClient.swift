@@ -1,3 +1,8 @@
+/// HTTP transport abstraction for cloud AI providers, plus SSE line stream parser.
+///
+/// Protocol-based for testability (production uses URLSession, tests inject mocks).
+/// SSELineSequence parses Server-Sent Events response bodies into individual lines
+/// consumed by OpenAI-compatible providers.
 import Foundation
 
 // MARK: - HTTPClient

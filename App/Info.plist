@@ -27,6 +27,8 @@
     <true/>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
+    <key>NSSupportsAutomaticTermination</key>
+    <false/>
     <key>NSSupportsAutomaticGraphicsSwitching</key>
     <true/>
 </dict>

@@ -39,6 +39,26 @@
             "target": "deepfinder-daemon",
             "configuration": "release",
             "preLaunchTask": "swift: Build Release deepfinder-daemon"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:DeepFinder}",
+            "name": "Debug deepfinder-app",
+            "target": "deepfinder-app",
+            "configuration": "debug",
+            "preLaunchTask": "swift: Build Debug deepfinder-app"
+        },
+        {
+            "type": "swift",
+            "request": "launch",
+            "args": [],
+            "cwd": "${workspaceFolder:DeepFinder}",
+            "name": "Release deepfinder-app",
+            "target": "deepfinder-app",
+            "configuration": "release",
+            "preLaunchTask": "swift: Build Release deepfinder-app"
         }
     ]
 }

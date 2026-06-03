@@ -1,3 +1,9 @@
+/// Codable message types that define the daemon IPC contract.
+///
+/// Every request (`IPCRequest`) and response (`IPCResponse`) is a Codable enum with a
+/// `kind` discriminator and an embedded protocol version for forward compatibility.
+/// Both CLI and GUI target the same daemon through these types, so changes here must
+/// remain backward-compatible or bump `ipcProtocolVersion`.
 import Foundation
 
 /// Protocol version for forward compatibility.

@@ -1,3 +1,8 @@
+/// Safe natural-language file operations: parsing, execution, confirmation, and undo.
+///
+/// Recognizes "move/copy/rename X to Y" patterns and rejects destructive verbs at parse
+/// time. Operations require user confirmation and are recorded for undo. Only move, copy,
+/// and rename are permitted -- delete is never allowed.
 import Foundation
 
 // MARK: - FileManagerProvider

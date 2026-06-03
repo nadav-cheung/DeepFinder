@@ -1,3 +1,8 @@
+/// Privacy-safe file metadata summary for AI consumption.
+///
+/// Strips file contents and optionally anonymizes paths (/Users/name/ -> ~/) so that
+/// cloud AI providers never see the macOS username. The sole data type crossing the
+/// AI module boundary from the search engine.
 import Foundation
 
 /// A privacy-safe summary of file metadata for AI consumption.

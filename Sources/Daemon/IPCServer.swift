@@ -1,3 +1,9 @@
+/// Daemon-side IPC listener that accepts client connections over a Unix domain socket.
+///
+/// Each connection is handled in its own Task: reads one framed `IPCRequest`, dispatches
+/// it to the `SearchCoordinator`, and writes back one framed `IPCResponse`. Enforces
+/// rate limiting, concurrency caps, and peer-credential verification to reject connections
+/// from other users.
 import Foundation
 import OSLog
 

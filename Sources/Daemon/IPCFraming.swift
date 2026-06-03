@@ -1,3 +1,8 @@
+/// Wire-framing protocol for the daemon IPC layer: 4-byte big-endian length prefix + JSON payload.
+///
+/// Splits framing concerns into two halves — `IPCFraming` handles encode/decode of Codable
+/// types into length-prefixed Data, while `IPCFramingIO` performs the actual socket reads
+/// and writes. This separation lets the protocol logic be tested without real sockets.
 import Foundation
 
 // MARK: - IPCFramingIOError

@@ -364,7 +364,7 @@ struct SettingsView: View {
                 }
                 .tag(SettingsTab.about)
         }
-        .frame(minWidth: 480, minHeight: 360)
+        .frame(minWidth: 520, idealWidth: 560, minHeight: 400, idealHeight: 480)
         .task {
             await viewModel.loadConfig()
             await viewModel.loadIndexStats()
@@ -377,239 +377,375 @@ struct SettingsView: View {
 
     private var generalTab: some View {
         @Bindable var vm = viewModel
-        return Form {
-            Section("Hotkey") {
-                HStack {
-                    Text("Global Hotkey")
-                        .font(.body)
-                    Spacer()
-                    Text(viewModel.hotkeyDisplay)
-                        .font(.system(.body, design: .monospaced))
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
-                        .background(.quaternary, in: .rect(cornerRadius: 4))
-                    Button("Reset to Default") {
-                        viewModel.resetHotkeyDisplay()
+        return ScrollView {
+            VStack(spacing: 16) {
+                glassSection("Hotkey") {
+                    HStack {
+                        Text("Global Hotkey")
+                            .font(.body)
+                        Spacer()
+                        Text(viewModel.hotkeyDisplay)
+                            .font(.system(.body, design: .monospaced))
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 5)
+                            .background(.quaternary, in: .rect(cornerRadius: 6))
+                        Button("Reset to Default") {
+                            viewModel.resetHotkeyDisplay()
+                        }
+                        .buttonStyle(.bordered)
+                        .controlSize(.small)
                     }
                 }
-            }
 
-            Section("Auto-Launch") {
-                HStack {
-                    Toggle("Launch at Login", isOn: Binding(
-                        get: { viewModel.autoLaunchEnabled },
-                        set: { newValue in Task { await viewModel.setAutoLaunch(newValue) } }
-                    ))
-                    Spacer()
-                    Text(viewModel.autoLaunchEnabled ? "Enabled" : "Disabled")
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
-                }
-                if let error = viewModel.autoLaunchError {
-                    Text(error)
-                        .font(.caption)
-                        .foregroundStyle(.red)
-                }
-            }
-
-            Section("Excluded Paths") {
-                List {
-                    ForEach(viewModel.excludedPaths, id: \.self) { path in
+                glassSection("Auto-Launch") {
+                    VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            Image(systemName: "folder.badge.minus")
-                                .foregroundStyle(.secondary)
-                            Text(path)
-                                .font(.system(.body, design: .monospaced))
+                            Toggle("Launch at Login", isOn: Binding(
+                                get: { viewModel.autoLaunchEnabled },
+                                set: { newValue in Task { await viewModel.setAutoLaunch(newValue) } }
+                            ))
                             Spacer()
-                            Button {
-                                Task { await viewModel.removePath(path) }
-                            } label: {
-                                Image(systemName: "minus.circle.fill")
+                            statusBadge(
+                                text: viewModel.autoLaunchEnabled ? "Enabled" : "Disabled",
+                                color: viewModel.autoLaunchEnabled ? .green : .secondary
+                            )
+                        }
+                        if let error = viewModel.autoLaunchError {
+                            HStack(spacing: 6) {
+                                Image(systemName: "exclamationmark.triangle.fill")
+                                    .foregroundStyle(.red)
+                                Text(error)
+                                    .font(.caption)
                                     .foregroundStyle(.red)
                             }
-                            .buttonStyle(.borderless)
-                            .accessibilityLabel("Remove \(path)")
+                            .padding(.top, 2)
                         }
                     }
                 }
 
-                HStack {
-                    TextField("Path to exclude", text: $vm.newPathText)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(.body, design: .monospaced))
-                    Button("Add") {
-                        let path = viewModel.newPathText.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !path.isEmpty else { return }
-                        Task { await viewModel.addPath(path) }
-                        viewModel.newPathText = ""
+                glassSection("Excluded Paths") {
+                    VStack(alignment: .leading, spacing: 10) {
+                        if viewModel.excludedPaths.isEmpty {
+                            Text("No excluded paths")
+                                .font(.callout)
+                                .foregroundStyle(.tertiary)
+                                .frame(maxWidth: .infinity, alignment: .center)
+                                .padding(.vertical, 8)
+                        } else {
+                            ForEach(viewModel.excludedPaths, id: \.self) { path in
+                                HStack(spacing: 8) {
+                                    Image(systemName: "folder.badge.minus")
+                                        .foregroundStyle(.secondary)
+                                        .font(.callout)
+                                    Text(path)
+                                        .font(.system(.body, design: .monospaced))
+                                        .lineLimit(1)
+                                        .truncationMode(.middle)
+                                    Spacer()
+                                    Button {
+                                        Task { await viewModel.removePath(path) }
+                                    } label: {
+                                        Image(systemName: "minus.circle.fill")
+                                            .foregroundStyle(.red.opacity(0.8))
+                                    }
+                                    .buttonStyle(.borderless)
+                                    .accessibilityLabel("Remove \(path)")
+                                }
+                                .padding(.vertical, 2)
+                            }
+                        }
+
+                        Divider()
+                            .padding(.vertical, 2)
+
+                        HStack(spacing: 10) {
+                            TextField("Path to exclude", text: $vm.newPathText)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(.body, design: .monospaced))
+                            Button("Add") {
+                                let path = viewModel.newPathText.trimmingCharacters(in: .whitespacesAndNewlines)
+                                guard !path.isEmpty else { return }
+                                Task { await viewModel.addPath(path) }
+                                viewModel.newPathText = ""
+                            }
+                            .disabled(viewModel.newPathText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                        }
                     }
-                    .disabled(viewModel.newPathText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
+            .padding(20)
         }
-        .padding()
     }
 
     // MARK: - Index Tab
 
     private var indexTab: some View {
-        Form {
-            Section("Index Status") {
-                if let stats = viewModel.indexStats {
-                    LabeledContent("State") {
-                        Text(stats.state.capitalized)
-                            .foregroundStyle(stats.state == "live" ? .green : .orange)
+        ScrollView {
+            VStack(spacing: 16) {
+                glassSection("Index Status") {
+                    if let stats = viewModel.indexStats {
+                        VStack(spacing: 10) {
+                            statusRow(
+                                label: "State",
+                                value: stats.state.capitalized,
+                                color: stats.state == "live" ? .green : .orange
+                            )
+                            Divider()
+                            statusRow(
+                                label: "Files Indexed",
+                                value: stats.filesIndexed.formatted()
+                            )
+                            if let date = stats.lastScanDate {
+                                Divider()
+                                statusRow(
+                                    label: "Last Scan",
+                                    value: date.formatted(.dateTime)
+                                )
+                            }
+                        }
+                    } else {
+                        HStack(spacing: 8) {
+                            ProgressView()
+                                .controlSize(.small)
+                            Text("Loading...")
+                                .foregroundStyle(.secondary)
+                                .font(.callout)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
                     }
-                    LabeledContent("Files Indexed") {
-                        Text(stats.filesIndexed.formatted())
-                    }
-                    if let date = stats.lastScanDate {
-                        LabeledContent("Last Scan") {
-                            Text(date, format: .dateTime)
+                }
+
+                glassSection("Maintenance") {
+                    VStack(spacing: 12) {
+                        HStack {
+                            Button("Rebuild Index") {
+                                Task { await viewModel.rebuildIndex() }
+                            }
+                            .disabled(viewModel.isRebuilding)
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.regular)
+                            Spacer()
+                        }
+
+                        if viewModel.isRebuilding {
+                            HStack(spacing: 8) {
+                                ProgressView()
+                                    .controlSize(.small)
+                                Text("Rebuilding index...")
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                            }
                         }
                     }
-                } else {
-                    Text("Loading...")
-                        .foregroundStyle(.secondary)
                 }
             }
-
-            Section("Maintenance") {
-                Button("Rebuild Index") {
-                    Task { await viewModel.rebuildIndex() }
-                }
-                .disabled(viewModel.isRebuilding)
-
-                if viewModel.isRebuilding {
-                    HStack(spacing: 8) {
-                        ProgressView()
-                            .controlSize(.small)
-                        Text("Rebuilding index...")
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                    }
-                }
-            }
+            .padding(20)
         }
-        .padding()
     }
 
     // MARK: - AI Tab
 
     private var aiTab: some View {
         @Bindable var vm = viewModel
-        return Form {
-            Section("AI Assist") {
-                Toggle("Enable AI Assist", isOn: Binding(
-                    get: { viewModel.aiEnabled },
-                    set: { newValue in Task { await viewModel.setAIEnabled(newValue) } }
-                ))
+        return ScrollView {
+            VStack(spacing: 16) {
+                glassSection("AI Assist") {
+                    VStack(spacing: 12) {
+                        Toggle("Enable AI Assist", isOn: Binding(
+                            get: { viewModel.aiEnabled },
+                            set: { newValue in Task { await viewModel.setAIEnabled(newValue) } }
+                        ))
 
-                Picker("Model", selection: Binding(
-                    get: { viewModel.aiModel },
-                    set: { newValue in Task { await viewModel.setAIModel(newValue) } }
-                )) {
-                    ForEach(AIModelOption.allCases, id: \.self) { option in
-                        Text(option.displayName).tag(option)
+                        Picker("Model", selection: Binding(
+                            get: { viewModel.aiModel },
+                            set: { newValue in Task { await viewModel.setAIModel(newValue) } }
+                        )) {
+                            ForEach(AIModelOption.allCases, id: \.self) { option in
+                                Text(option.displayName).tag(option)
+                            }
+                        }
+                        .disabled(!viewModel.aiEnabled)
                     }
                 }
-                .disabled(!viewModel.aiEnabled)
-            }
 
-            Section("API Key") {
-                SecureField("API Key", text: Binding(
-                    get: { viewModel.aiAPIKeyText },
-                    set: { newValue in
-                        viewModel.aiAPIKeyText = newValue
-                        Task { await viewModel.setAIKey(newValue) }
-                    }
-                ))
-                .textFieldStyle(.roundedBorder)
-                .disabled(!viewModel.aiEnabled)
-            }
+                glassSection("API Key") {
+                    SecureField("API Key", text: Binding(
+                        get: { viewModel.aiAPIKeyText },
+                        set: { newValue in
+                            viewModel.aiAPIKeyText = newValue
+                            Task { await viewModel.setAIKey(newValue) }
+                        }
+                    ))
+                    .textFieldStyle(.roundedBorder)
+                    .disabled(!viewModel.aiEnabled)
+                }
 
-            Section("Privacy") {
-                Toggle("Send Metadata to Cloud", isOn: Binding(
-                    get: { viewModel.aiSendMetadata },
-                    set: { newValue in Task { await viewModel.setAISendMetadata(newValue) } }
-                ))
-                .disabled(!viewModel.aiEnabled)
+                glassSection("Privacy") {
+                    VStack(spacing: 12) {
+                        Toggle("Send Metadata to Cloud", isOn: Binding(
+                            get: { viewModel.aiSendMetadata },
+                            set: { newValue in Task { await viewModel.setAISendMetadata(newValue) } }
+                        ))
+                        .disabled(!viewModel.aiEnabled)
 
-                Toggle("Path Anonymization", isOn: Binding(
-                    get: { viewModel.aiPathAnonymization },
-                    set: { newValue in Task { await viewModel.setAIPathAnonymization(newValue) } }
-                ))
-            }
-
-            Section("Local Features") {
-                Toggle("Local Vision Analysis", isOn: Binding(
-                    get: { viewModel.aiLocalVision },
-                    set: { newValue in Task { await viewModel.setAILocalVision(newValue) } }
-                ))
-            }
-
-            Section("Diagnostics") {
-                Button("Preview Data") {
-                    Task {
-                        await viewModel.loadAIPreview()
-                        viewModel.aiPreviewVisible = true
+                        Toggle("Path Anonymization", isOn: Binding(
+                            get: { viewModel.aiPathAnonymization },
+                            set: { newValue in Task { await viewModel.setAIPathAnonymization(newValue) } }
+                        ))
                     }
                 }
-                .disabled(!viewModel.aiEnabled)
+
+                glassSection("Local Features") {
+                    Toggle("Local Vision Analysis", isOn: Binding(
+                        get: { viewModel.aiLocalVision },
+                        set: { newValue in Task { await viewModel.setAILocalVision(newValue) } }
+                    ))
+                }
+
+                glassSection("Diagnostics") {
+                    Button("Preview Data") {
+                        Task {
+                            await viewModel.loadAIPreview()
+                            viewModel.aiPreviewVisible = true
+                        }
+                    }
+                    .disabled(!viewModel.aiEnabled)
+                    .buttonStyle(.bordered)
+                }
             }
+            .padding(20)
         }
-        .padding()
         .sheet(isPresented: Binding(
             get: { viewModel.aiPreviewVisible },
             set: { viewModel.aiPreviewVisible = $0 }
         )) {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("AI Data Preview")
-                    .font(.headline)
+            VStack(alignment: .leading, spacing: 16) {
+                HStack {
+                    Text("AI Data Preview")
+                        .font(.headline)
+                    Spacer()
+                    Button {
+                        viewModel.aiPreviewVisible = false
+                    } label: {
+                        Image(systemName: "xmark.circle.fill")
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.borderless)
+                }
 
                 ScrollView {
                     Text(viewModel.aiPreviewData)
                         .font(.system(.caption, design: .monospaced))
                         .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .frame(maxHeight: 300)
+                .padding(12)
+                .background(.quaternary, in: .rect(cornerRadius: 10))
 
                 HStack {
                     Spacer()
-                    Button("Close") { viewModel.aiPreviewVisible = false }
-                        .keyboardShortcut(.cancelAction)
+                    Button("Close") {
+                        viewModel.aiPreviewVisible = false
+                    }
+                    .keyboardShortcut(.cancelAction)
+                    .buttonStyle(.bordered)
                 }
             }
-            .padding()
-            .frame(width: 420)
+            .padding(20)
+            .frame(width: 460)
         }
     }
 
     // MARK: - About Tab
 
     private var aboutTab: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 20) {
             Spacer()
 
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 48))
-                .foregroundStyle(.secondary)
+            VStack(spacing: 12) {
+                Image(systemName: "magnifyingglass")
+                    .font(.system(size: 56, weight: .light))
+                    .foregroundStyle(
+                        LinearGradient(
+                            colors: [.teal, .blue],
+                            startPoint: .topLeading,
+                            endPoint: .bottomTrailing
+                        )
+                    )
+                    .padding(.bottom, 4)
 
-            Text(Product.name)
-                .font(.title)
-                .fontWeight(.bold)
+                Text(Product.name)
+                    .font(.title)
+                    .fontWeight(.bold)
 
-            Text("Version \(viewModel.version)")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
+                Text("Version \(viewModel.version)")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
 
-            Text("Fast file search for macOS")
-                .font(.body)
-                .foregroundStyle(.secondary)
+                Text("Fast file search for macOS")
+                    .font(.body)
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(24)
+            .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 16))
 
             Spacer()
         }
         .frame(maxWidth: .infinity)
-        .padding()
+        .padding(24)
+    }
+
+    // MARK: - Glass Section Helper
+
+    /// A section with a subtle glass-style background and rounded corners.
+    private func glassSection<Content: View>(
+        _ title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(.secondary)
+                .textCase(.uppercase)
+                .padding(.leading, 4)
+
+            VStack(alignment: .leading, spacing: 6) {
+                content()
+            }
+            .padding(16)
+            .background(.quaternary.opacity(0.6), in: .rect(cornerRadius: 12))
+        }
+    }
+
+    // MARK: - Status Row Helper
+
+    /// A labeled key-value row with optional color accent.
+    private func statusRow(label: String, value: String, color: Color = .primary) -> some View {
+        HStack {
+            Text(label)
+                .foregroundStyle(.secondary)
+            Spacer()
+            Text(value)
+                .foregroundStyle(color)
+                .fontWeight(.medium)
+        }
+        .font(.body)
+    }
+
+    // MARK: - Status Badge Helper
+
+    /// A small pill-shaped badge for status indicators.
+    private func statusBadge(text: String, color: Color) -> some View {
+        Text(text)
+            .font(.caption)
+            .fontWeight(.medium)
+            .foregroundStyle(color)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
+            .background(color.opacity(0.12), in: Capsule())
     }
 }

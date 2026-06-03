@@ -1,3 +1,7 @@
+/// Google Gemini provider using the generateContent API with SSE streaming.
+///
+/// Handles Gemini-specific protocol: x-goog-api-key auth, candidates/parts/text
+/// JSON structure, and context injection into the user message parts array.
 import Foundation
 
 /// Provider for Google's Gemini models via the Gemini API.

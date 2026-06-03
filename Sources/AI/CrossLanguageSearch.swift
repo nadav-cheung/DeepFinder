@@ -1,3 +1,7 @@
+/// Expands queries with cross-language synonyms (Chinese to English and vice versa).
+///
+/// Enables finding "mockup_final.fig" when searching for "设计稿". Results are
+/// locally cached with TTL-based expiry. Gracefully degrades to empty when AI is off.
 import Foundation
 
 // MARK: - CrossLanguageSearch

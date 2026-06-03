@@ -42,9 +42,8 @@ struct AppDelegateTests {
 
         let config = DeepFinderAppConfiguration(
             daemonSpawnerFactory: { mockSpawner },
-            statusBarControllerFactory: { onToggle, onShow, onHide, onSettings, onQuit in
+            statusBarControllerFactory: { onShow, onHide, onSettings, onQuit in
                 StatusBarController(
-                    onToggleSearchPanel: onToggle,
                     onShowSearchPanel: onShow,
                     onHideSearchPanel: onHide,
                     onOpenSettings: onSettings,
@@ -293,15 +292,15 @@ struct AppDelegateTests {
 
     // MARK: - 16. Status bar toggle callback triggers search panel
 
-    @Test("Status bar toggle callback wired to search panel")
+    @Test("Status bar show callback wired to search panel")
     @MainActor
-    func testStatusBarToggleCallbackWired() {
+    func testStatusBarShowCallbackWired() {
         let (config, _) = makeTestConfiguration()
         let delegate = DeepFinderAppDelegate(configuration: config)
 
         delegate.applicationDidFinishLaunching(Notification(name: .init("test")))
 
-        delegate.statusBarController?.toggleSearchPanel()
+        delegate.statusBarController?.showSearchPanel()
     }
 
     // MARK: - 17. Daemon spawn failure sets error status
@@ -365,7 +364,7 @@ struct DeepFinderAppConfigurationTests {
         let mockSpawner = MockDaemonSpawnerForTests()
         let configOn = DeepFinderAppConfiguration(
             daemonSpawnerFactory: { mockSpawner },
-            statusBarControllerFactory: { _, _, _, _, _ in StatusBarController() },
+            statusBarControllerFactory: { _, _, _, _ in StatusBarController() },
             searchPanelFactory: {
                 let mockIPC = MockIPCClientForTests()
                 let vm = SearchViewModel(ipcClient: mockIPC)
@@ -378,7 +377,7 @@ struct DeepFinderAppConfigurationTests {
         )
         let configOff = DeepFinderAppConfiguration(
             daemonSpawnerFactory: { mockSpawner },
-            statusBarControllerFactory: { _, _, _, _, _ in StatusBarController() },
+            statusBarControllerFactory: { _, _, _, _ in StatusBarController() },
             searchPanelFactory: {
                 let mockIPC = MockIPCClientForTests()
                 let vm = SearchViewModel(ipcClient: mockIPC)

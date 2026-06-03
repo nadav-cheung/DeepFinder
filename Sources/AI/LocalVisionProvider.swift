@@ -1,3 +1,7 @@
+/// On-device image classification using Vision framework's VNClassifyImageRequest.
+///
+/// Produces text labels (scene/object tags) for indexing, running on the Neural Engine/GPU.
+/// No image data leaves the device. Tags are persisted to SQLite as vision_metadata fields.
 // Sources/AI/LocalVisionProvider.swift
 import Foundation
 import Vision

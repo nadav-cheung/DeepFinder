@@ -1,3 +1,8 @@
+/// Client-side IPC connector used by CLI and GUI to talk to the daemon.
+///
+/// Connects over a Unix domain socket, sends framed `IPCRequest` messages, and reads
+/// framed `IPCResponse` replies. Also handles daemon lifecycle: auto-spawning the daemon
+/// binary, checking its PID file, and cleaning up stale sockets.
 import Foundation
 
 // MARK: - IPCClientError
@@ -90,6 +95,12 @@ actor IPCClient {
             throw IPCClientError.connectionFailed(String(cString: strerror(errno)))
         }
 
+        // Prevent SIGPIPE when writing to a closed socket. Without this, a
+        // daemon-side disconnect causes the app process to be killed instantly
+        // by SIGPIPE — no crash report, no delegate methods, no error handling.
+        var nosigpipe: Int32 = 1
+        setsockopt(newFD, SOL_SOCKET, SO_NOSIGPIPE, &nosigpipe, socklen_t(MemoryLayout.size(ofValue: nosigpipe)))
+
         var addr = sockaddr_un()
         addr.sun_family = sa_family_t(AF_UNIX)
         socketPath.withCString { pathPtr in
@@ -130,6 +141,19 @@ actor IPCClient {
     /// - Returns: The daemon's response.
     /// - Throws: `IPCClientError` on communication failures.
     func send(_ request: IPCRequest) async throws -> IPCResponse {
+        do {
+            return try sendAttempt(request)
+        } catch {
+            // If the first attempt failed, the connection may be stale.
+            // Disconnect, reconnect, and retry once.
+            disconnect()
+            try connect()
+            return try sendAttempt(request)
+        }
+    }
+
+    /// Single attempt to send a request and read the response.
+    private func sendAttempt(_ request: IPCRequest) throws -> IPCResponse {
         if fd < 0 {
             try connect()
         }

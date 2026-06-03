@@ -39,9 +39,8 @@ public struct DeepFinderAppConfiguration: Sendable {
     var daemonSpawnerFactory: @Sendable () -> any DaemonSpawner
 
     /// Factory closure that creates a `StatusBarController` with wired callbacks.
-    /// Parameters: toggle, show, hide, settings, quit closures.
+    /// Parameters: show, hide, settings, quit closures.
     var statusBarControllerFactory: @MainActor @Sendable (
-        _ onToggle: @escaping () -> Void,
         _ onShow: @escaping () -> Void,
         _ onHide: @escaping () -> Void,
         _ onSettings: @escaping () -> Void,
@@ -89,6 +88,8 @@ public final class DeepFinderAppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Properties
 
+    private let logger = Logger(subsystem: Product.daemonSubsystem, category: "app-delegate")
+
     /// The configuration providing all injectable components.
     private let configuration: DeepFinderAppConfiguration
 
@@ -123,6 +124,12 @@ public final class DeepFinderAppDelegate: NSObject, NSApplicationDelegate {
         // LSUIElement: no Dock icon, no main menu.
         NSApp?.setActivationPolicy(.accessory)
 
+        // Belt-and-suspenders defence against automatic termination. The primary
+        // mechanism is `NSApplicationSupportsAutomaticTermination = NO` in
+        // `App/Info.plist`; this ProcessInfo call is a runtime backup.
+        ProcessInfo.processInfo.disableAutomaticTermination("DeepFinder menu bar app running")
+        logger.notice("applicationDidFinishLaunching — automatic termination disabled")
+
         // Subscribe to inter-component notifications.
         let nc = NotificationCenter.default
         nc.addObserver(
@@ -143,23 +150,20 @@ public final class DeepFinderAppDelegate: NSObject, NSApplicationDelegate {
 
         // Create status bar controller with wired actions.
         statusBarController = configuration.statusBarControllerFactory(
-            { [weak self] in self?.toggleSearchPanel() },
             { [weak self] in self?.showSearchPanel() },
             { [weak self] in self?.hideSearchPanel() },
             { [weak self] in self?.showSettingsWindow() },
-            { NSApp?.terminate(nil) }
+            { [weak self] in self?.requestQuit() }
         )
         statusBarController?.install()
 
         // Register global hotkey.
         let hotkey = GlobalHotkey(keyCombination: configuration.hotkeyCombination)
         let registered = hotkey.register { [weak self] in
-            // Must hop to main actor for UI work.
-            Task { @MainActor in
-                self?.toggleSearchPanel()
-            }
+            Task { @MainActor in self?.toggleSearchPanel() }
         }
         self.globalHotkey = registered ? hotkey : nil
+        logger.info("Global hotkey registered: \(registered)")
 
         // Auto-spawn daemon.
         if configuration.autoSpawnDaemon {
@@ -170,12 +174,25 @@ public final class DeepFinderAppDelegate: NSObject, NSApplicationDelegate {
                     statusBarController?.updateIndexStatus(.live)
                 } catch {
                     statusBarController?.updateIndexStatus(.error)
+                    logger.error("Daemon spawn failed: \(error.localizedDescription)")
                 }
             }
         }
     }
 
+    public func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        // LSUIElement menu bar app — closing the last window should NOT quit the app.
+        // The status bar icon stays alive for future interactions.
+        return false
+    }
+
+    public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        return .terminateNow
+    }
+
     public func applicationWillTerminate(_ notification: Notification) {
+        logger.info("applicationWillTerminate — cleaning up")
+
         // Unregister global hotkey.
         globalHotkey?.unregister()
         globalHotkey = nil
@@ -200,11 +217,13 @@ public final class DeepFinderAppDelegate: NSObject, NSApplicationDelegate {
 
     /// Toggle search panel visibility.
     func toggleSearchPanel() {
+        NSApp?.activate(ignoringOtherApps: true)
         searchPanelController?.toggle()
     }
 
     /// Show the search panel.
     func showSearchPanel() {
+        NSApp?.activate(ignoringOtherApps: true)
         searchPanelController?.show()
     }
 
@@ -215,10 +234,17 @@ public final class DeepFinderAppDelegate: NSObject, NSApplicationDelegate {
 
     /// Show the settings window (creates on first call, reuses after).
     func showSettingsWindow() {
+        NSApp?.activate(ignoringOtherApps: true)
         if settingsWindow == nil {
             settingsWindow = configuration.settingsWindowFactory()
         }
         settingsWindow?.makeKeyAndOrderFront(nil)
+    }
+
+    /// Called when the user clicks "Quit" from the status bar menu.
+    func requestQuit() {
+        logger.info("requestQuit — user requested termination")
+        NSApp?.terminate(nil)
     }
 
     // MARK: - Notification Handlers
@@ -245,9 +271,8 @@ extension DeepFinderAppConfiguration {
             daemonSpawnerFactory: {
                 DaemonSpawnerViaIPCClient()
             },
-            statusBarControllerFactory: { onToggle, onShow, onHide, onSettings, onQuit in
+            statusBarControllerFactory: { onShow, onHide, onSettings, onQuit in
                 StatusBarController(
-                    onToggleSearchPanel: onToggle,
                     onShowSearchPanel: onShow,
                     onHideSearchPanel: onHide,
                     onOpenSettings: onSettings,

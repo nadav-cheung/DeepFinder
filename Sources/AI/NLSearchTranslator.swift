@@ -1,3 +1,8 @@
+/// Translates natural language queries into DeepFinder search syntax via an AI provider.
+///
+/// Converts freeform input like "find big PDFs from last week" into "ext:pdf dm:lastweek size:>1mb".
+/// Gracefully degrades: returns the input unchanged when AI is off, the input already
+/// contains search syntax, or the translation call fails.
 import Foundation
 
 // MARK: - NLSearchTranslator

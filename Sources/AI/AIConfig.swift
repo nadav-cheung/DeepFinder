@@ -1,3 +1,8 @@
+/// Central configuration hub for all AI features.
+///
+/// Defines config keys, privacy-first defaults (cloud OFF, local ON), and typed
+/// accessors used throughout the AI module. API keys are migrated from plaintext
+/// config into SecretsStore on first read.
 import Foundation
 
 // MARK: - AIConfigKey

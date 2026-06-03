@@ -1,3 +1,7 @@
+/// Cloud-based embedding provider for OpenAI-compatible embedding APIs.
+///
+/// Sends filenames (not full paths) to remote endpoints and returns float vectors
+/// for semantic similarity search. Supports any OpenAI-compatible /embeddings endpoint.
 import Foundation
 
 /// Cloud-based embedding provider for OpenAI-compatible embedding APIs.

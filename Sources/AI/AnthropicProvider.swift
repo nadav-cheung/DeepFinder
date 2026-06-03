@@ -1,3 +1,7 @@
+/// Claude (Anthropic) provider using the Messages API with SSE streaming.
+///
+/// Handles Anthropic-specific protocol differences: x-api-key header, anthropic-version
+/// header, top-level system field, and content_block_delta event parsing.
 import Foundation
 
 /// Provider for Anthropic's Claude models via the Messages API.

@@ -1,3 +1,8 @@
+/// Persistent daemon configuration stored as JSON at `~/.deep-finder/settings.json`.
+///
+/// Provides atomic reads and writes (temp-file + rename) so the config file never
+/// becomes corrupted by a partial write. Holds indexing exclusions, batch sizes,
+/// and result limits that the daemon reads at startup and the CLI can modify at runtime.
 import Foundation
 
 // MARK: - DaemonConfig

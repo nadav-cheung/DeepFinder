@@ -1,3 +1,8 @@
+/// On-device text embedding using NLContextualEmbedding (NaturalLanguage framework).
+///
+/// Routes CJK text to the Simplified Chinese model and Latin text to the Latin model,
+/// then averages and L2-normalizes per-word vectors into a 512-dim embedding.
+/// Zero network calls, zero dependencies.
 @preconcurrency import Foundation
 @preconcurrency import NaturalLanguage
 import OSLog

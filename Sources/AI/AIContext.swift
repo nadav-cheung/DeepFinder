@@ -1,3 +1,7 @@
+/// The compile-time privacy boundary between the search engine and AI providers.
+///
+/// Carries only file metadata (via FileMetadataSummary), never contents or thumbnails.
+/// This is the sole data type allowed to cross into any AIModelProvider.call.
 import Foundation
 
 /// Context passed to AI model providers for completion requests.

@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import OSLog
 
 // MARK: - StatusBarControllerActions
 
@@ -8,8 +9,7 @@ import Foundation
 /// Production `StatusBarController` implements this. Tests inject mocks
 /// to verify toggle/search/quit behavior without creating real NSStatusItems.
 @MainActor
-protocol StatusBarControllerActions: Sendable {
-    func toggleSearchPanel()
+protocol StatusBarControllerActions {
     func showSearchPanel()
     func hideSearchPanel()
     func openSettings()
@@ -67,16 +67,18 @@ enum IndexStatusBadge: String, Sendable, Equatable {
 
 /// Manages the NSStatusItem in the macOS menu bar.
 ///
-/// REQ-2.0-08: Menu bar icon, click toggles search panel, right-click menu
-/// with Search/Settings/Quit, index status badge.
+/// Clicking the status bar icon shows a dropdown menu with Search, Settings,
+/// Check for Updates, and Quit. The button tooltip reflects the current index
+/// status.
 ///
-/// The status bar icon is always visible. Left-click toggles the search panel.
-/// Right-click shows a context menu with Search, Settings, and Quit options.
-/// The button tooltip reflects the current index status.
-///
-/// `@MainActor` because all NSStatusItem operations must run on the main thread.
+/// Inherits `NSObject` for `@objc` selector support. `@MainActor` because all
+/// NSStatusItem operations must run on the main thread.
 @MainActor
-public final class StatusBarController: StatusBarControllerActions, @unchecked Sendable {
+public final class StatusBarController: NSObject, StatusBarControllerActions {
+
+    // MARK: - Logging
+
+    private let logger = Logger(subsystem: "com.nadav.deepfinder.daemon", category: "status-bar")
 
     // MARK: - State
 
@@ -88,19 +90,16 @@ public final class StatusBarController: StatusBarControllerActions, @unchecked S
 
     // MARK: - Dependencies
 
-    /// Closure invoked when the search panel should toggle.
-    private let onToggleSearchPanel: () -> Void
-
-    /// Closure invoked when the search panel should show.
+    /// Closure invoked when "Search" is selected from the menu.
     private let onShowSearchPanel: () -> Void
 
-    /// Closure invoked when the search panel should hide.
+    /// Closure invoked when the search panel should be hidden.
     private let onHideSearchPanel: () -> Void
 
-    /// Closure invoked when settings should open.
+    /// Closure invoked when "Settings" is selected from the menu.
     private let onOpenSettings: () -> Void
 
-    /// Closure invoked when the app should quit.
+    /// Closure invoked when "Quit" is selected from the menu.
     private let onQuit: () -> Void
 
     // MARK: - Init
@@ -108,31 +107,29 @@ public final class StatusBarController: StatusBarControllerActions, @unchecked S
     /// Create a new status bar controller.
     ///
     /// - Parameters:
-    ///   - onToggleSearchPanel: Called when the user left-clicks the status bar icon.
-    ///   - onShowSearchPanel: Called when "Search" is selected from the right-click menu.
+    ///   - onShowSearchPanel: Called when "Search" is selected from the menu.
     ///   - onHideSearchPanel: Called when the search panel should be hidden.
-    ///   - onOpenSettings: Called when "Settings" is selected from the right-click menu.
-    ///   - onQuit: Called when "Quit" is selected from the right-click menu.
+    ///   - onOpenSettings: Called when "Settings" is selected from the menu.
+    ///   - onQuit: Called when "Quit" is selected from the menu.
     public init(
-        onToggleSearchPanel: @escaping () -> Void = {},
         onShowSearchPanel: @escaping () -> Void = {},
         onHideSearchPanel: @escaping () -> Void = {},
         onOpenSettings: @escaping () -> Void = {},
         onQuit: @escaping () -> Void = {}
     ) {
-        self.onToggleSearchPanel = onToggleSearchPanel
         self.onShowSearchPanel = onShowSearchPanel
         self.onHideSearchPanel = onHideSearchPanel
         self.onOpenSettings = onOpenSettings
         self.onQuit = onQuit
+        super.init()
     }
 
     // MARK: - Lifecycle
 
     /// Install the status bar item into the menu bar.
     ///
-    /// Creates an NSStatusItem with a magnifying glass icon. Left-click toggles
-    /// the search panel. The button tooltip reflects the current index status.
+    /// Creates an NSStatusItem with a magnifying glass icon. Clicking the icon
+    /// shows a dropdown menu with Search, Settings, Check for Updates, and Quit.
     func install() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         self.statusItem = item
@@ -141,10 +138,13 @@ public final class StatusBarController: StatusBarControllerActions, @unchecked S
             button.image = NSImage(systemSymbolName: "magnifyingglass", accessibilityDescription: Product.name)
             button.image?.size = NSSize(width: 18, height: 18)
             button.toolTip = indexStatus.tooltip
-            button.action = #selector(statusItemClicked)
-            button.target = self
-            button.sendAction(on: [.leftMouseUp, .rightMouseUp])
         }
+
+        // NSStatusItem.menu tells macOS to show this dropdown when the icon is
+        // clicked. Must be set on the statusItem, NOT on button.menu (which only
+        // controls the right-click context menu).
+        item.menu = buildMenu()
+        logger.info("Status bar item installed")
     }
 
     /// Remove the status bar item from the menu bar.
@@ -152,6 +152,7 @@ public final class StatusBarController: StatusBarControllerActions, @unchecked S
         if let item = statusItem {
             NSStatusBar.system.removeStatusItem(item)
             self.statusItem = nil
+            logger.info("Status bar item removed")
         }
     }
 
@@ -161,6 +162,8 @@ public final class StatusBarController: StatusBarControllerActions, @unchecked S
     ///
     /// Updates the button tooltip and icon to reflect the current index state.
     func updateIndexStatus(_ status: IndexStatusBadge) {
+        guard status != indexStatus else { return }
+        logger.info("Index status: \(self.indexStatus.rawValue) -> \(status.rawValue)")
         self.indexStatus = status
         statusItem?.button?.toolTip = status.tooltip
         statusItem?.button?.image = NSImage(systemSymbolName: status.iconName, accessibilityDescription: Product.name)
@@ -173,10 +176,6 @@ public final class StatusBarController: StatusBarControllerActions, @unchecked S
     }
 
     // MARK: - StatusBarControllerActions
-
-    func toggleSearchPanel() {
-        onToggleSearchPanel()
-    }
 
     func showSearchPanel() {
         onShowSearchPanel()
@@ -194,32 +193,16 @@ public final class StatusBarController: StatusBarControllerActions, @unchecked S
         onQuit()
     }
 
-    // MARK: - Click Handler
+    // MARK: - Menu
 
-    @objc private func statusItemClicked(_ sender: Any?) {
-        guard let event = NSApp?.currentEvent else {
-            // Fallback: treat as left click (toggle).
-            toggleSearchPanel()
-            return
-        }
-
-        if event.type == .rightMouseUp {
-            showContextMenu()
-        } else {
-            toggleSearchPanel()
-        }
-    }
-
-    // MARK: - Context Menu
-
-    /// Build and show the right-click context menu.
-    private func showContextMenu() {
+    /// Build the dropdown menu attached to the status bar item.
+    private func buildMenu() -> NSMenu {
         let menu = NSMenu()
 
         let searchItem = NSMenuItem(
-            title: "Search",
+            title: "搜索",
             action: #selector(contextSearchClicked),
-            keyEquivalent: ""
+            keyEquivalent: "k"
         )
         searchItem.target = self
         menu.addItem(searchItem)
@@ -234,6 +217,16 @@ public final class StatusBarController: StatusBarControllerActions, @unchecked S
 
         menu.addItem(NSMenuItem.separator())
 
+        let updateItem = NSMenuItem(
+            title: "检查更新...",
+            action: #selector(contextCheckUpdatesClicked),
+            keyEquivalent: ""
+        )
+        updateItem.target = self
+        menu.addItem(updateItem)
+
+        menu.addItem(NSMenuItem.separator())
+
         let quitItem = NSMenuItem(
             title: "Quit \(Product.name)",
             action: #selector(contextQuitClicked),
@@ -242,13 +235,7 @@ public final class StatusBarController: StatusBarControllerActions, @unchecked S
         quitItem.target = self
         menu.addItem(quitItem)
 
-        statusItem?.button?.menu = menu
-        // NSStatusItem button menu auto-shows on click; we set it here
-        // and clear it after to avoid persisting.
-        // A slight delay to let the menu present before clearing.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
-            self?.statusItem?.button?.menu = nil
-        }
+        return menu
     }
 
     @objc private func contextSearchClicked() {
@@ -262,4 +249,15 @@ public final class StatusBarController: StatusBarControllerActions, @unchecked S
     @objc private func contextQuitClicked() {
         quitApp()
     }
+
+    @objc private func contextCheckUpdatesClicked() {
+        NSWorkspace.shared.open(UpdateConstants.updateURL)
+    }
+}
+
+// MARK: - Update URL
+
+private enum UpdateConstants {
+    /// GitHub Releases page for checking new versions.
+    static let updateURL = URL(string: "https://github.com/nadav-cheung/DeepFinder/releases")!
 }

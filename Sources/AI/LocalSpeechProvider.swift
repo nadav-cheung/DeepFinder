@@ -1,3 +1,8 @@
+/// On-device speech recognition using Apple's Speech framework.
+///
+/// Streams partial transcription results for real-time display, then a final result
+/// when the utterance completes. Supports mock injection for testing without a microphone.
+/// Completely local -- no audio data leaves the device.
 // Sources/AI/LocalSpeechProvider.swift
 import Foundation
 import OSLog
@@ -50,7 +55,21 @@ protocol SpeechRecognizerProtocol: Sendable {
 /// framework (which requires hardware microphone input).
 ///
 /// REQ-3.0-12: Local speech recognition.
-actor LocalSpeechProvider {
+actor LocalSpeechProvider: @preconcurrency SpeechRecognizerProtocol {
+
+    // MARK: - SpeechRecognizerProtocol Conformance
+
+    var available: Bool {
+        get async { await Self.isAvailable() }
+    }
+
+    func startRecognition() -> AsyncStream<SpeechRecognitionResult>? {
+        startListening()
+    }
+
+    func stopRecognition() async {
+        stopListening()
+    }
 
     /// The approximate silence duration (in seconds) after which Apple's Speech
     /// framework emits a final result (`isFinal == true`), automatically

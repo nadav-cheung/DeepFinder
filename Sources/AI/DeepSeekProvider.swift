@@ -1,3 +1,8 @@
+/// Shared OpenAI-compatible chat completions provider with SSE streaming and retry logic.
+///
+/// Single implementation serving DeepSeek, Qwen, and any future OpenAI-format APIs.
+/// Handles SSE line parsing, exponential backoff on 429/transport errors, and context
+/// serialization that sends only file names (never paths or contents).
 import Foundation
 
 // MARK: - OpenAI-Compatible Protocol Layer

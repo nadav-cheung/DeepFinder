@@ -1,3 +1,7 @@
+/// On-device image similarity search using Vision framework feature vectors.
+///
+/// Extracts VNFeaturePrintObservation embeddings from images, computes cosine similarity,
+/// and returns ranked results. Entirely local -- no image data leaves the device.
 // Sources/AI/ImageSimilaritySearch.swift
 import Foundation
 import Vision

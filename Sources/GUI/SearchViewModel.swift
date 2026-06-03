@@ -1,3 +1,4 @@
+import SwiftUI
 import AppKit
 import Foundation
 import Combine
@@ -37,9 +38,24 @@ final class SearchViewModel: ObservableObject {
     @Published var searchText: String = ""
     @Published var results: [SearchResult] = []
     @Published var isLoading: Bool = false
+    @Published var showSpinner: Bool = false
+    @Published var searchTimedOut: Bool = false
     @Published var selectedIndex: Int?
     @Published var hasSearched: Bool = false
     @Published var errorState: SearchErrorState?
+
+    /// Toast message displayed as a transient overlay. Set to a non-nil string
+    /// to present a toast; it auto-dismisses after 1.5 seconds.
+    /// REQ-3.2-27: "已复制路径" feedback after Cmd+C.
+    @Published var toastMessage: String? = nil
+
+    // MARK: - History & Access Stores
+
+    /// Search query history for the history dropdown. REQ-3.2-02.
+    let searchHistory = SearchHistoryStore()
+
+    /// File access frequency tracker for ranking boost. REQ-3.2-33.
+    let accessHistory = AccessHistoryStore()
 
     // MARK: - Dependencies
 
@@ -63,26 +79,58 @@ final class SearchViewModel: ObservableObject {
     /// Sets `errorState` to distinguish between empty results (`.noResults`),
     /// daemon connectivity failures (`.daemonDisconnected`), and query errors
     /// (`.searchError`). On success with results, `errorState` stays `nil`.
+    ///
+    /// REQ-3.2-02: Records the query in search history when results are found.
     func search() async {
         let query = searchText
         guard !query.isEmpty else {
             results = []
             hasSearched = false
             isLoading = false
+            showSpinner = false
+            searchTimedOut = false
             errorState = nil
             return
         }
 
         isLoading = true
+        showSpinner = false
+        searchTimedOut = false
         selectedIndex = nil
         errorState = nil
+
+        // REQ-3.2-04: spinner only appears if search takes > 50ms.
+        let spinnerTask = Task {
+            try? await Task.sleep(for: .seconds(0.05))
+            guard !Task.isCancelled else { return }
+            showSpinner = isLoading
+        }
+
+        // REQ-3.2-04: timeout after 10 seconds.
+        let timeoutTask = Task {
+            try? await Task.sleep(for: .seconds(10))
+            guard !Task.isCancelled else { return }
+            searchTimedOut = true
+        }
 
         do {
             let response = try await ipcClient.send(.query(query, limit: nil))
             switch response {
             case .results(let searchResults, _):
-                results = searchResults
+                // REQ-3.2-33: apply access history boosting before storing results.
+                let boostedPaths = accessHistory.sortedPaths()
+                let boostedSet = Set(boostedPaths.prefix(100))
+                results = searchResults.sorted { a, b in
+                    let aBoosted = boostedSet.contains(a.record.path)
+                    let bBoosted = boostedSet.contains(b.record.path)
+                    if aBoosted != bBoosted { return aBoosted }
+                    return false // preserve original order for non-boosted
+                }
                 errorState = searchResults.isEmpty ? .noResults : nil
+                // REQ-3.2-02: persist search history on successful non-empty results.
+                if !searchResults.isEmpty {
+                    searchHistory.addEntry(query)
+                }
             case .error(let ipcError):
                 results = []
                 switch ipcError {
@@ -110,7 +158,11 @@ final class SearchViewModel: ObservableObject {
             errorState = .searchError(error.localizedDescription)
         }
 
+        spinnerTask.cancel()
+        timeoutTask.cancel()
         isLoading = false
+        showSpinner = false
+        searchTimedOut = false
         hasSearched = true
     }
 
@@ -118,12 +170,18 @@ final class SearchViewModel: ObservableObject {
 
     /// Open the currently selected file with the default application.
     /// Returns `true` if a file was opened, `false` if nothing was selected.
+    ///
+    /// REQ-3.2-33: records the file access for ranking boost.
     func openSelected() -> Bool {
         guard let idx = selectedIndex, idx >= 0, idx < results.count else {
             return false
         }
         let path = results[idx].record.path
-        return workspace.open(path)
+        let success = workspace.open(path)
+        if success {
+            accessHistory.recordAccess(path)
+        }
+        return success
     }
 
     /// Reveal the currently selected file in Finder.
@@ -134,5 +192,25 @@ final class SearchViewModel: ObservableObject {
         }
         let path = results[idx].record.path
         return workspace.selectFile(path)
+    }
+
+    // MARK: - Search from History (REQ-3.2-02)
+
+    /// Sets the search text to a history query and triggers a search immediately.
+    func searchFromHistory(_ query: String) {
+        searchText = query
+        Task { await search() }
+    }
+
+    // MARK: - Toast (REQ-3.2-27)
+
+    /// Shows a transient toast message that auto-dismisses after 1.5 seconds.
+    func showToast(_ message: String) {
+        toastMessage = message
+        Task {
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else { return }
+            withAnimation { self.toastMessage = nil }
+        }
     }
 }

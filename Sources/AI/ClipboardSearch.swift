@@ -1,3 +1,7 @@
+/// Reads plain text from the macOS pasteboard for clipboard-triggered search.
+///
+/// Only captures .string content (ignores images/files), produces a truncated
+/// preview for UI display, and never auto-searches or records history.
 // Sources/AI/ClipboardSearch.swift
 import AppKit
 
