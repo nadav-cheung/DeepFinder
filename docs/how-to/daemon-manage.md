@@ -59,11 +59,15 @@ If nothing is running, it reports "Daemon: not running."
 
 ### Rebuild the index
 
+To force a full re-scan of the filesystem:
+
 ```bash
-deepfinder daemon rebuild
+deepfinder daemon stop
+rm ~/.deep-finder/cache/index.db
+deepfinder daemon start
 ```
 
-This wipes the on-disk SQLite cache and rescans the entire filesystem from scratch. Use it when:
+This wipes the on-disk SQLite cache and triggers a full re-index on the next daemon start. Use it when:
 
 - The index seems out of sync with the actual filesystem
 - You suspect index corruption
@@ -79,10 +83,10 @@ To have the daemon start automatically when you log in, install the LaunchAgent:
 deepfinder install
 ```
 
-This creates `~/Library/LaunchAgents/com.nadav.deepfinder.plist`. macOS launchd picks it up on next login, or you can load it immediately:
+This creates `~/Library/LaunchAgents/com.nadav.deepfinder.daemon.plist`. macOS launchd picks it up on next login, or you can load it immediately:
 
 ```bash
-launchctl load ~/Library/LaunchAgents/com.nadav.deepfinder.plist
+launchctl load ~/Library/LaunchAgents/com.nadav.deepfinder.daemon.plist
 ```
 
 To remove the auto-start behavior:
@@ -100,7 +104,7 @@ This removes the plist and unloads it from launchd if currently loaded.
 | `~/.deep-finder/session/daemon.pid` | Running daemon PID |
 | `~/.deep-finder/session/ipc.sock` | Unix domain socket for CLI/GUI communication |
 | `~/.deep-finder/cache/index.db` | SQLite WAL index database |
-| `~/Library/LaunchAgents/com.nadav.deepfinder.plist` | LaunchAgent plist (auto-start) |
+| `~/Library/LaunchAgents/com.nadav.deepfinder.daemon.plist` | LaunchAgent plist (auto-start) |
 
 ### Crash recovery
 
@@ -124,11 +128,11 @@ A daemon crash does not lose your index -- the data is persisted in SQLite at `~
 DeepFinder indexes all mounted volumes by default -- internal, external (USB/Thunderbolt), and network shares. When a volume is unmounted, its files are automatically removed from the index.
 
 - **External drives** (USB, Thunderbolt): Indexed on mount, removed on unmount. No configuration needed.
-- **Network shares** (SMB, AFP, NFS): Indexed if mounted and accessible. Slow or intermittently connected shares may cause scan delays -- exclude them with `excludedVolumes` if they cause problems.
-- **Time Machine volumes**: Not excluded by default. Add them to `excludedVolumes` if you do not want backup snapshots indexed.
+- **Network shares** (SMB, AFP, NFS): Indexed if mounted and accessible. Slow or intermittently connected shares may cause scan delays -- exclude them with `excludedPaths` if they cause problems.
+- **Time Machine volumes**: Not excluded by default. Add them to `excludedPaths` if you do not want backup snapshots indexed.
 
 To see which volumes are currently indexed: `deepfinder daemon status`.
-To exclude a volume: `deepfinder config set excludedVolumes '["/Volumes/Time Machine"]'`.
+To exclude a path: `deepfinder config set excludedPaths '["/Volumes/Time Machine"]'`.
 
 ---
 

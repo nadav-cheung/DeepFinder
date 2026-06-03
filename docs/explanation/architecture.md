@@ -74,7 +74,10 @@ Total time from keystroke to visible results: **<1ms** for the search + socket r
 | **IndexPersistence** | SQLite WAL at `~/.deep-finder/cache/index.db`. Batch writes every 5s or 100 changes. |
 | **SearchCoordinator** | Orchestrates search across providers. Cancellation, pagination, sorting. |
 | **CLI** | Thin client. Connects via socket, formats output, exits. |
-| **GUI** | NSPanel menu bar app. Same IPC protocol as CLI. |
+| **GUI** | NSPanel menu bar app. Same IPC protocol as CLI. Liquid Glass design, global hotkey, Intelligence Glow animation, Quick Look preview. |
+| **AI** | On-device semantic search via NL embeddings. Cloud AI providers (DeepSeek, Qwen, Anthropic, Gemini) with privacy boundaries. Speech input, Vision tagging, cross-language search, match explanation. |
+| **Media** | Metadata extraction for images (EXIF), audio (ID3), video (QuickTime), and PDF documents. Stored in MediaMetadataIndex. |
+| **Services** | HTTP search service for remote queries, URL scheme handler (`deepfinder://`) for app integration, SearchIntent scripting bridge. |
 
 ## Why Not Just Use Spotlight?
 

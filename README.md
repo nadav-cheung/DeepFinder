@@ -232,6 +232,14 @@ This project follows strict TDD. Every new component requires:
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for the full development workflow.
 
+## Community
+
+- [Code of Conduct](CODE_OF_CONDUCT.md)
+- [Security Policy](SECURITY.md)
+- [Governance](GOVERNANCE.md)
+- [Support](docs/SUPPORT.md)
+- [Changelog](CHANGELOG.md)
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code style, TDD workflow, and PR process.

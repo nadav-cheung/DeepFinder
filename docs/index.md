@@ -86,4 +86,4 @@ Take the tutorial and get your first search working in under two minutes.
 → [Architecture Specs](superpowers/specs/design/) — detailed design documents
 
 ---
-*DeepFinder v3.0 · macOS 26+ · Apple Silicon M4+ · [GitHub](https://github.com/nadav/deepfinder)*
+*DeepFinder v3.0 · macOS 26+ · Apple Silicon M4+ · [GitHub](https://github.com/nadav-cheung/DeepFinder)*

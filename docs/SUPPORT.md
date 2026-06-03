@@ -4,7 +4,7 @@ Need help with DeepFinder? Here's where to go.
 
 ## 🐛 Found a Bug?
 
-Search [existing issues](https://github.com/nadav/deepfinder/issues) first to see if it's already reported. If not, open a new issue using the Bug Report template and include:
+Search [existing issues](https://github.com/nadav-cheung/DeepFinder/issues) first to see if it's already reported. If not, open a new issue using the Bug Report template and include:
 
 - macOS version
 - DeepFinder version (`deepfinder --version`)
@@ -23,7 +23,7 @@ Open an issue with the Feature Request template. Describe:
 
 - **Usage questions**: Check the [FAQ](how-to/faq.md) first — your question may already be answered
 - **Troubleshooting**: See the [Troubleshooting Guide](how-to/troubleshooting.md) organized by symptom
-- **Still stuck?** Open a [GitHub Discussion](https://github.com/nadav/deepfinder/discussions) or an issue with the Question template
+- **Still stuck?** Open a [GitHub Discussion](https://github.com/nadav-cheung/DeepFinder/discussions) or an issue with the Question template
 
 ## 🔒 Security Vulnerability?
 

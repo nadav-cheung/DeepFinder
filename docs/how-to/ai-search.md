@@ -12,18 +12,20 @@ AI cloud features require an API key. Two OpenAI-compatible providers are suppor
 
 | Provider | Model | Endpoint |
 |----------|-------|----------|
-| **DeepSeek** | `deepseek-v4-flash` | `api.deepseek.com` |
-| **Qwen** (Tongyi Qianwen) | `qwen-plus` | `dashscope.aliyuncs.com` |
+| **DeepSeek** | `deepseek-chat` | `api.deepseek.com` |
+| **Qwen** (Tongyi Qianwen) | `qwen3.6-plus` | `dashscope.aliyuncs.com` |
 
-Set your API key:
+AI features use a single unified API key. DeepFinder stores it securely in a file-backed secrets store (`~/.deep-finder/secrets.json`, permissions 600) — not in plaintext in the settings file.
 
 ```bash
-deepfinder config set deepseekApiKey "sk-..."
-# or
-deepfinder config set qwenApiKey "sk-..."
+# Enable AI and choose a provider
+deepfinder config set ai.enabled true
+deepfinder config set ai.model deepseek
+# Set your API key (stored securely)
+deepfinder config set ai.apiKey "sk-..."
 ```
 
-API keys are stored in the macOS Keychain via `KeychainStore` — not in plaintext in the settings file. No AI features are active until you configure a key. **All local AI features (vision tagging, speech input, clipboard search, match explanation) work without any API key.**
+No AI features are active until you configure a key. **All local AI features (vision tagging, speech input, clipboard search, match explanation) work without any API key.**
 
 ---
 
@@ -77,7 +79,7 @@ The `:data_preview` command shows exactly what data would be sent to your AI pro
 > :data_preview
 === AI Data Preview ===
 Provider: deepseek
-Model: deepseek-v4-flash
+Model: deepseek-chat
 System prompt: You are a search assistant...
 Context: query="report", resultCount=42, fileNames=["report_q1.pdf", "report_q2.pdf", ...]
 ```
@@ -126,15 +128,7 @@ Voice search uses Apple's on-device speech recognition. Two permissions are requ
 
 Both are requested on first use with a unified authorization flow. Speech input streams partial results in real-time and finalizes when you stop speaking. No audio is stored or transmitted.
 
-To use speech input, click the microphone button in the GUI search panel, or use the `:speech` REPL command.
-
-```bash
-# In the REPL:
-> :speech
-Listening... ▓▓▓▓▓▓▓▓▓▓░░░░░
-> "find large video files"
-# Query is transcribed and executed
-```
+Speech input is available in the GUI via the microphone button in the search panel. CLI speech support is on the roadmap.
 
 ---
 

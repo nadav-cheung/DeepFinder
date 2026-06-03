@@ -14,8 +14,8 @@ Thank you for your interest in contributing to DeepFinder. This document covers 
 
 ```bash
 # Clone the repository
-git clone https://github.com/nadav/deep-finder.git
-cd deep-finder
+git clone https://github.com/nadav-cheung/DeepFinder.git
+cd DeepFinder
 
 # Build all targets
 swift build

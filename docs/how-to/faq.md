@@ -57,9 +57,11 @@ There are three common causes, in order of likelihood:
 
 3. **Stale index.**
    If the daemon has been paused or crashed, the in-memory index may not reflect
-   recent filesystem changes. Trigger a full rescan:
+   recent filesystem changes. Rebuild the index from scratch:
    ```bash
-   deepfinder daemon rebuild
+   deepfinder daemon stop
+   rm ~/.deep-finder/cache/index.db
+   deepfinder daemon start
    ```
 
 ## The global hotkey doesn't work. What should I do?
@@ -122,9 +124,14 @@ Some AI features run entirely on-device; others require cloud API access.
 | Match explanation | Local | Explains why a result matched your query |
 
 **Cloud features require an API key.** DeepFinder supports Anthropic, OpenAI,
-DeepSeek, Gemini, Qwen, and any OpenAI-compatible endpoint. Configure via
-`deepfinder config set aiProvider` and `deepfinder config set aiApiKey`. No data
-is sent to cloud providers unless you enable cloud AI features and supply an API
+DeepSeek, Gemini, Qwen, and any OpenAI-compatible endpoint. Enable AI and configure
+your provider:
+```bash
+deepfinder config set ai.enabled true
+deepfinder config set ai.model deepseek
+deepfinder config set ai.apiKey "sk-..."
+```
+No data is sent to cloud providers unless you enable cloud AI features and supply an API
 key.
 
 ## How do I use DeepFinder results in scripts?

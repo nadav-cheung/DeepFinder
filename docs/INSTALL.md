@@ -17,15 +17,15 @@ Build and install from source. This is the primary distribution method.
 
 ```bash
 # Clone the repository
-git clone https://github.com/nadav/deep-finder.git
-cd deep-finder
+git clone https://github.com/nadav-cheung/DeepFinder.git
+cd DeepFinder
 
 # Build release binary
 swift build -c release
 
 # Install to /usr/local/bin
-sudo cp .build/release/deepfinder /usr/local/bin/
-sudo cp .build/release/deepfinder-daemon /usr/local/bin/
+sudo cp .build/release/deepfinder /opt/homebrew/bin/
+sudo cp .build/release/deepfinder-daemon /opt/homebrew/bin/
 ```
 
 Verify the installation:
@@ -60,7 +60,7 @@ DeepFinder indexes files across your entire home directory and shared system dir
 2. Navigate to **Privacy & Security** in the sidebar.
 3. Select **Full Disk Access** from the list of permissions.
 4. Click the **+** button at the bottom of the application list.
-5. In the file browser that appears, type `Cmd+Shift+G` and enter `/usr/local/bin/`.
+5. In the file browser that appears, type `Cmd+Shift+G` and enter `/opt/homebrew/bin/`.
 6. Select `deepfinder-daemon` and click **Open**.
 7. Verify the toggle next to `deepfinder-daemon` is enabled (blue/on).
 
@@ -85,7 +85,9 @@ Without Full Disk Access, search results are incomplete and silently missing fil
 After granting permission, verify index coverage:
 
 ```bash
-deepfinder daemon rebuild
+deepfinder daemon stop
+rm ~/.deep-finder/cache/index.db
+deepfinder daemon start
 deepfinder :stats
 # Check indexedFiles count matches `find ~ -type f | wc -l` approximately
 ```
@@ -106,8 +108,8 @@ The LaunchAgent starts the daemon at login and keeps it running (`KeepAlive`). L
 
 | Stream | Path |
 |--------|------|
-| stdout | `/tmp/deepfinder-daemon.log` |
-| stderr | `/tmp/deepfinder-daemon.err` |
+| stdout | `~/.deep-finder/logs/daemon-stdout.log` |
+| stderr | `~/.deep-finder/logs/daemon-stderr.log` |
 
 ### Manual LaunchAgent Management
 
@@ -127,7 +129,7 @@ deepfinder daemon restart
 
 ### LaunchAgent plist Reference
 
-The generated plist is located at `~/Library/LaunchAgents/com.nadav.deepfinder.plist`:
+The generated plist is located at `~/Library/LaunchAgents/com.nadav.deepfinder.daemon.plist`:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -137,20 +139,22 @@ The generated plist is located at `~/Library/LaunchAgents/com.nadav.deepfinder.p
 <dict>
     <key>Label</key>
     <string>com.nadav.deepfinder.daemon</string>
+    <key>Program</key>
+    <string>/opt/homebrew/bin/deepfinder-daemon</string>
     <key>ProgramArguments</key>
     <array>
-        <string>/usr/local/bin/deepfinder</string>
-        <string>daemon</string>
-        <string>run</string>
+        <string>deepfinder-daemon</string>
     </array>
     <key>RunAtLoad</key>
     <true/>
     <key>KeepAlive</key>
     <true/>
+    <key>ProcessType</key>
+    <string>Background</string>
     <key>StandardOutPath</key>
-    <string>/tmp/deepfinder-daemon.log</string>
+    <string>~/.deep-finder/logs/daemon-stdout.log</string>
     <key>StandardErrorPath</key>
-    <string>/tmp/deepfinder-daemon.err</string>
+    <string>~/.deep-finder/logs/daemon-stderr.log</string>
 </dict>
 </plist>
 ```
@@ -251,7 +255,7 @@ deepfinder daemon start
 deepfinder daemon restart
 
 # Check logs for crash cause
-tail -100 /tmp/deepfinder-daemon.err
+tail -100 ~/.deep-finder/logs/daemon-stderr.log
 ```
 
 Common crash causes:
@@ -281,12 +285,12 @@ deepfinder daemon start
 
 ```bash
 # Verify executables have correct permissions
-ls -la /usr/local/bin/deepfinder*
+ls -la /opt/homebrew/bin/deepfinder*
 # Expected: -rwxr-xr-x
 
 # Fix if needed
-chmod 755 /usr/local/bin/deepfinder
-chmod 755 /usr/local/bin/deepfinder-daemon
+chmod 755 /opt/homebrew/bin/deepfinder
+chmod 755 /opt/homebrew/bin/deepfinder-daemon
 ```
 
 **Symptom:** `FSEventStream failed to start` or similar FSEvents errors.
@@ -307,7 +311,9 @@ chmod 755 /usr/local/bin/deepfinder-daemon
 
 2. If `indexedFiles` is 0 or very low, rebuild:
    ```bash
-   deepfinder daemon rebuild
+   deepfinder daemon stop
+   rm ~/.deep-finder/cache/index.db
+   deepfinder daemon start
    ```
 
 3. Check excluded paths:
@@ -331,13 +337,10 @@ chmod 755 /usr/local/bin/deepfinder-daemon
 2. Check for hotkey conflicts:
    ```bash
    # The GUI logs hotkey registration results
-   tail -50 /tmp/deepfinder-gui.log
+   tail -50 ~/.deep-finder/logs/gui-stdout.log
    ```
 
-3. If another app has claimed `Ctrl+Cmd+K`, change the hotkey:
-   ```bash
-   deepfinder config set hotKey "Ctrl+Cmd+Space"
-   ```
+3. If another app has claimed `Ctrl+Cmd+K`, change the hotkey via the GUI settings panel.
 
 ### LaunchAgent Not Starting on Login
 
@@ -354,10 +357,10 @@ deepfinder daemon uninstall
 deepfinder daemon install
 
 # Check plist syntax
-plutil -lint ~/Library/LaunchAgents/com.nadav.deepfinder.plist
+plutil -lint ~/Library/LaunchAgents/com.nadav.deepfinder.daemon.plist
 
 # Manually load for testing
-launchctl load ~/Library/LaunchAgents/com.nadav.deepfinder.plist
+launchctl load ~/Library/LaunchAgents/com.nadav.deepfinder.daemon.plist
 ```
 
 ### High Memory Usage
@@ -370,8 +373,7 @@ launchctl load ~/Library/LaunchAgents/com.nadav.deepfinder.plist
 # Check index stats
 deepfinder :stats
 
-# If indexedFiles is significantly above 1M, adjust max memory limit:
-deepfinder config set maxMemoryGB 16
+# If indexedFiles is significantly above 1M, consider the tradeoffs.
 ```
 
 If your system is under memory pressure, the daemon will automatically degrade from FullSubstringMap to TrigramIndex to reduce footprint:
@@ -394,8 +396,8 @@ deepfinder daemon uninstall
 deepfinder daemon stop
 
 # 3. Remove binaries
-sudo rm /usr/local/bin/deepfinder
-sudo rm /usr/local/bin/deepfinder-daemon
+sudo rm /opt/homebrew/bin/deepfinder
+sudo rm /opt/homebrew/bin/deepfinder-daemon
 
 # 4. Remove data directory
 rm -rf ~/.deep-finder
@@ -428,6 +430,6 @@ All DeepFinder runtime data lives under `~/.deep-finder/`:
 | `~/.deep-finder/session/ipc.sock` | Unix domain socket (daemon running) | Only when daemon is stopped |
 | `~/.deep-finder/session/daemon.pid` | Daemon PID file | Only when daemon is stopped |
 | `~/.deep-finder/history` | REPL command history | Yes -- search history lost |
-| `~/.deep-finder/log/` | Daemon runtime logs | Yes -- old logs only |
+| `~/.deep-finder/logs/` | Daemon runtime logs | Yes -- old logs only |
 
 Directory permissions are `700` (owner-only access). All files are `600` (owner-only read/write).

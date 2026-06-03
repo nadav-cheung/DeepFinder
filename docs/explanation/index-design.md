@@ -100,4 +100,4 @@ The Trie + FullSubstringMap approach is specialized for filename search, where q
 
 ---
 
-*See [ADR-003: FullSubstringMap 64-Char Threshold Trigram Fallback](../superpowers/specs/adr/ADR-003-fullsubstringmap-64-char-threshold-trigram-fallback.md) for the design decision.*
+*See [ADR-003: FullSubstringMap 64-Char Threshold Trigram Fallback](../adr/ADR-003-fullsubstringmap-64-char-threshold-trigram-fallback.md) for the design decision.*

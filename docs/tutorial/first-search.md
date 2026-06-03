@@ -18,7 +18,7 @@ Expected output:
 🍺  /opt/homebrew/bin/deepfinder
 ```
 
-If you don't use Homebrew, [download the DMG](https://github.com/nadav/deepfinder/releases) and drag DeepFinder to Applications.
+If you don't use Homebrew, [download the DMG](https://github.com/nadav-cheung/DeepFinder/releases) and drag DeepFinder to Applications.
 
 > **Distribution**: DeepFinder requires Full Disk Access and cannot be sandboxed, so it is not available on the Mac App Store. It is distributed via Homebrew and GitHub Releases (DMG). Both are signed and notarized.
 

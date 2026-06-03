@@ -12,7 +12,7 @@ DeepFinder is **local-first by design**. Everything stays on your Mac unless you
 | Vision tags (image classification) | Apple Neural Engine | `VNClassifyImageRequest` — on-device only |
 | Speech recognition | Apple SFSpeechRecognizer | On-device only, requires microphone permission |
 | Clipboard contents | Local `NSPasteboard` | Read on-demand, never stored or transmitted |
-| Configuration | `~/.deep-finder/settings.json` (permissions 600) | API keys encrypted in Keychain |
+| Configuration | `~/.deep-finder/settings.json` (permissions 600) | API keys in `~/.deep-finder/.env` (permissions 600, owner-only) |
 
 ## What Goes to the Cloud (Opt-in Only)
 
@@ -65,10 +65,11 @@ This transparency tool lets you verify privacy before enabling cloud AI.
 
 | Path | Contents | Permissions |
 |------|----------|-------------|
-| `~/.deep-finder/settings.json` | Configuration (API keys in Keychain, not plaintext) | 600 (owner only) |
+| `~/.deep-finder/settings.json` | User configuration | 600 (owner only) |
+| `~/.deep-finder/.env` | API keys (permissions 600, owner-only) | 600 (owner only) |
 | `~/.deep-finder/cache/index.db` | File metadata index (names, sizes, dates, paths) | 600 (owner only) |
 | `~/.deep-finder/history` | REPL command history | 600 (owner only) |
-| `~/Library/Keychains/` | API keys (stored via `KeychainStore`) | System-managed |
+| `~/.deep-finder/.env` | API keys (Anthropic, DeepSeek, Qwen, Gemini) | 600 (owner only) |
 
 ## Zero Telemetry
 
@@ -89,4 +90,4 @@ DeepFinder collects **zero analytics, zero crash reports, zero usage data**. The
 
 ---
 
-*See [ADR-004: AI Privacy Boundary & FileMetadata Summary](../superpowers/specs/adr/ADR-004-ai-privacy-boundary-filemetadata-summary.md) for the privacy design decision.*
+*See [ADR-004: AI Privacy Boundary & FileMetadata Summary](../adr/ADR-004-ai-privacy-boundary-filemetadata-summary.md) for the privacy design decision.*
