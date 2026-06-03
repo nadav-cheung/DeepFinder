@@ -86,6 +86,7 @@ Never modify code to introduce behavior that isn't reflected in the spec, and ne
 - REQ_STATUS 状态统计与各文件内联图标一致
 - 所有 `*.md` 引用路径有效（无断链）
 - 竞品数据无过期（如 Raycast 版本、Alfred 版本）
+- `REQ_CHANGE_LOG.md` 中所有变更已反映到受影响文档（无孤立变更）
 
 **用户文档维护**（补充 docs/ 下用户面文档的维护规则）：
 
@@ -101,6 +102,20 @@ Never modify code to introduce behavior that isn't reflected in the spec, and ne
 - **语言政策**：用户文档（`docs/*.md`，除 `superpowers/`）用 English。内部规划文档（`docs/superpowers/`）可用中文或英文。USER_JOURNEY.md 为中文。
 - **CI 检查**：markdownlint + lychee 链接检查对所有 `docs/*.md` 运行。断链阻止合并。
 - **截图**：GUI 功能文档须包含截图。how-to/search-panel.md 至少 2 张。
+
+**需求变更追踪**（强制性流程）：
+
+每次需求改动（新增/修改/废除/澄清），无论大小，必须执行以下 5 步：
+
+1. **记录变更** → `docs/superpowers/specs/REQ_CHANGE_LOG.md`：按格式 `CHG-YYYY-MM-DD-NN` 创建条目，写明来源、影响 REQ、影响文档、变更类型、描述
+2. **更新 REQ 文件** → 对应的 `vX.Y-*.md`：内联状态图标、验收标准、用户场景
+3. **更新状态矩阵** → `REQ_STATUS.md`：修改统计数字和状态表
+4. **更新 CLAUDE.md** → 如变更影响工作流、约定、Gotchas，同步更新本文
+5. **更新相关文档** → 受影响的设计文档、plans、用户文档、`00-overview.md` 统计
+
+**变更前**必须先用网络搜索验证最新事实（竞品版本、API 状态、平台版本号等），确保变更基于最新信息而非过时认知。
+
+**竞品数据刷新**：COMPARISON.md 中竞品版本号/功能描述过期时，同样走此流程。竞品大版本发布 → 24h 内更新。
 
 ### Test-first (TDD)
 
