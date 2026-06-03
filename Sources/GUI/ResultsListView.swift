@@ -562,7 +562,7 @@ struct ResultsListView: View {
         if interval < Self.scrollCoalescingInterval {
             proxy.scrollTo(index, anchor: .center)
         } else {
-            withAnimation(.easeInOut(duration: Self.scrollAnimationDuration)) {
+            withAnimation(.easeOut(duration: Self.scrollAnimationDuration)) {
                 proxy.scrollTo(index, anchor: .center)
             }
         }
