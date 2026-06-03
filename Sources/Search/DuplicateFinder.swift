@@ -1,11 +1,19 @@
 import Foundation
 
 /// A group of files that are considered duplicates by some criterion.
-struct DuplicateGroup: Sendable {
+///
+/// `Codable` for IPC serialization (REQ-1.5-06).
+struct DuplicateGroup: Codable, Sendable, Equatable {
     /// The grouping key: file name, size string, hash digest, or "empty".
     let key: String
     /// The records that share this key.
     let records: [FileRecord]
+
+    static func == (lhs: DuplicateGroup, rhs: DuplicateGroup) -> Bool {
+        lhs.key == rhs.key
+            && lhs.records.count == rhs.records.count
+            && zip(lhs.records, rhs.records).allSatisfy { $0.id == $1.id }
+    }
 }
 
 /// Finds duplicate files using various strategies: by name, size, content hash,

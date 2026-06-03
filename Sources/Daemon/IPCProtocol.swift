@@ -37,6 +37,20 @@ enum IPCError: Codable, Sendable, Equatable, Error {
     case incompatibleProtocolVersion
 }
 
+// MARK: - DuplicateQueryStrategy
+
+/// Strategy for duplicate file detection (REQ-1.5-06).
+enum DuplicateQueryStrategy: String, Codable, Sendable, Equatable, CaseIterable {
+    /// Group by normalized file name.
+    case name
+    /// Group by file size.
+    case size
+    /// Group by SHA-256 content hash (caller pre-filters by size).
+    case hash
+    /// Find zero-byte files and empty directories.
+    case empty
+}
+
 // MARK: - IPCRequest
 
 /// All message types a client can send to the daemon.
@@ -50,10 +64,11 @@ enum IPCRequest: Codable, Sendable, Equatable {
         case queryID
         case key
         case value
+        case strategy
     }
 
     private enum Kind: String, Codable {
-        case query, cancel, stats, configGet, configSet, indexStatus
+        case query, cancel, stats, configGet, configSet, indexStatus, duplicateQuery
     }
 
     /// Execute a search query with an optional result limit.
@@ -68,6 +83,8 @@ enum IPCRequest: Codable, Sendable, Equatable {
     case configSet(key: String, value: String)
     /// Request current index state and file count.
     case indexStatus
+    /// Find duplicate files using a given strategy (REQ-1.5-06).
+    case duplicateQuery(strategy: DuplicateQueryStrategy)
 
     // Custom Codable: encodes a `kind` discriminator + `ipcProtocolVersion` field.
 
@@ -93,6 +110,9 @@ enum IPCRequest: Codable, Sendable, Equatable {
             try c.encode(v, forKey: .value)
         case .indexStatus:
             try c.encode(Kind.indexStatus, forKey: .kind)
+        case .duplicateQuery(let strategy):
+            try c.encode(Kind.duplicateQuery, forKey: .kind)
+            try c.encode(strategy, forKey: .strategy)
         }
     }
 
@@ -133,6 +153,9 @@ enum IPCRequest: Codable, Sendable, Equatable {
             self = .configSet(key: k, value: v)
         case .indexStatus:
             self = .indexStatus
+        case .duplicateQuery:
+            let strategy = try c.decode(DuplicateQueryStrategy.self, forKey: .strategy)
+            self = .duplicateQuery(strategy: strategy)
         }
     }
 }
@@ -168,11 +191,11 @@ struct DaemonIndexStatus: Codable, Sendable, Equatable {
 /// All message types the daemon can send back to a client.
 enum IPCResponse: Codable, Sendable, Equatable {
     private enum CodingKeys: String, CodingKey {
-        case kind, results, queryID, error, stats, indexStatus
+        case kind, results, queryID, error, stats, indexStatus, duplicates
     }
 
     private enum Kind: String, Codable {
-        case results, error, stats, ack, indexStatus
+        case results, error, stats, ack, indexStatus, duplicates
     }
 
     /// Search results for a completed query, with the corresponding query identifier.
@@ -185,6 +208,8 @@ enum IPCResponse: Codable, Sendable, Equatable {
     case ack
     /// Current index state and statistics.
     case indexStatus(DaemonIndexStatus)
+    /// Duplicate file groups (REQ-1.5-06).
+    case duplicates([DuplicateGroup])
 
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -204,6 +229,9 @@ enum IPCResponse: Codable, Sendable, Equatable {
         case .indexStatus(let s):
             try c.encode(Kind.indexStatus, forKey: .kind)
             try c.encode(s, forKey: .indexStatus)
+        case .duplicates(let groups):
+            try c.encode(Kind.duplicates, forKey: .kind)
+            try c.encode(groups, forKey: .duplicates)
         }
     }
 
@@ -226,6 +254,9 @@ enum IPCResponse: Codable, Sendable, Equatable {
         case .indexStatus:
             let s = try c.decode(DaemonIndexStatus.self, forKey: .indexStatus)
             self = .indexStatus(s)
+        case .duplicates:
+            let groups = try c.decode([DuplicateGroup].self, forKey: .duplicates)
+            self = .duplicates(groups)
         }
     }
 }

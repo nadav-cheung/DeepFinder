@@ -251,4 +251,78 @@ struct IPCProtocolTests {
         let decoded = try IPCFraming.decode(IPCResponse.self, from: framed)
         #expect(decoded == response)
     }
+
+    // MARK: - Duplicate IPC (REQ-1.5-06)
+
+    @Test("IPCRequest.duplicateQuery round-trip for all strategies")
+    func testRequestDuplicateQueryRoundTrip() throws {
+        for strategy in DuplicateQueryStrategy.allCases {
+            let original = IPCRequest.duplicateQuery(strategy: strategy)
+            let data = try JSONEncoder().encode(original)
+            let decoded = try JSONDecoder().decode(IPCRequest.self, from: data)
+            #expect(decoded == original)
+        }
+    }
+
+    @Test("IPCResponse.duplicates round-trip with groups")
+    func testResponseDuplicatesRoundTrip() throws {
+        let record1 = FileRecord(
+            id: 1, name: "test.txt", originalName: "test.txt",
+            path: "/a/test.txt", parentPath: "/a",
+            isDirectory: false, size: 100,
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            modifiedAt: Date(timeIntervalSince1970: 1_700_000_100),
+            extension: "txt"
+        )
+        let record2 = FileRecord(
+            id: 2, name: "test.txt", originalName: "test.txt",
+            path: "/b/test.txt", parentPath: "/b",
+            isDirectory: false, size: 100,
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            modifiedAt: Date(timeIntervalSince1970: 1_700_000_100),
+            extension: "txt"
+        )
+        let group = DuplicateGroup(key: "test.txt", records: [record1, record2])
+        let original = IPCResponse.duplicates([group])
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(IPCResponse.self, from: data)
+        #expect(decoded == original)
+    }
+
+    @Test("DuplicateGroup Codable round-trip")
+    func testDuplicateGroupCodable() throws {
+        let record = FileRecord(
+            id: 1, name: "dup.pdf", originalName: "dup.pdf",
+            path: "/x/dup.pdf", parentPath: "/x",
+            isDirectory: false, size: 2048,
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            modifiedAt: Date(timeIntervalSince1970: 1_700_000_100),
+            extension: "pdf"
+        )
+        let group = DuplicateGroup(key: "size:2048", records: [record])
+        let data = try JSONEncoder().encode(group)
+        let decoded = try JSONDecoder().decode(DuplicateGroup.self, from: data)
+        #expect(decoded == group)
+    }
+
+    @Test("DuplicateGroup Equatable compares by key and record IDs")
+    func testDuplicateGroupEquatable() {
+        let r1 = FileRecord(
+            id: 1, name: "a.txt", originalName: "a.txt",
+            path: "/a", parentPath: "/",
+            isDirectory: false, size: 0,
+            createdAt: Date(), modifiedAt: Date(), extension: "txt"
+        )
+        let r2 = FileRecord(
+            id: 2, name: "a.txt", originalName: "a.txt",
+            path: "/b", parentPath: "/",
+            isDirectory: false, size: 0,
+            createdAt: Date(), modifiedAt: Date(), extension: "txt"
+        )
+        let group1 = DuplicateGroup(key: "a.txt", records: [r1, r2])
+        let group2 = DuplicateGroup(key: "a.txt", records: [r1, r2])
+        let group3 = DuplicateGroup(key: "b.txt", records: [r1])
+        #expect(group1 == group2)
+        #expect(group1 != group3)
+    }
 }

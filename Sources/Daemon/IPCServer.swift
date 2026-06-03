@@ -52,6 +52,7 @@ actor IPCServer {
     private let coordinator: SearchCoordinator
     private let statsProvider: @Sendable () async -> DaemonStats
     private let indexStatusProvider: @Sendable () async -> DaemonIndexStatus
+    private let duplicateProvider: @Sendable (DuplicateQueryStrategy) async -> [DuplicateGroup]
 
     private var listenFD: Int32 = -1
     private var acceptTask: Task<Void, Never>?
@@ -89,6 +90,7 @@ actor IPCServer {
     ///   - coordinator: The search coordinator that processes queries.
     ///   - statsProvider: Async closure that returns current daemon statistics when called.
     ///   - indexStatusProvider: Async closure that returns current index status when called.
+    ///   - duplicateProvider: Async closure that finds duplicates by strategy (REQ-1.5-06).
     ///   - maxConnsPerSecond: Maximum new connections allowed per second (default 10).
     ///   - maxConcurrentClients: Maximum concurrent client connections (default 50).
     init(
@@ -100,6 +102,7 @@ actor IPCServer {
         indexStatusProvider: @escaping @Sendable () async -> DaemonIndexStatus = {
             DaemonIndexStatus(state: "unknown", filesIndexed: 0, lastScanDate: nil)
         },
+        duplicateProvider: @escaping @Sendable (DuplicateQueryStrategy) async -> [DuplicateGroup] = { _ in [] },
         maxConnsPerSecond: Int = Constants.IPC.maxConnsPerSecond,
         maxConcurrentClients: Int = Constants.IPC.maxConcurrentClients
     ) {
@@ -107,6 +110,7 @@ actor IPCServer {
         self.coordinator = coordinator
         self.statsProvider = statsProvider
         self.indexStatusProvider = indexStatusProvider
+        self.duplicateProvider = duplicateProvider
         self.maxConnsPerSecond = maxConnsPerSecond
         self.maxConcurrentClients = maxConcurrentClients
     }
@@ -514,6 +518,10 @@ actor IPCServer {
         case .indexStatus:
             let status = await indexStatusProvider()
             return .indexStatus(status)
+
+        case .duplicateQuery(let strategy):
+            let groups = await duplicateProvider(strategy)
+            return .duplicates(groups)
         }
     }
 
