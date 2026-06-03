@@ -87,6 +87,21 @@ Never modify code to introduce behavior that isn't reflected in the spec, and ne
 - 所有 `*.md` 引用路径有效（无断链）
 - 竞品数据无过期（如 Raycast 版本、Alfred 版本）
 
+**用户文档维护**（补充 docs/ 下用户面文档的维护规则）：
+
+- **Diataxis 类型分离**：`docs/` 下每份文档属于单一 Diataxis 类型（tutorial/how-to/reference/explanation），不混合。新增内容先判断属于哪种类型，放入对应目录。
+- **文档所有权**：
+  - `docs/index.md` + `docs/how-to/` + `docs/tutorial/` — owner: `cli-dev`
+  - `docs/reference/` — owner: `cli-dev`
+  - `docs/explanation/` — owner: `architect`
+  - `docs/COMPARISON.md` — owner: `researcher`（竞品数据）
+  - `docs/SUPPORT.md` — owner: `architect`
+  - `docs/superpowers/USER_JOURNEY.md` — owner: `architect`
+- **审查节奏**：用户文档每个 milestone 版本审查一次。FAQ 每季度从 GitHub Issues 中审计新常见问题。COMPARISON.md 竞品大版本发布时更新。
+- **语言政策**：用户文档（`docs/*.md`，除 `superpowers/`）用 English。内部规划文档（`docs/superpowers/`）可用中文或英文。USER_JOURNEY.md 为中文。
+- **CI 检查**：markdownlint + lychee 链接检查对所有 `docs/*.md` 运行。断链阻止合并。
+- **截图**：GUI 功能文档须包含截图。how-to/search-panel.md 至少 2 张。
+
 ### Test-first (TDD)
 
 **Write tests before implementation.** For every new component:
@@ -152,6 +167,7 @@ When subagents (Agent tool, Workflow agents) encounter API rate limits (HTTP 429
 - **Daemon lifecycle**: CLI auto-starts daemon on first query. LaunchAgent optional for auto-start on login. Daemon crash = CLI reconnects after restart.
 - **Socket cleanup**: If daemon crashes without cleanup, stale socket file at `~/.deep-finder/session/ipc.sock` must be removed before restart. PID file check handles this.
 - **v2.0 GUI notes**: LSUIElement menu bar app, global hotkey (⌃⌘K) requires Accessibility permission, no Dock icon — debug via Xcode attach-to-process.
+- **Docs links**: When renaming or moving doc files, run `lychee docs/` to find broken links. The new Diataxis structure means USER_GUIDE.md is replaced by docs/index.md + how-to/ + reference/ + explanation/.
 
 ## Directory Structure
 
