@@ -665,7 +665,7 @@ plain actor（NOT @MainActor）。daemon 进程无 UI 上下文。v2.0 GUI clien
 5. 删除 socket 文件和 PID 文件
 6. exit(0)
 
-**LaunchAgent plist**（`deepfinder daemon install` 生成）：
+**LaunchAgent plist**（`deepfinder install` 生成）：
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -818,8 +818,8 @@ enum IPCFramingError: Error, Sendable {
 | `deepfinder daemon stop` | SIGTERM → 等待退出 |
 | `deepfinder daemon restart` | stop + start |
 | `deepfinder daemon status` | 连接 daemon → IPC status query |
-| `deepfinder daemon install` | 生成 LaunchAgent plist + launchctl load |
-| `deepfinder daemon uninstall` | launchctl unload + 删除 plist |
+| `deepfinder install` | 生成 LaunchAgent plist + launchctl load |
+| `deepfinder uninstall` | launchctl unload + 删除 plist |
 
 ---
 
@@ -966,7 +966,7 @@ CLI 检测 daemon 是否运行：
 
 ## 6. v2.0 GUI 层（已实现）
 
-v2.0 已完全实现 — 19 个源文件在 `Sources/GUI/`，测试在 `Tests/GUITests/`。GUI 作为独立 IPC client 连接 daemon，daemon 和 IPC 协议不变。
+v2.0 已完全实现 — 28 个源文件在 `Sources/GUI/`，测试在 `Tests/GUITests/`。GUI 作为独立 IPC client 连接 daemon，daemon 和 IPC 协议不变。
 
 ### 6.1 应用入口 & 菜单栏
 
@@ -1105,7 +1105,7 @@ deepfinder script reveal --path "/Users/nadav/Documents/report.pdf"
 | 用户范围 | 只索引当前用户 home + 系统共享目录 |
 | 分发 | GitHub Releases + Homebrew formula |
 | 公证 | Apple Developer Program 签名 + notarytool |
-| AI API Key | Keychain 存储（v3.0） |
+| AI API Key | SecretsStore 文件存储 ~/.deep-finder/.env (600)（v3.0） |
 | AI 网络传输 | 强制 HTTPS/TLS 1.3（v3.0） |
 | AI 元数据脱敏 | 默认开启（v3.0） |
 | AI 默认关闭 | 所有 AI 功能默认关闭（v3.0） |
@@ -1127,8 +1127,8 @@ deep-finder/
 │   ├── Daemon/                   # DaemonMain, IPCServer, IPCClient, IPCProtocol, IPCFraming, ConfigStore, LaunchAgent
 │   ├── CLI/                      # CLIMain, ArgParser, SingleShot, REPL, REPLCommands, REPLHistory, TerminalFormatter, ConfigCommands, DaemonCommands, InstallCommands, FuzzyCorrection, ServeMode, IPCClientProtocol, CLIOutputWriter
 │   ├── GUI/                      # SearchPanelView, SearchBarView, ResultsListView, SearchViewModel, AppDelegate, GlobalHotkey, IntelligenceGlow, StatusBarController (v2.0+)
-│   ├── AI/                       # AIConfig, AIContext, AIModelProvider, AnthropicProvider, CloudEmbeddingProvider, CrossLanguageSearch, DeepSeekProvider, EmbeddingProvider, FileMetadataSummary, GeminiProvider, HTTPClient, ImageSimilaritySearch, KeychainStore, LocalSpeechProvider, LocalVisionProvider, MatchExplainer, NLEmbeddingProvider, NLOperations, NLSearchTranslator, OpenAICompatibleProvider, PromptLoader, ProviderRegistry, QwenProvider, ResultSummarizer, SearchAdvisor, SemanticGrouper, SpeechAuthorization, VectorStore, VisionTaggingCoordinator
-│   ├── Media/                    # ImageMetadataExtractor, AudioMetadataExtractor, VideoMetadataExtractor, PDFMetadataExtractor, MediaMetadataIndex
+│   ├── AI/                       # AIConfig, AIContext, AIModelProvider, AnthropicProvider, ClipboardSearch, CloudEmbeddingProvider, CrossLanguageSearch, DeepSeekProvider, EmbeddingProvider, FileMetadataSummary, GeminiProvider, HTTPClient, ImageSimilaritySearch, LocalSpeechProvider, LocalVisionProvider, MatchExplainer, NLEmbeddingProvider, NLOperations, NLSearchTranslator, PromptLoader, ProviderRegistry, QwenProvider, ResultSummarizer, SearchAdvisor, SecretsStore, SemanticGrouper, SpeechAuthorization, VectorStore, VisionTaggingCoordinator
+│   ├── Media/                    # ImageMetadataExtractor, AudioMetadataExtractor, VideoMetadataExtractor, PDFMetadataExtractor, ExtractedMetadata, MetadataExtractor
 │   ├── Services/                 # HTTPSearchService, URLSchemeHandler, SearchIntent, SearchScriptCommand
 │   ├── CLIEntry/                 # Thin executable entry point: main.swift → CLIMain
 │   ├── DaemonEntry/              # Thin executable entry point: main.swift → DaemonMain

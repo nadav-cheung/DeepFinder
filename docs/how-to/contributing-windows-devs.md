@@ -330,7 +330,7 @@ If you have built tools that talk to Everything via its SDK, you understand what
 ### Clone, Build, Run
 
 ```bash
-git clone https://github.com/nadav-nadav/DeepFinder.git
+git clone https://github.com/nadav-cheung/DeepFinder.git
 cd DeepFinder
 swift build          # First build — downloads nothing (zero external deps)
 swift test           # Run all tests (~700 tests)

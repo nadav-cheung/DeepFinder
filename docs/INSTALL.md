@@ -98,7 +98,7 @@ The daemon can be installed as a LaunchAgent to start automatically when you log
 
 ```bash
 # Install the LaunchAgent
-deepfinder daemon install
+deepfinder install
 
 # Verify it is loaded
 launchctl list | grep deepfinder
@@ -115,7 +115,7 @@ The LaunchAgent starts the daemon at login and keeps it running (`KeepAlive`). L
 
 ```bash
 # Stop the daemon and unload the LaunchAgent
-deepfinder daemon uninstall
+deepfinder uninstall
 
 # Start the daemon manually (not via LaunchAgent)
 deepfinder daemon start
@@ -353,8 +353,8 @@ chmod 755 /opt/homebrew/bin/deepfinder-daemon
 launchctl list | grep deepfinder
 
 # If not present, re-install
-deepfinder daemon uninstall
-deepfinder daemon install
+deepfinder uninstall
+deepfinder install
 
 # Check plist syntax
 plutil -lint ~/Library/LaunchAgents/com.nadav.deepfinder.daemon.plist
@@ -390,7 +390,7 @@ This reduces memory usage at the cost of slightly slower substring queries.
 
 ```bash
 # 1. Stop and remove the LaunchAgent
-deepfinder daemon uninstall
+deepfinder uninstall
 
 # 2. Stop the running daemon
 deepfinder daemon stop

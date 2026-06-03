@@ -46,7 +46,7 @@ Per-launch log files for debugging. The daemon and GUI each write their own log 
 
 | Path | Purpose |
 |------|---------|
-| `~/Library/LaunchAgents/com.nadav.deepfinder.plist` | LaunchAgent plist for auto-start on login. Installed by `deepfinder install`, removed by `deepfinder uninstall`. |
+| `~/Library/LaunchAgents/com.nadav.deepfinder.daemon.plist` | LaunchAgent plist for auto-start on login. Installed by `deepfinder install`, removed by `deepfinder uninstall`. |
 
 ## Why These Paths Exist
 

@@ -151,17 +151,17 @@ With Full Disk Access granted, DeepFinder indexes:
 You can exclude additional directories to reduce index size and noise:
 
 ```bash
-# Add an exclusion
-deepfinder config set excludedPaths --add ~/Projects/build
+# Set exclusions (replaces the entire list)
+deepfinder config set excludedPaths '["/Users/you/Projects/build"]'
 
-# Add multiple exclusions
-deepfinder config set excludedPaths --add ~/Library/Caches --add ~/VirtualMachines
+# Set multiple exclusions at once
+deepfinder config set excludedPaths '["/Users/you/Library/Caches","/Users/you/VirtualMachines"]'
 
 # View current exclusions
 deepfinder config get excludedPaths
 
-# Remove an exclusion
-deepfinder config set excludedPaths --remove ~/Projects/build
+# Reset exclusions to default (empty list)
+deepfinder config reset excludedPaths
 ```
 
 Common directories worth excluding:
@@ -169,7 +169,9 @@ Common directories worth excluding:
 - `~/VirtualMachines` -- VM disk images are large and unsearchable
 - Build output directories (`DerivedData`, `target/`, `dist/`, `build/`)
 
-### Use `.deepfinderignore` for Per-Project Control
+### Use `.deepfinderignore` for Per-Project Control *(planned feature)*
+
+> **Note**: `.deepfinderignore` support is a planned feature and not yet implemented. Use `deepfinder config set excludedPaths` for per-directory exclusions in the meantime.
 
 Place a `.deepfinderignore` file in any directory to exclude its contents. Syntax is the same as `.gitignore`:
 
@@ -279,7 +281,7 @@ deepfinder config set ai.enabled true
 # 2. Choose a provider
 deepfinder config set ai.model deepseek     # or: qwen
 
-# 3. Set your API key (stored encrypted at ~/.deep-finder/secrets.json, permissions 600)
+# 3. Set your API key (stored at ~/.deep-finder/.env, permissions 600)
 deepfinder config set ai.apiKey "sk-..."
 ```
 
@@ -386,7 +388,7 @@ DeepFinder includes a permission diagnostic tool accessible from both CLI and GU
 
 **CLI**:
 ```bash
-deepfinder daemon diagnose
+deepfinder daemon status
 ```
 
 **GUI**: Settings panel > Permissions tab > "Check Permissions" button.
@@ -413,7 +415,7 @@ Microphone ................... ⚠️ Not Requested
   → Microphone not yet used. Permission will be requested on first use.
 
 AI Provider (deepseek) ....... ✅ Configured
-  → API key: Present (stored in Keychain)
+  → API key: Present (stored in ~/.deep-finder/.env)
   → Last connection: 2026-06-03 09:15:32 (success)
 
 Apple Neural Engine .......... ✅ Available
@@ -672,7 +674,7 @@ Use this checklist to track your setup progress. Check off each item as you comp
 - [ ] **Natural language search tested** -- Tried a plain-English query like "large PDFs from last week"
 - [ ] **Privacy verified** -- Ran `:data_preview` to see exactly what cloud AI receives
 - [ ] **Speech input tested** -- Granted Speech Recognition + Microphone, used the microphone button in the GUI
-- [ ] **LaunchAgent installed** -- `deepfinder daemon install` to auto-start daemon on login
+- [ ] **LaunchAgent installed** -- `deepfinder install` to auto-start daemon on login
 
 ### Documentation Reference
 

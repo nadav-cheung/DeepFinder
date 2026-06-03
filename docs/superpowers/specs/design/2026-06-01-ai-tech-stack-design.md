@@ -487,7 +487,7 @@ func testPathAnonymizationAppliedBeforeCloudSend() { ... }
 
 ## 8. 参考
 
-- 当前 AI 模块: `Sources/AI/` (21 files)
+- 当前 AI 模块: `Sources/AI/` (29 Swift files + 4 prompt files)
 - 当前 AI 测试: `Tests/AITests/`
 - 主架构 spec: `docs/superpowers/specs/design/2026-05-26-deep-finder-design.md`
 - v3.0 AI spec: `docs/superpowers/specs/reqs/v3.0-ai.md`

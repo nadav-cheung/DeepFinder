@@ -1047,9 +1047,11 @@ deepfinder --json config list
 ```
 ```json
 {
-  "theme": "dark",
+  "excludedPaths": [],
+  "excludedVolumes": [],
+  "indexBatchSize": 100,
   "maxResults": 1000,
-  "followSymlinks": false
+  "configVersion": 1
 }
 ```
 
@@ -1357,7 +1359,7 @@ All runtime files live under `~/.deep-finder/`:
 | `~/.deep-finder/settings.json` | User configuration | `0600` |
 | `~/.deep-finder/.env` | Secrets / API keys | `0600` |
 | `~/.deep-finder/history` | REPL command history | `0600` |
-| `~/.deep-finder/logs/daemon.log` | Daemon log output | `0600` |
+| `~/.deep-finder/logs/daemon-stderr.log` | Daemon log output | `0600` |
 
 ## Appendix B: Schema Definitions (JSON TypeScript-like)
 

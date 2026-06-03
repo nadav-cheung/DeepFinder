@@ -192,7 +192,7 @@ Sources/
   DaemonEntry/               # Daemon executable entry point (main.swift)
   AppEntry/                  # GUI app executable entry point (main.swift)
   Index/                      # FileRecord, Trie, FullSubstringMap, TrigramIndex, PinyinIndex, InMemoryIndex
-  Search/                     # SearchProvider, SearchCoordinator, SearchQuery, SearchResult, FilterPipeline, SearchSorter, ContentScanner
+  Search/                     # SearchProvider, SearchCoordinator, QueryTerm, SearchTypes, SearchResult, FilterPipeline, SearchSorter, ContentScanner
   FS/                         # FileSystemEventStream, FileScanner, FSEventWatcher, MockEventStream, VolumeManager
   Persist/                    # IndexPersistence (SQLite WAL), IndexRecovery
   Daemon/                     # DaemonMain, IPCServer, IPCProtocol, IPCClient, ConfigStore, LaunchAgent

@@ -8,14 +8,21 @@ DeepFinder v3.0 adds AI-powered semantic search, natural language understanding,
 
 ## Enable AI Features
 
-AI cloud features require an API key. Two OpenAI-compatible providers are supported:
+AI cloud features require an API key. Multiple providers are supported:
 
 | Provider | Model | Endpoint |
 |----------|-------|----------|
 | **DeepSeek** | `deepseek-chat` | `api.deepseek.com` |
 | **Qwen** (Tongyi Qianwen) | `qwen3.6-plus` | `dashscope.aliyuncs.com` |
+| **Zhipu** (智谱 GLM) | `glm-4` | `open.bigmodel.cn` |
+| **OpenAI** | `gpt-4o` | `api.openai.com` |
+| **Moonshot** (Kimi) | `moonshot-v1` | `api.moonshot.cn` |
+| **MiniMax** | `abab6.5s` | `api.minimax.chat` |
+| **Anthropic** (Claude) | `claude-sonnet-4-6` | `api.anthropic.com` |
+| **Google Gemini** | `gemini-2.5-pro` | `generativelanguage.googleapis.com` |
+| **Apple On-Device** | Local only | N/A (no API key needed) |
 
-AI features use a single unified API key. DeepFinder stores it securely in a file-backed secrets store (`~/.deep-finder/secrets.json`, permissions 600) — not in plaintext in the settings file.
+AI features use a single unified API key. DeepFinder stores it securely in a file-backed secrets store (`~/.deep-finder/.env`, permissions 600) — not in plaintext in the settings file.
 
 ```bash
 # Enable AI and choose a provider

@@ -51,7 +51,7 @@ If this didn't help, use the menu bar icon to open the search panel, then [open 
 
 Semantic search, image similarity, or other AI-powered features return errors or silently fall back.
 
-1. **API key not configured** -- Each AI provider needs its API key configured. Run `deepfinder ai setup` and follow the interactive prompts to configure your preferred provider. API keys are stored securely in `~/.deep-finder/secrets.json` (permissions 600).
+1. **API key not configured** -- Each AI provider needs its API key configured. Run `deepfinder config set ai.apiKey <your-key>` to set your API key. API keys are stored securely in `~/.deep-finder/.env` (permissions 600).
 2. **Network issue** -- The AI provider may be unreachable. Test connectivity: `curl -I https://api.deepseek.com` (or your provider's endpoint). Check your firewall, VPN, or proxy settings if the connection fails.
 3. **Quota exhausted** -- Your API account may have hit its usage limit. Check your provider's dashboard (DeepSeek console, Anthropic Console, OpenAI Platform, etc.) for billing status and rate limits.
 

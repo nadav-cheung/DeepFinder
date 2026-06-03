@@ -308,10 +308,10 @@
 
 | Task | Status | Executed At | Review Notes |
 |------|--------|-------------|-------------|
-| P0-01 | ⬜ | — | — |
-| P0-02 | ⬜ | — | — |
-| P0-03 | ⬜ | — | — |
-| P0-04 | ⬜ | — | — |
+| P0-01 | ✅ | — | DONE — REPL and subcommand dispatch wired |
+| P0-02 | ✅ | — | DONE |
+| P0-03 | ✅ | — | DONE (not reproducible, monitoring) |
+| P0-04 | ✅ | — | DONE |
 | P1-01 | ⬜ | — | — |
 | P1-02 | ⬜ | — | — |
 | P1-03 | ⬜ | — | — |

@@ -155,7 +155,7 @@ CLI / GUI → Daemon (IPC) → Search (SearchCoordinator) → Index (InMemoryInd
 | 严重度 | 问题 | 影响 |
 |--------|------|------|
 | **Critical** | 单体编译目标与文档描述矛盾。Package.swift 为单 target，无 module boundary，无 public API | 外部无法使用 DeepFinder 作为依赖，无编译器级分层强制 |
-| **Critical** | Package.swift 设置 `.macOS(.v26)` — macOS 26 尚未公开发布 | 几乎无人能编译运行，贡献者基数为零 |
+| **Critical** | Package.swift 设置 `.macOS(.v26)` — ~~macOS 26 尚未公开发布~~ macOS 26 (Tahoe) 已于 2025-09-15 发布，当前版本 26.5.1。此 finding 已过时 | ~~几乎无人能编译运行~~ 实际用户已可正常使用 |
 | **High** | 所有代码默认 `internal` — 无 public API surface。即使内联文档优秀，外部不可见 | 不能作为 Swift 包被其他项目依赖 |
 | **High** | DaemonMain.waitForShutdown() 使用 100ms 轮询循环而非 AsyncStream | 不必要的 CPU 消耗 |
 | **Medium** | CLAUDE.md 声明的 IndexingEngine actor 不存在 — daemon 直接处理协调逻辑 | 文档与实现脱节 |
@@ -223,7 +223,7 @@ CLI / GUI → Daemon (IPC) → Search (SearchCoordinator) → Index (InMemoryInd
 | 搜索速度 | ⭐⭐⭐⭐⭐ 亚毫秒 | ⭐⭐⭐⭐⭐ 即时 | ⭐⭐⭐ 中等 | ⭐⭐⭐⭐ 快 | ⭐⭐⭐⭐ 快 |
 | 搜索语法 | ⭐⭐⭐⭐⭐ 全支持 | ⭐⭐⭐⭐ 丰富 | ⭐⭐ 有限 | ⭐⭐⭐ 中等 | ⭐⭐⭐ 中等 |
 | 安装便捷性 | ⭐ 需编译 | ⭐⭐⭐⭐⭐ 一键安装 | ⭐⭐⭐⭐⭐ 系统内置 | ⭐⭐⭐⭐⭐ 一键安装 | ⭐⭐⭐⭐⭐ 一键安装 |
-| 元数据过滤 | ⭐ (未接线) | ⭐⭐⭐⭐ 可用 | ⭐⭐⭐ 可用 | ⭐⭐⭐ 可用 | ⭐⭐⭐ 可用 |
+| 元数据过滤 | ⭐⭐⭐⭐ 已接入 | ⭐⭐⭐⭐ 可用 | ⭐⭐⭐ 可用 | ⭐⭐⭐ 可用 | ⭐⭐⭐ 可用 |
 | GUI 美观 | ⭐⭐⭐⭐⭐ 顶级 | ⭐⭐⭐ 传统 | ⭐⭐⭐ 标准 | ⭐⭐⭐⭐ 可定制 | ⭐⭐⭐⭐ 现代 |
 | AI 功能 | ⭐⭐⭐⭐ 创新 | ❌ 无 | ⭐⭐ 基础 | ⭐⭐ 有限 | ⭐⭐⭐⭐ 丰富 |
 | 隐私保护 | ⭐⭐⭐⭐⭐ 最佳 | ⭐⭐⭐⭐ 本地 | ⭐⭐⭐ 云端 | ⭐⭐⭐ 本地为主 | ⭐⭐⭐ 混合 |
