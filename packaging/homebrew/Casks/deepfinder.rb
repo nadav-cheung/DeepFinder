@@ -11,7 +11,7 @@
 #   brew install --cask deepfinder
 
 cask "deepfinder" do
-  version "3.0.0"
+  version "3.2.0"
   sha256 :no_check
 
   url "https://github.com/nadav-cheung/DeepFinder/releases/download/v#{version}/DeepFinder-#{version}.zip"

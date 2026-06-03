@@ -9,9 +9,9 @@
 
 | Status | Count | Modules |
 |--------|-------|---------|
-| Done | 146 | v0.1, v0.2, v0.3, v0.4, v0.5, v0.6, v0.7, v1.0, v1.1, v1.2, v1.3, v1.4, v1.5, v2.0 (13 GUI REQs), v2.1, v2.2, v3.0, v3.2 (37 done) |
+| Done | 151 | v0.1, v0.2, v0.3, v0.4, v0.5, v0.6, v0.7, v1.0, v1.1, v1.2, v1.3, v1.4, v1.5, v2.0, v2.1, v2.2, v3.0, v3.2 |
 | Partial | 0 | — |
-| Not Started | 12 | v2.0 (5 app target REQs), v3.1 (Local RAG 7) |
+| Not Started | 7 | v3.1 (Local RAG 7) |
 | **Total** | **158** | |
 
 ### By Version
@@ -31,7 +31,7 @@
 | v1.3 Search Experience | 7 | 7 | 0 | 0 |
 | v1.4 Content Search | 4 | 4 | 0 | 0 |
 | v1.5 Duplicate Finder | 6 | 6 | 0 | 0 |
-| v2.0 GUI | 18 | 13 | 0 | 5 |
+| v2.0 GUI | 18 | 18 | 0 | 0 |
 | v2.1 Media Metadata | 7 | 7 | 0 | 0 |
 | v2.2 Service Integration | 5 | 5 | 0 | 0 |
 | v3.0 AI Semantic | 16 | 16 | 0 | 0 |
@@ -42,9 +42,9 @@
 
 | Priority | Total | Done | Partial | Not Started |
 |----------|-------|------|---------|-------------|
-| P0 | 92 | 85 | 0 | 7 |
-| P1 | 46 | 42 | 0 | 4 |
-| P2 | 20 | 19 | 0 | 1 |
+| P0 | 92 | 87 | 0 | 5 |
+| P1 | 46 | 44 | 0 | 2 |
+| P2 | 20 | 20 | 0 | 0 |
 
 ---
 
@@ -209,7 +209,7 @@
 
 ---
 
-## v2.0 -- GUI + Extended Index (18 REQs, 13 done, 5 not started)
+## v2.0 -- GUI + Extended Index (18 REQs, all done)
 
 | REQ ID | Description | Status | Source Files | Test Files | Notes |
 |--------|-------------|--------|-------------|------------|-------|
@@ -226,13 +226,13 @@
 | REQ-2.0-11 | Quick Look preview | done | `Sources/GUI/QuickLookPreview.swift` | `Tests/GUITests/QuickLookPreviewTests.swift` | QLPreviewPanel, Space toggle |
 | REQ-2.0-12 | Context menu | done | `Sources/GUI/ResultContextMenu.swift` | `Tests/GUITests/ResultContextMenuTests.swift` | Open, Reveal in Finder, Copy Path, Get Info |
 | REQ-2.0-13 | Drag support | done | `Sources/GUI/ResultDragView.swift` | `Tests/GUITests/ResultDragViewTests.swift` | NSDraggingSource, file name badge |
-| REQ-2.0-14 | App executable target | not-started | `Sources/AppEntry/main.swift` | -- | DeepFinderApp SPM executable target, @main entry |
-| REQ-2.0-15 | App bundle Info.plist | not-started | `App/Info.plist` | -- | LSUIElement, bundle ID, version injection |
-| REQ-2.0-16 | Build script (.app bundle) | not-started | `scripts/build-app.sh` | -- | Assemble .app from SPM output, ad-hoc signing |
-| REQ-2.0-17 | Daemon discovery from app bundle | not-started | `Sources/Daemon/IPCClient.swift` | -- | Bundle.main fallback for embedded daemon |
-| REQ-2.0-18 | Homebrew Cask distribution | not-started | `Casks/deepfinder.rb` | -- | brew install --cask, /Applications, Login Item |
+| REQ-2.0-14 | App executable target | done | `Sources/AppEntry/main.swift` | -- | DeepFinderApp SPM executable target, @main entry, public AppDelegate + AppConfiguration |
+| REQ-2.0-15 | App bundle Info.plist | done | `App/Info.plist` | -- | LSUIElement, bundle ID, {{VERSION}}, NSPrincipalClass |
+| REQ-2.0-16 | Build script (.app bundle) | done | `scripts/build-app.sh` | -- | Builds both targets, assembles .app, injects VERSION, ad-hoc signs |
+| REQ-2.0-17 | Daemon discovery from app bundle | done | `Sources/Daemon/IPCClient.swift` | -- | Bundle.main.executablePath → Product.defaultBinDir fallback |
+| REQ-2.0-18 | Homebrew Cask distribution | done | `packaging/homebrew/Casks/deepfinder.rb` | -- | brew install --cask, /Applications, Full Disk Access caveats |
 
-> REQs 01-13 (GUI components) are fully implemented. REQs 14-18 (standalone app target, bundle, build, daemon discovery, distribution) are planned for the OSS readiness milestone.
+> All 18 v2.0 REQs implemented: GUI components (01-13), app target (14), Info.plist (15), build script (16), daemon discovery (17), Homebrew Cask (18).
 
 ---
 
