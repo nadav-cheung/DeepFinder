@@ -49,6 +49,9 @@ final class SearchViewModel: ObservableObject {
     /// REQ-3.2-27: "已复制路径" feedback after Cmd+C.
     @Published var toastMessage: String? = nil
 
+    /// REQ-3.2-02: Whether the history dropdown overlay is visible.
+    @Published var showHistoryDropdown: Bool = false
+
     // MARK: - History & Access Stores
 
     /// Search query history for the history dropdown. REQ-3.2-02.
@@ -200,6 +203,15 @@ final class SearchViewModel: ObservableObject {
     func searchFromHistory(_ query: String) {
         searchText = query
         Task { await search() }
+    }
+
+    /// Toggle history dropdown visibility. Only activates when search is empty.
+    func toggleHistoryDropdown() {
+        if showHistoryDropdown {
+            showHistoryDropdown = false
+        } else if searchText.isEmpty {
+            showHistoryDropdown = true
+        }
     }
 
     // MARK: - Toast (REQ-3.2-27)

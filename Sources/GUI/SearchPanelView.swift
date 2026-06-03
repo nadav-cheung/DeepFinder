@@ -147,6 +147,8 @@ struct SearchPanelView: View {
         }
         .onChange(of: viewModel.searchText) { _, newQuery in
             resultsListState.currentQuery = newQuery
+            // REQ-3.2-02: hide history dropdown when typing
+            viewModel.showHistoryDropdown = false
         }
         .onChange(of: resultsListState.selectedIndex) { _, newIndex in
             viewModel.selectedIndex = newIndex
@@ -201,6 +203,12 @@ struct SearchPanelView: View {
             .focused($isSearchFocused)
             .onSubmit {
                 Task { await viewModel.search() }
+            }
+            // REQ-3.2-02: ↑ in empty search toggles history dropdown
+            .onKeyPress(.upArrow) {
+                guard viewModel.searchText.isEmpty else { return .ignored }
+                viewModel.toggleHistoryDropdown()
+                return .handled
             }
             // REQ-3.2-29: Tab autocomplete from selected result.
             .onKeyPress(.tab) {
