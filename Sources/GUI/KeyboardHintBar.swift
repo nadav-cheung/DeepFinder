@@ -17,6 +17,11 @@ struct KeyboardHintBar: View {
         var id: String { symbol + label }
     }
 
+    // MARK: - REQ-3.2-37: Testable hint count
+
+    /// Number of hints displayed. Exposed for testing.
+    static let expectedHintCount = 6
+
     // MARK: - Hints
 
     private let hints: [Hint] = [
@@ -24,7 +29,8 @@ struct KeyboardHintBar: View {
         Hint(symbol: "⌘↵", label: "Finder"),
         Hint(symbol: "Space", label: "预览"),
         Hint(symbol: "⌘C", label: "路径"),
-        Hint(symbol: "⌘K", label: "操作")
+        Hint(symbol: "⌘K", label: "操作"),
+        Hint(symbol: "⌘I", label: "详情")   // REQ-3.2-37
     ]
 
     // MARK: - Body
