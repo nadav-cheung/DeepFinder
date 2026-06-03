@@ -11,7 +11,7 @@
 
 ## Install Methods
 
-### From Source (Recommended)
+### From Source
 
 Build and install from source. This is the primary distribution method.
 
@@ -35,14 +35,16 @@ deepfinder --version
 # Expected: DeepFinder v3.0.0
 ```
 
-### Homebrew (Future)
+### Homebrew
 
-Homebrew distribution will be available post v1.0 release.
+Install the pre-built binary via Homebrew:
 
 ```bash
-# Will be available as:
-brew tap nadav/tap
-brew install deepfinder
+# Install DeepFinder (CLI + daemon)
+brew install nadav/deepfinder/deepfinder
+
+# Or with GUI (macOS app bundle)
+brew install --cask deepfinder
 
 # Verify
 deepfinder --version
@@ -125,7 +127,7 @@ deepfinder daemon restart
 
 ### LaunchAgent plist Reference
 
-The generated plist is located at `~/Library/LaunchAgents/com.nadav.deepfinder.daemon.plist`:
+The generated plist is located at `~/Library/LaunchAgents/com.nadav.deepfinder.plist`:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -167,11 +169,11 @@ deepfinder --version
 ```bash
 deepfinder daemon status
 # Expected output:
-#   State:        live
-#   Indexed files: 1,234,567
-#   Uptime:        2h 15m
-#   Memory:        4.2 GB
-#   Daemon PID:    12345
+#   Daemon running (PID 12345)
+#     Uptime: 2h 15m
+#     Index state: live
+#     Files indexed: 1,234,567
+#     Memory: 342 MB
 ```
 
 ### Run a Test Search
@@ -193,7 +195,7 @@ deepfinder daemon status | grep "Indexed files"
 
 The indexed count should be within roughly 2-5% of the `find` count. Differences are expected: DeepFinder excludes `.Trash`, `node_modules`, and other configurable paths.
 
-### GUI Verification (v2.0+)
+### GUI Verification
 
 Launch the app and press `Ctrl+Cmd+K` from any application. The search panel should appear at the top-center of your screen.
 
@@ -352,10 +354,10 @@ deepfinder daemon uninstall
 deepfinder daemon install
 
 # Check plist syntax
-plutil -lint ~/Library/LaunchAgents/com.nadav.deepfinder.daemon.plist
+plutil -lint ~/Library/LaunchAgents/com.nadav.deepfinder.plist
 
 # Manually load for testing
-launchctl load ~/Library/LaunchAgents/com.nadav.deepfinder.daemon.plist
+launchctl load ~/Library/LaunchAgents/com.nadav.deepfinder.plist
 ```
 
 ### High Memory Usage

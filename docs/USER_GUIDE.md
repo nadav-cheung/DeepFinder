@@ -386,6 +386,7 @@ deepfinder daemon start      # Start the daemon if not running
 deepfinder daemon stop       # Stop the daemon (sends SIGTERM)
 deepfinder daemon restart    # Stop then start
 deepfinder daemon status     # Show PID, uptime, index state, file count, memory
+deepfinder daemon rebuild    # Rebuild the entire index from scratch
 ```
 
 ### Lifecycle

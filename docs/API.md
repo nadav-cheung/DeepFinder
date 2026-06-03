@@ -1,5 +1,7 @@
 # DeepFinder HTTP Search API
 
+**Version**: 3.0.0
+
 DeepFinder exposes a lightweight JSON HTTP API for local integrations. The server binds to `127.0.0.1` only -- it is never exposed to the network. No authentication or API keys are required.
 
 Built on Network.framework `NWListener` with zero external dependencies.
