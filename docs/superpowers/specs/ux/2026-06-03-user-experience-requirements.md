@@ -155,10 +155,10 @@
 | ID | 需求 | 优先级 | 验证标准 |
 |----|------|--------|---------|
 | UX-I01 | DMG 拖拽安装 ≤ 2 步 | P0 | 拖到 Applications → 双击启动 |
-| UX-I02 | Homebrew cask 一键安装 | P0 | `brew install --cask deepfinder` 完成 |
+| UX-I02 | Homebrew tap 一键安装 | P0 | `brew install nadav/deepfinder/deepfinder` 完成 |
 | UX-I03 | 首次启动无 Gatekeeper 拦截提示 | P1 | 正确 code sign + notarize |
 | UX-I04 | 安装包体积 ≤ 10 MB | P2 | 压缩后 DMG 体积 |
-| UX-I05 | CLI 可独立安装（不含 GUI） | P1 | `brew install deepfinder` 仅 CLI |
+| UX-I05 | CLI 可独立安装（不含 GUI） | P1 | `brew install nadav/deepfinder/deepfinder` 默认仅 CLI |
 
 ### 4.4 流失风险
 
