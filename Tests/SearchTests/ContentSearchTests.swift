@@ -199,4 +199,41 @@ struct ContentSearchTests {
         #expect(matches[0].lineNumber == 5000)
         #expect(matches[0].lineContent.contains("FINDME"))
     }
+
+    // MARK: - Performance Limits (REQ-1.4-04)
+
+    @Test("Content search respects 10k candidate limit")
+    func testCandidateLimit() async throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        // Create more than 10k candidate records
+        let overLimit = Constants.ContentScanner.maxCandidates + 100
+        var files: [(name: String, ext: String?)] = []
+        for i in 0..<overLimit {
+            let name = "file\(i).txt"
+            try writeFile(in: dir, name: name, content: "content match query in file \(i)")
+            files.append((name: name, ext: "txt"))
+        }
+
+        let index = await makeIndexWithFiles(in: dir, files: files)
+        let provider = ContentSearchProvider(index: index)
+        let query = SearchQuery("match query")
+
+        let sequence = await provider.search(query: query)
+        var resultCount = 0
+        for await _ in sequence {
+            resultCount += 1
+        }
+
+        // Should not scan all files — capped at maxCandidates
+        #expect(resultCount <= Constants.ContentScanner.maxCandidates)
+    }
+
+    @Test("Constants define correct performance limits")
+    func testPerformanceConstants() {
+        #expect(Constants.ContentScanner.maxTotalIO == 512 * 1_048_576)  // 512 MB
+        #expect(Constants.ContentScanner.maxCandidates == 10_000)
+        #expect(Constants.ContentScanner.maxConcurrentScans == 8)
+    }
 }

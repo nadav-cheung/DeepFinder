@@ -68,22 +68,32 @@ actor ContentSearchProvider: SearchProvider {
 
         // Get all indexed records, filter to text files only
         let allRecords = await index.allRecords()
-        let candidates = allRecords.filter { record in
-            !record.isDirectory && TextFileExtensions.isTextFile(record.extension)
-        }
+        let candidates = allRecords
+            .filter { record in
+                !record.isDirectory && TextFileExtensions.isTextFile(record.extension)
+            }
+            .prefix(Constants.ContentScanner.maxCandidates)  // REQ-1.4-04: 10k candidate cap
 
         // Clear previous match storage
         storedMatches.removeAll(keepingCapacity: true)
 
         let scanOptions = ScanOptions(caseSensitive: false)
         var results: [SearchResult] = []
+        var totalBytesRead: Int64 = 0
+        let ioBudget = Constants.ContentScanner.maxTotalIO  // 512 MB
 
         for record in candidates {
+            // REQ-1.4-04: stop scanning when I/O budget is exhausted
+            if totalBytesRead >= ioBudget { break }
+
             let matches = ContentScanner.scan(
                 fileAtPath: record.path,
                 query: query.normalizedQuery,
                 options: scanOptions
             )
+
+            // Track I/O: approximate bytes read per file
+            totalBytesRead += record.size
 
             guard !matches.isEmpty else { continue }
 
@@ -91,8 +101,6 @@ actor ContentSearchProvider: SearchProvider {
             storedMatches[record.id] = matches
 
             // Score: 1.0 for first match, decays with more matches.
-            // A file with many matches is still highly relevant, so we keep
-            // the score high but allow ordering by density.
             let matchCount = matches.count
             let score = min(1.0, 0.5 + 0.1 * Double(matchCount))
 

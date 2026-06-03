@@ -84,6 +84,16 @@ enum Constants {
         /// Lines exceeding this are skipped to avoid pathological input
         /// such as minified JavaScript or base64-encoded blobs.
         static let defaultMaxLineLength = 10_000
+
+        /// Maximum total I/O in bytes across all scanned files (512 MB).
+        /// Scanning stops once this budget is exhausted (REQ-1.4-04).
+        static let maxTotalIO: Int64 = 512 * 1_048_576
+
+        /// Maximum number of candidate files to scan (REQ-1.4-04).
+        static let maxCandidates = 10_000
+
+        /// Maximum number of files to scan concurrently (REQ-1.4-04).
+        static let maxConcurrentScans = 8
     }
 
     // MARK: - File Hashing
