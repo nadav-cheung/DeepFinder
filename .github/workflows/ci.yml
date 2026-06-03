@@ -3,8 +3,15 @@ name: CI
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
   pull_request:
     branches: [main]
+    paths-ignore:
+      - 'docs/**'
+      - '*.md'
+  workflow_dispatch:
 
 jobs:
   build-and-test:
@@ -12,8 +19,36 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Cache Swift packages
+        uses: actions/cache@v4
+        with:
+          path: .build/
+          key: ${{ runner.os }}-spm-${{ hashFiles('Package.swift', 'Package.resolved') }}
+          restore-keys: ${{ runner.os }}-spm-
+
+      # TODO: Add performance regression check here. Compare benchmark results
+      # (e.g. swift test --filter 'measure' output or xcmetric baseline) against
+      # the main-branch baseline, and fail the build on regressions > threshold.
+
       - name: Build
         run: swift build
 
-      - name: Test
-        run: swift test
+      - name: Test with coverage
+        run: swift test --enable-code-coverage
+
+      - name: Report coverage
+        run: |
+          PROF_DATA=$(find .build -name 'default.profdata' 2>/dev/null | head -1)
+          if [ -n "$PROF_DATA" ]; then
+            TEST_BINARY=$(find .build -name 'DeepFinderPackageTests' -type f 2>/dev/null | head -1)
+            if [ -n "$TEST_BINARY" ]; then
+              echo "=== Coverage Report ==="
+              xcrun llvm-cov report "$TEST_BINARY" \
+                -instr-profile "$PROF_DATA" \
+                --ignore-filename-regex='Tests/|\.build/'
+            else
+              echo "::warning::Test binary not found, skipping coverage report"
+            fi
+          else
+            echo "::warning::No profdata found, skipping coverage report"
+          fi
