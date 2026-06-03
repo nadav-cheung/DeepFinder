@@ -7,7 +7,7 @@ import UniformTypeIdentifiers
 /// Single result row showing file icon, highlighted filename, path, size, date, and match badge.
 ///
 /// Design language: "Luxury Refined" — Apple's design elevated.
-/// - 22pt icons for confident presence
+/// - 20pt icons for confident presence
 /// - Typographic hierarchy: semibold filename → regular metadata → tertiary path
 /// - Generous horizontal rhythm (12pt inner, 16pt outer padding)
 /// - Selection: accent-tinted background with cornerRadius 8, subtle elevation shadow
@@ -32,7 +32,7 @@ struct ResultRowView: View, Equatable {
     // MARK: - Design Tokens
 
     private enum Design {
-        static let iconSize: CGFloat = 22
+        static let iconSize: CGFloat = 20
         static let filenameSize: CGFloat = 13
         static let filenameWeight: Font.Weight = .semibold
         static let pathSize: CGFloat = 11
@@ -108,6 +108,14 @@ struct ResultRowView: View, Equatable {
             .resizable()
             .aspectRatio(contentMode: .fit)
             .frame(width: Design.iconSize, height: Design.iconSize)
+            // REQ-3.2-15: directory badge indicator
+            .overlay(alignment: .bottomTrailing) {
+                if result.record.isDirectory {
+                    Image(systemName: "folder.fill")
+                        .font(.system(size: 7))
+                        .foregroundStyle(.secondary)
+                }
+            }
             // Subtle luminance boost when selected
             .brightness(isSelected ? 0.08 : 0)
             .animation(.easeInOut(duration: 0.15), value: isSelected)
@@ -222,7 +230,7 @@ enum FileIconCache {
             icon = NSWorkspace.shared.icon(for: .item)
         }
 
-        let size: CGFloat = 22
+        let size: CGFloat = 20
         let sized = NSImage(size: NSSize(width: size, height: size))
         sized.lockFocus()
         icon.draw(in: NSRect(x: 0, y: 0, width: size, height: size))
