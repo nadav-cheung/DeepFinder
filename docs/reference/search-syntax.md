@@ -10,6 +10,8 @@ Space-separated terms are ANDed. Matching is **case-insensitive** and **substrin
 deepfinder "quarterly report"   # Files with BOTH "quarterly" AND "report"
 ```
 
+> **Unicode handling**: All filenames and queries are NFC-normalized (`precomposedStringWithCanonicalMapping`). This means accented characters like `é` are stored and matched in their composed form. You do not need to worry about whether your input uses composed or decomposed Unicode -- DeepFinder normalizes both sides automatically.
+
 ## Wildcards
 
 Use `*` (any sequence) and `?` (single character):

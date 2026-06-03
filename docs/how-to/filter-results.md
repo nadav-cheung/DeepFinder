@@ -121,4 +121,4 @@ deepfinder "case:insensitive README"       # Explicit case-insensitive (this is 
 
 ---
 
-**Next**: [Search syntax reference](search-syntax.md) -- learn about boolean operators, wildcards, regex, and path qualifiers.
+**Next**: [Search syntax reference](../reference/search-syntax.md) -- learn about boolean operators, wildcards, regex, and path qualifiers.

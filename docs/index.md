@@ -4,13 +4,13 @@
 
 DeepFinder builds its own index — independent of Spotlight. Sub-millisecond queries. Finds every file, every time. **Free and open source.** Replaces Spotlight + Alfred + HoudahSpot + EasyFind with a single tool.
 
-[60-Second Quick Start →](tutorial/first-search.md)
+[~2 Minute Quick Start →](tutorial/first-search.md)
 
 ---
 
 ## I'm New Here
 
-Take the tutorial and get your first search working in under a minute.
+Take the tutorial and get your first search working in under two minutes.
 
 → [Getting Started Tutorial](tutorial/first-search.md)
 
@@ -81,8 +81,8 @@ Take the tutorial and get your first search working in under a minute.
 
 ## For Contributors
 
-→ [CONTRIBUTING.md](CONTRIBUTING.md) — setup, code style, PR process
-→ [SECURITY.md](SECURITY.md) — vulnerability reporting
+→ [CONTRIBUTING.md](../CONTRIBUTING.md) — setup, code style, PR process
+→ [SECURITY.md](../SECURITY.md) — vulnerability reporting
 → [Architecture Specs](superpowers/specs/design/) — detailed design documents
 
 ---

@@ -15,6 +15,8 @@ DeepFinder is designed for the command line. Every result can be piped, parsed, 
 | See debug info alongside results | `--verbose` |
 | Integrate from Python, JS, or a web app | [HTTP API](#http-api) |
 
+> **Terminal output**: DeepFinder uses ANSI escape codes for colors and progress bars in the terminal. When stdout is piped (e.g., `deepfinder "query" | grep ...`) or redirected to a file, ANSI codes are automatically disabled. You do not need `--no-color` or similar flags -- it is handled transparently.
+
 ---
 
 ## JSON Output (`--json`)

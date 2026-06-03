@@ -180,7 +180,7 @@ Three things to check, from most to least common:
 
 1. Install DeepFinder on the new Mac:
    ```bash
-   brew install navad/deepfinder/deepfinder
+   brew install nadav/deepfinder/deepfinder
    ```
 
 2. (Optional) Copy your config file:

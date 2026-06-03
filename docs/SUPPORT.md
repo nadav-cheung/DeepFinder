@@ -10,7 +10,7 @@ Search [existing issues](https://github.com/nadav/deepfinder/issues) first to se
 - DeepFinder version (`deepfinder --version`)
 - Steps to reproduce
 - What you expected vs. what happened
-- Output of `deepfinder diagnose` (if applicable)
+- Output of `deepfinder daemon status` (if applicable)
 
 ## 💡 Feature Request?
 
@@ -27,21 +27,21 @@ Open an issue with the Feature Request template. Describe:
 
 ## 🔒 Security Vulnerability?
 
-Do NOT open a public issue. See [SECURITY.md](SECURITY.md) for responsible disclosure instructions.
+Do NOT open a public issue. See [SECURITY.md](../SECURITY.md) for responsible disclosure instructions.
 
 ## 🤝 Want to Contribute?
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for setup instructions, code style, and the pull request process.
+See [CONTRIBUTING.md](../CONTRIBUTING.md) for setup instructions, code style, and the pull request process.
 
-## 📊 Daemon Diagnostic
+## 📊 Daemon Status
 
-If you're experiencing issues with search results or daemon connectivity, run:
+If you are experiencing issues with search results or daemon connectivity, run:
 
 ```bash
-deepfinder diagnose
+deepfinder daemon status
 ```
 
-This prints a diagnostic report including daemon status, index health, permission state, and configuration. Include this output when reporting bugs — it dramatically speeds up diagnosis.
+This prints the daemon PID, uptime, index state, file count, and memory usage. Include this output when reporting bugs -- it dramatically speeds up diagnosis.
 
 ## 📧 Direct Contact
 

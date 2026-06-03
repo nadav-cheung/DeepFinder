@@ -119,6 +119,17 @@ The `daemon start` command checks whether the PID in `daemon.pid` belongs to a l
 
 A daemon crash does not lose your index -- the data is persisted in SQLite at `~/.deep-finder/cache/index.db`. The new daemon reloads it on startup.
 
+### External and network volumes
+
+DeepFinder indexes all mounted volumes by default -- internal, external (USB/Thunderbolt), and network shares. When a volume is unmounted, its files are automatically removed from the index.
+
+- **External drives** (USB, Thunderbolt): Indexed on mount, removed on unmount. No configuration needed.
+- **Network shares** (SMB, AFP, NFS): Indexed if mounted and accessible. Slow or intermittently connected shares may cause scan delays -- exclude them with `excludedVolumes` if they cause problems.
+- **Time Machine volumes**: Not excluded by default. Add them to `excludedVolumes` if you do not want backup snapshots indexed.
+
+To see which volumes are currently indexed: `deepfinder daemon status`.
+To exclude a volume: `deepfinder config set excludedVolumes '["/Volumes/Time Machine"]'`.
+
 ---
 
 **Did this help?** If you are troubleshooting a problem, see [Troubleshooting](troubleshooting.md). If you are stuck, [get help](../SUPPORT.md).

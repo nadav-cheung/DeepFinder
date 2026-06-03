@@ -197,5 +197,5 @@ All keys are also settable from the REPL with `:config KEY [VALUE]`.
 | Understand the search syntax | [Search Syntax Reference](../reference/search-syntax.md) |
 | Find files by type, date, or size | [Filter Results](filter-results.md) |
 | Learn all search tricks | [Find Files](find-files.md) |
-| Set up the daemon on login | [Install Daemon](install-daemon.md) |
+| Set up the daemon on login | [Install Daemon](daemon-manage.md) |
 | Debug a problem | [Troubleshooting](troubleshooting.md) |

@@ -22,6 +22,8 @@ deepfinder "vacation photo"
 
 Finds files whose names contain both "vacation" **and** "photo", such as `vacation_photo_beach.jpg` or `Photo_of_vacation_2026.png`.
 
+> 💡 **Pinyin search**: DeepFinder understands Chinese pinyin. Searching `baogao` finds `报告.pdf`, `报告_2026.docx`, and any file whose Chinese name sounds like "baogao". This works for all indexed files with Chinese filenames -- no special syntax needed.
+
 ### Match with wildcards
 
 Use `*` to match any sequence of characters, and `?` to match exactly one character.
@@ -87,6 +89,13 @@ For use in shell scripts, `--json` gives structured output and `--0` is safe for
 deepfinder --json "ext:pdf report" | jq '.[].path'
 deepfinder --0 "*.mp4" | xargs -0 -I {} mv {} ~/Videos/
 ```
+
+### CLI flag reference
+
+| Flag | Description |
+|------|-------------|
+| `--help` | Show the full CLI reference with all flags and subcommands |
+| `--version` | Show the DeepFinder version and exit |
 
 ### Getting help
 

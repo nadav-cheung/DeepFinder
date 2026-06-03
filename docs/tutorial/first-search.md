@@ -1,6 +1,6 @@
-# 60-Second Quick Start
+# ~2 Minute Quick Start
 
-Get DeepFinder running and find your first file — in 60 seconds.
+Get DeepFinder running and find your first file — in about two minutes.
 
 **Prerequisites**: macOS 26 (Tahoe), Apple Silicon (M4+), internet connection for install.
 
@@ -19,6 +19,8 @@ Expected output:
 ```
 
 If you don't use Homebrew, [download the DMG](https://github.com/nadav/deepfinder/releases) and drag DeepFinder to Applications.
+
+> **Distribution**: DeepFinder requires Full Disk Access and cannot be sandboxed, so it is not available on the Mac App Store. It is distributed via Homebrew and GitHub Releases (DMG). Both are signed and notarized.
 
 ---
 
@@ -53,7 +55,11 @@ You can start searching immediately — results appear as the index builds.
 
 ## Step 4: Open Your File (15 seconds)
 
+Start the interactive REPL by running `deepfinder` with no arguments, then type your query:
+
 ```
+$ deepfinder
+> readme
 1. /Users/nadav/Projects/deepfinder/README.md     12 KB   exa  2026-05-20
 2. /Users/nadav/Projects/website/readme.html        8 KB   sub  2026-03-10
 3. /Users/nadav/Documents/readme_template.txt        2 KB   sub  2025-11-01
@@ -69,7 +75,7 @@ Or use the GUI: press **⌃⌘K** to open the search panel, type your query, and
 
 ## 🎉 You're Done
 
-You just installed DeepFinder, granted permissions, ran your first search, and opened a file — all in about a minute.
+You just installed DeepFinder, granted permissions, ran your first search, and opened a file.
 
 ---
 
