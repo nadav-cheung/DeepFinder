@@ -307,7 +307,7 @@ Scope: `Sources/GUI/` only. Design doc: `../design/2026-06-03-v3.2-search-ui-des
 
 | REQ ID | Description | Status | Source Files | Notes |
 |--------|-------------|--------|-------------|-------|
-| REQ-3.2-04 | Spinner only for AI queries | done | `Sources/GUI/SearchBarView.swift` | Local queries <50ms show no spinner |
+| REQ-3.2-04 | Spinner only for AI queries | done | `Sources/GUI/SearchViewModel.swift`, `Sources/GUI/SearchPanelView.swift` | Local queries <50ms show no spinner |
 | REQ-3.2-07 | Adaptive panel height | done | `Sources/GUI/SearchPanelView.swift` | `min(screenH - 200pt, 800pt)` |
 | REQ-3.2-08 | Ctrl+N/P aliases + type-to-select | done | `Sources/GUI/ResultsListView.swift` | Emacs compat, same-letter cycling |
 | REQ-3.2-09 | Scroll easing .easeOut | done | `Sources/GUI/ResultsListView.swift` | .easeOut(0.15s) |

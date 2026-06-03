@@ -153,9 +153,9 @@ struct ResultRowTests {
 
     @Test("Match type badge label")
     func matchTypeBadgeLabel() {
-        #expect(MatchType.exact.badgeLabel == "Exact")
-        #expect(MatchType.prefix.badgeLabel == "Prefix")
-        #expect(MatchType.substring.badgeLabel == "Substring")
-        #expect(MatchType.pinyin.badgeLabel == "Pinyin")
+        #expect(MatchType.exact.badgeLabel == "精确")
+        #expect(MatchType.prefix.badgeLabel == "前缀")
+        #expect(MatchType.substring.badgeLabel == "子串")
+        #expect(MatchType.pinyin.badgeLabel == "拼音")
     }
 }
