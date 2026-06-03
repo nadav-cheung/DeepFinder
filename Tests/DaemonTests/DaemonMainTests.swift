@@ -5,6 +5,11 @@ import Foundation
 @Suite("DaemonMain lifecycle")
 struct DaemonMainTests {
 
+    /// Thread-safe error box for capturing errors across Task boundaries.
+    private final class ErrorBox: @unchecked Sendable {
+        var error: Error?
+    }
+
     // MARK: - Helpers
 
     /// Create a unique temp directory for each test.
@@ -223,9 +228,14 @@ struct DaemonMainTests {
         let initialState = await daemon.state
         #expect(initialState == .starting)
 
-        // Run daemon in background
+        // Run daemon in background, capture any error
+        let errorBox = ErrorBox()
         let daemonTask = Task {
-            try await daemon.run()
+            do {
+                try await daemon.run()
+            } catch {
+                errorBox.error = error
+            }
         }
 
         // Wait for daemon to reach live state (timeout ~5s)
@@ -237,8 +247,10 @@ struct DaemonMainTests {
                 reachedLive = true
                 break
             }
+            if errorBox.error != nil { break }
         }
-        #expect(reachedLive)
+        let stateOnTimeout = await daemon.state
+        #expect(reachedLive, "Daemon never reached .live. Error: \(String(describing: errorBox.error)). State: \(stateOnTimeout)")
 
         // Trigger shutdown
         await daemon.shutdown()
@@ -259,8 +271,13 @@ struct DaemonMainTests {
         let dataDirPath = dir.appendingPathComponent("data").path
         let daemon = makeDaemon(dataDir: dataDirPath)
 
+        let errorBox = ErrorBox()
         let daemonTask = Task {
-            try await daemon.run()
+            do {
+                try await daemon.run()
+            } catch {
+                errorBox.error = error
+            }
         }
 
         // Wait for live state
@@ -272,11 +289,14 @@ struct DaemonMainTests {
                 reachedLive = true
                 break
             }
+            if errorBox.error != nil { break }
         }
-        #expect(reachedLive)
+        let stateOnTimeout = await daemon.state
+        #expect(reachedLive, "Daemon never reached .live. Error: \(String(describing: errorBox.error)). State: \(stateOnTimeout)")
 
-        // PID file should exist while daemon is running
+        // PID file should exist while daemon is running (under session/ subdir)
         let pidPath = dir.appendingPathComponent("data")
+            .appendingPathComponent("session")
             .appendingPathComponent("daemon.pid").path
         #expect(FileManager.default.fileExists(atPath: pidPath))
 
@@ -297,10 +317,12 @@ struct DaemonMainTests {
         defer { try? FileManager.default.removeItem(at: dir) }
 
         let dataDirPath = dir.appendingPathComponent("data").path
-        let pidPath = (dataDirPath as NSString).appendingPathComponent("daemon.pid")
+        // PID path is under dataDir/session/daemon.pid when dataDir is non-default
+        let sessionDir = (dataDirPath as NSString).appendingPathComponent("session")
+        let pidPath = (sessionDir as NSString).appendingPathComponent("daemon.pid")
 
         // Write our own PID to simulate an already-running daemon
-        try DaemonMain.ensureDataDir(dataDirPath)
+        try DaemonMain.ensureDataDir(sessionDir)
         let ownPID = ProcessInfo.processInfo.processIdentifier
         try "\(ownPID)\n".write(
             toFile: pidPath,

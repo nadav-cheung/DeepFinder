@@ -168,9 +168,18 @@ public actor DaemonMain {
         self.eventStreamProvider = eventStreamProvider
         let resolved = Self.expandTilde(dataDir)
         self.resolvedDataDir = resolved
-        self.resolvedPidPath = Self.expandTilde(Product.pidPath)
-        self.resolvedSocketPath = Self.expandTilde(Product.socketPath)
-        self.resolvedDbPath = Self.expandTilde(Product.databasePath)
+
+        // When dataDir is non-default (e.g., in tests), derive all paths from it
+        // so tests get isolated PID/socket/DB and don't conflict with a real daemon.
+        if dataDir == Product.dataDir {
+            self.resolvedPidPath = Self.expandTilde(Product.pidPath)
+            self.resolvedSocketPath = Self.expandTilde(Product.socketPath)
+            self.resolvedDbPath = Self.expandTilde(Product.databasePath)
+        } else {
+            self.resolvedPidPath = resolved + "/session/daemon.pid"
+            self.resolvedSocketPath = resolved + "/session/ipc.sock"
+            self.resolvedDbPath = resolved + "/cache/index.db"
+        }
     }
 
     /// Public no-arg convenience initializer for executable entry points.
@@ -377,8 +386,10 @@ public actor DaemonMain {
     ///
     /// - Throws: `DaemonError` on startup failures.
     public func run() async throws {
-        // 1. Ensure data directory
+        // 1. Ensure data directory and subdirectories
         try Self.ensureDataDir(dataDir)
+        try Self.ensureDataDir(resolvedDataDir + "/session")
+        try Self.ensureDataDir(resolvedDataDir + "/cache")
 
         // 2. Atomically acquire PID file (singleton check + write + flock)
         let pidFD = try Self.acquirePIDFile(pidPath: resolvedPidPath)
