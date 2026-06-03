@@ -67,3 +67,8 @@ Swift's `String` does not offer a built-in normalization-insensitive comparison 
 - **NFD normalization:** Would match HFS+ legacy behavior but produces longer strings and disagrees with user typing conventions. APFS does not enforce NFD, making it unnecessary.
 - **NFKC (compatibility composition):** Would normalize "fi" ligature to "f"+"i" and fullwidth "A" to halfwidth "A". Overly aggressive -- users typing fullwidth characters expect them to be searchable as-is.
 - **Normalize-at-compare-time only:** Store raw strings, normalize during search. Rejected because it requires normalization on every comparison (not just at insert) and complicates index structures that use strings as dictionary keys.
+
+## Related
+
+- [ADR-003](ADR-003-fullsubstringmap-64-char-threshold-trigram-fallback.md) — FullSubstringMap, TrigramIndex, and PinyinIndex all apply NFC normalization at insert/search time (see normalization table above)
+- [ADR-006](ADR-006-fseventwatcher-actor-isolation-model.md) — FSEventWatcher normalizes filenames from filesystem events before inserting into InMemoryIndex

@@ -58,3 +58,8 @@ NDJSON was rejected because:
 - JSON strings can contain literal `\n` characters (e.g., in file paths or error messages), which would falsely trigger message boundaries unless we mandated escaping, adding complexity.
 - Byte-by-byte scanning for `\n` is marginally less efficient than reading a length prefix.
 - The "just pipe to `nc`" debugging benefit of NDJSON was not deemed worth the robustness tradeoff.
+
+## Related
+
+- [ADR-004](ADR-004-ai-privacy-boundary-filemetadata-summary.md) — AI privacy boundary (IPC messages carry AI query/results with metadata-only payloads)
+- [ADR-006](ADR-006-fseventwatcher-actor-isolation-model.md) — Daemon event loop that sends IPC responses to connected clients

@@ -66,3 +66,8 @@ The `FileMetadataSummary.from(_:tags:anonymizePaths:)` factory method is the onl
 - **Opt-in content indexing.** A future `content:` search operator could index file content locally (via Spotlight or a custom indexer) and generate embeddings stored on-device, with no cloud round-trip. This would expand AI capability while maintaining the privacy boundary.
 - **Per-file consent.** A `.deepfinder-ignore` file or extended attribute could let users mark specific directories as "never send to AI" for an additional safety layer.
 - **On-device-only mode.** A configuration flag to restrict all AI processing to CoreML/ANEChip, with zero cloud API calls.
+
+## Related
+
+- [ADR-001](ADR-001-monolithic-target-vs-multi-module.md) — Monolithic target makes `Sources/AI/` types available to all modules
+- [ADR-002](ADR-002-ipc-protocol-design.md) — IPC protocol carries AI query/response messages between CLI/GUI and daemon

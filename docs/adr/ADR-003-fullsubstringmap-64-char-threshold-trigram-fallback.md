@@ -58,3 +58,8 @@ The threshold `64` was chosen because:
 - **Suffix array / suffix automaton:** Full O(N) memory with O(log N) lookup, but implementation complexity is significantly higher than the dictionary-based approach. The two-tier strategy gives similar practical performance with simpler code.
 - **Single TrigramIndex for everything:** Simpler code (one data structure), but would lose the O(1) fast path for 95% of queries. TrigramIntersection + verification adds measurable latency at interactive typing speeds.
 - **Higher threshold (128 or 256):** Would cover more names with O(1) lookup but at quadratic substring cost. Rejected after profiling showed diminishing returns beyond 64.
+
+## Related
+
+- [ADR-005](ADR-005-unicode-nfc-normalization-strategy.md) — NFC normalization must be applied before inserting into FullSubstringMap and TrigramIndex
+- [ADR-006](ADR-006-fseventwatcher-actor-isolation-model.md) — FSEventWatcher calls into InMemoryIndex which orchestrates both data structures

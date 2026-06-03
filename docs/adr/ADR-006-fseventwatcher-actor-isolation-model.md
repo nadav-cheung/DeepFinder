@@ -77,3 +77,8 @@ Key design elements:
 - **`OSAllocatedUnfairLock` + `class` for FSEventWatcher:** Rejected because actor isolation provides the same guarantee with compiler enforcement. A manually-locked class is error-prone (forgotten unlocks, lock ordering).
 - **Combine `PassthroughSubject`:** Rejected to maintain the zero-external-dependency policy. `AsyncStream` is built into the Swift standard library.
 - **`AsyncChannel` (swift-async-algorithms):** Would work but requires an external dependency on swift-async-algorithms. The built-in `AsyncStream` is sufficient for a single-producer, single-consumer pipe.
+
+## Related
+
+- [ADR-001](ADR-001-monolithic-target-vs-multi-module.md) — Monolithic target allows FSEventWatcher (`Sources/FS/`) to directly call `InMemoryIndex` (`Sources/Index/`) without a target boundary
+- [ADR-003](ADR-003-fullsubstringmap-64-char-threshold-trigram-fallback.md) — InMemoryIndex data structures that FSEventWatcher mutates via actor calls

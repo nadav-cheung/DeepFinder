@@ -70,3 +70,9 @@ The `Sources/` directory is organized into logical subdirectories (`Index/`, `Se
 - Directory structure (`Sources/Index/`, `Sources/Search/`, etc.) enforces logical layering.
 - CODEOWNERS and code review guard against architectural violations.
 - If modular packaging becomes necessary again (e.g., for an SDK distribution), the subdirectory structure makes re-extraction straightforward.
+
+## Related
+
+- [ADR-003](ADR-003-fullsubstringmap-64-char-threshold-trigram-fallback.md) — Search index data structures live inside this monolithic target
+- [ADR-004](ADR-004-ai-privacy-boundary-filemetadata-summary.md) — AI module (`Sources/AI/`) benefits from same-target access to Index types
+- [ADR-006](ADR-006-fseventwatcher-actor-isolation-model.md) — FSEventWatcher actor in `Sources/FS/` directly calls `InMemoryIndex` actor, made legal by the monolithic target
