@@ -236,7 +236,7 @@ protocol AIModelProvider: Sendable {
 
 v3.1 及后续版本的 AI 技术栈演进路线见独立设计文档：
 
-- **AI 技术栈设计**: `docs/superpowers/specs/2026-06-01-ai-tech-stack-design.md` — v3.1→v3.3 完整路线（多提供商、Embedding、VectorStore、OCR、SpeechAnalyzer）
+- **AI 技术栈设计**: `docs/superpowers/specs/design/2026-06-01-ai-tech-stack-design.md` — v3.1→v3.3 完整路线（多提供商、Embedding、VectorStore、OCR、SpeechAnalyzer）
 - **v3.1 RAG REQ**: `docs/superpowers/specs/reqs/v3.1-rag.md` — 文件分块、本地 Embedding、向量索引、语义检索、本地生成（7 REQ，未开始）
 
 ---

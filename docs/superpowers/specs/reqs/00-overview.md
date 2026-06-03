@@ -2,10 +2,10 @@
 
 需求 ID 格式：`REQ-{版本}-{序号}`，如 `REQ-1.0-01`。
 优先级：P0 必须 / P1 重要 / P2 增强 / P3 未来。
-状态：📋 规划中 / 🔨 开发中 / ✅ 已完成 / ❌ 已取消。
+状态：📋 规划中 / 🔨 开发中 / ✅ 已完成 / ❌ 已取消 / 🔀 已合并。
 执行方式：🖥️ 本地 / ☁️ 云端 / 🖥️☁️ 混合。
 
-详细架构设计见 `../2026-05-26-deep-finder-design.md`。
+详细架构设计见 `../design/2026-05-26-deep-finder-design.md`。
 
 ---
 
@@ -31,6 +31,7 @@
 | [v2.2-service-integration.md](v2.2-service-integration.md) | v2.2 | REQ-2.2-01 ~ 05 | 服务集成：HTTP/URL Scheme/Shortcuts/AppleScript |
 | [v3.0-ai.md](v3.0-ai.md) | v3.0 | REQ-3.0-01 ~ 16 | AI 辅助搜索 |
 | [v3.1-rag.md](v3.1-rag.md) | v3.1 | REQ-3.1-01 ~ 07 | 本地 RAG |
+| [v3.2-search-ui.md](v3.2-search-ui.md) | v3.2 | REQ-3.2-01 ~ 37 | 搜索 UI 打磨：键盘导航、动画、分类、action panel |
 
 ---
 
@@ -56,6 +57,7 @@
 | `v2.2` | 服务集成 | HTTP 搜索/URL Scheme/Shortcuts/AppleScript |
 | `v3.0` | AI 语义 | 语义搜索/智能建议/内容理解/智能分类 |
 | `v3.1` | 本地 RAG | 文件分块/Embedding/向量索引/语义检索/本地生成 |
+| `v3.2` | 搜索 UI 打磨 | 键盘导航优化/动画曲线/Ctrl+N:P/type-to-select/⌘K action panel/4-layer glow |
 
 ---
 
@@ -81,7 +83,8 @@
 | v2.2 | 2 | 2 | 1 | 0 | 5 |
 | v3.0 | 4 | 8 | 4 | 0 | 16 |
 | v3.1 | 4 | 3 | 0 | 0 | 7 |
-| **合计** | **77** | **37** | **7** | **0** | **121** |
+| v3.2 | 15 | 9 | 13 | 0 | 37 |
+| **合计** | **92** | **46** | **20** | **0** | **158** |
 
 ---
 
@@ -95,3 +98,4 @@
 | 2026-05-29 | v2.1 | 拆分 monolithic requirements.md 为 per-module 文件。原文件替换为索引 |
 | 2026-06-02 | v3.0 | 补充 v1.1-v1.5 和 v2.1-v2.2 统计。总计从 72 更正为 116 项 REQ |
 | 2026-06-02 | v2.0 | 新增 REQ-2.0-14~18（独立 App 目标、Info.plist、构建脚本、Daemon 发现、Homebrew Cask）。v2.0 从 13 增至 18 项 REQ。总计从 116 更正为 121 项 REQ |
+| 2026-06-03 | v3.1 | specs/ 重组：design/ ux/ subdirectories, requirements.md 删除（被 00-overview.md 替代）, 创建 research/ 目录, 新增 v3.2-search-ui (37 REQs)。总计从 121 增至 158 项 REQ |

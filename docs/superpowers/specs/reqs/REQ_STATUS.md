@@ -1,7 +1,7 @@
 # REQ Status Tracking Matrix
 
-**Last updated**: 2026-06-02
-**Total REQs**: 121 across 18 version modules
+**Last updated**: 2026-06-03
+**Total REQs**: 158 across 19 version modules
 
 ---
 
@@ -9,10 +9,10 @@
 
 | Status | Count | Modules |
 |--------|-------|---------|
-| Done | 109 | v0.1, v0.2, v0.3, v0.4, v0.5, v0.6, v0.7, v1.0, v1.1, v1.2, v1.3, v1.4, v1.5, v2.0 (13 GUI REQs), v2.1, v2.2, v3.0 |
-| Partial | 0 | -- |
-| Not Started | 12 | v2.0 (5 app target REQs), v3.1 (Local RAG) |
-| **Total** | **121** | |
+| Done | 130 | v0.1, v0.2, v0.3, v0.4, v0.5, v0.6, v0.7, v1.0, v1.1, v1.2, v1.3, v1.4, v1.5, v2.0 (13 GUI REQs), v2.1, v2.2, v3.0, v3.2 (21 done/merged) |
+| Partial | 2 | v3.2 (2 infrastructure-in-place REQs) |
+| Not Started | 26 | v2.0 (5 app target REQs), v3.1 (Local RAG), v3.2 (14 not-started) |
+| **Total** | **158** | |
 
 ### By Version
 
@@ -36,14 +36,15 @@
 | v2.2 Service Integration | 5 | 5 | 0 | 0 |
 | v3.0 AI Semantic | 16 | 16 | 0 | 0 |
 | v3.1 Local RAG | 7 | 0 | 0 | 7 |
+| v3.2 Search UI | 37 | 21 | 2 | 14 |
 
 ### By Priority
 
 | Priority | Total | Done | Partial | Not Started |
 |----------|-------|------|---------|-------------|
-| P0 | 77 | 71 | 0 | 6 |
-| P1 | 37 | 32 | 0 | 5 |
-| P2 | 7 | 6 | 0 | 1 |
+| P0 | 92 | 80 | 0 | 12 |
+| P1 | 46 | 37 | 1 | 8 |
+| P2 | 20 | 13 | 1 | 6 |
 
 ---
 
@@ -298,6 +299,64 @@
 
 ---
 
+## v3.2 -- Search UI Refinement (37 REQs, 22 done, 3 partial, 12 not-started)
+
+Scope: `Sources/GUI/` only. Design doc: `../design/2026-06-03-v3.2-search-ui-design.md`.
+
+### Phase 1 — Core Speed (15 REQs)
+
+| REQ ID | Description | Status | Source Files | Notes |
+|--------|-------------|--------|-------------|-------|
+| REQ-3.2-04 | Spinner only for AI queries | done | `Sources/GUI/SearchBarView.swift` | Local queries <50ms show no spinner |
+| REQ-3.2-07 | Adaptive panel height | done | `Sources/GUI/SearchPanelView.swift` | `min(screenH - 200pt, 800pt)` |
+| REQ-3.2-08 | Ctrl+N/P aliases + type-to-select | not-started | `Sources/GUI/ResultsListView.swift` | Emacs compat, same-letter cycling |
+| REQ-3.2-09 | Scroll easing .easeOut | not-started | `Sources/GUI/ResultsListView.swift` | Currently .easeInOut |
+| REQ-3.2-10 | ⌥↑/⌥↓ page navigation | done | `Sources/GUI/ResultsListView.swift` | ~20 lines/page |
+| REQ-3.2-12 | Background AttributedString highlight | not-started | `Sources/GUI/ResultRowView.swift` | <16ms/1000 rows target |
+| REQ-3.2-14 | LazyVStack + .equatable() | not-started | `Sources/GUI/ResultsListView.swift`, `Sources/GUI/ResultRowView.swift` | No manual windowing |
+| REQ-3.2-17 | Selection animation fast-press skip | done | `Sources/GUI/ResultRowView.swift` | 0.1s coalescing already aligned |
+| REQ-3.2-19 | Panel spring open animation | done | `Sources/GUI/SearchPanelView.swift` | Commit f9dd661, cubic-bezier |
+| REQ-3.2-24 | Enter opens file + auto-close | done | `Sources/GUI/SearchViewModel.swift` | |
+| REQ-3.2-25 | ⌘Enter reveals in Finder | done | `Sources/GUI/SearchViewModel.swift` | Panel stays open |
+| REQ-3.2-26 | Space/⌘Y Quick Look preview | done | `Sources/GUI/QuickLookPreview.swift` | Synchronized selection |
+| REQ-3.2-27 | ⌘C copy path + toast | done | `Sources/GUI/SearchViewModel.swift` | Inline toast confirmation |
+| REQ-3.2-30 | Context-aware Esc | done | `Sources/GUI/SearchPanelView.swift` | QL > detail > text > close |
+| REQ-3.2-36 | CJK IME stability | done | `Sources/GUI/SearchBarView.swift` | Marked-text handled natively |
+
+### Phase 2 — Richness (9 REQs)
+
+| REQ ID | Description | Status | Source Files | Notes |
+|--------|-------------|--------|-------------|-------|
+| REQ-3.2-01 | Dynamic placeholder | not-started | `Sources/GUI/SearchBarView.swift` | Candidate pool rotation |
+| REQ-3.2-02 | Search history dropdown | partial | `Sources/GUI/SearchPanelView.swift`, `Sources/GUI/SearchViewModel.swift` | HistoryStore exists, dropdown UI gap |
+| REQ-3.2-05 | Clear button opacity animation | not-started | `Sources/GUI/SearchBarView.swift` | |
+| REQ-3.2-13 | Result count footer | done | `Sources/GUI/ResultsListView.swift` | Thousands separators |
+| REQ-3.2-18 | Results stagger animation | done | `Sources/GUI/ResultsListView.swift` | Fade-in + slide-down |
+| REQ-3.2-31 | ⌘K action panel | done | `Sources/GUI/ActionPanelView.swift` | Fuzzy search, keyboard trap |
+| REQ-3.2-32 | UTI-based result categories | done | `Sources/GUI/ResultCategory.swift` | Sticky headers, collapsible |
+| REQ-3.2-34 | Zero-result improvements | not-started | `Sources/GUI/EmptyStateView.swift` | AI search button + suggestions |
+| REQ-3.2-37 | BottomActionBar | not-started | `Sources/GUI/BottomActionBar.swift` (new) | Replaces KeyboardHintBar |
+
+### Phase 3 — Polish (13 REQs)
+
+| REQ ID | Description | Status | Source Files | Notes |
+|--------|-------------|--------|-------------|-------|
+| REQ-3.2-03 | Speech input button in search bar | done | `Sources/GUI/SpeechOverlayView.swift` | Waveform animation |
+| REQ-3.2-06 | *(merged into REQ-3.2-37)* | merged | -- | Keyboard hint tags → BottomActionBar |
+| REQ-3.2-11 | ⌘↑/⌘↓ group jump | done | `Sources/GUI/ResultsListView.swift` | |
+| REQ-3.2-15 | 20pt icons + directory badge | not-started | `Sources/GUI/ResultRowView.swift` | Badge ≤999 |
+| REQ-3.2-16 | PathShortener + tooltip | not-started | `Sources/GUI/PathShortener.swift` (new) | Smart truncation |
+| REQ-3.2-20 | Search bar focus glow | not-started | `Sources/GUI/SearchBarView.swift` | Shadow radius 4pt |
+| REQ-3.2-21 | IntelligenceGlow 4-layer upgrade | not-started | `Sources/GUI/IntelligenceGlow.swift` | 4-layer AngularGradient, 60fps |
+| REQ-3.2-22 | Empty state breathing animation | not-started | `Sources/GUI/EmptyStateView.swift` | Scale pulse 1.0↔1.05 |
+| REQ-3.2-23 | Hover effect on result rows | done | `Sources/GUI/ResultRowView.swift` | 0.15s, no keyboard conflict |
+| REQ-3.2-28 | ⌘I file detail panel | done | `Sources/GUI/FileDetailView.swift` | 300pt side panel |
+| REQ-3.2-29 | Tab autocomplete path | not-started | `Sources/GUI/SearchPanelView.swift` | |
+| REQ-3.2-33 | Access history ranking | partial | `Sources/GUI/SearchViewModel.swift` | AccessStore exists, ranking formula gap |
+| REQ-3.2-35 | Search filter chips | done | `Sources/GUI/SearchFilterBar.swift` | Bidirectional syntax sync |
+
+---
+
 ## Change Log
 
 | Date | Change |
@@ -307,3 +366,4 @@
 | 2026-06-02 | Priority breakdown corrected: P0 73→75, P1 38→35, P2 5→6. Verified against per-module REQ files. |
 | 2026-06-02 | Added REQ-2.0-14 through REQ-2.0-18: standalone app target, Info.plist, build script, daemon discovery, Homebrew Cask. Total 116→121 REQs. |
 | 2026-06-02 | REQ-1.0-02 (Release packaging) changed from partial to done: Homebrew formula, man page, and shell completions now exist in packaging/. All v1.0 REQs done. |
+| 2026-06-03 | Added v3.2 Search UI Refinement (37 REQs). Total 121→158 REQs. Specs/ reorganized: design/, ux/ subdirectories, requirements.md merged into 00-overview.md, research/ directory created. |

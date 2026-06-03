@@ -3,7 +3,7 @@
 **日期**: 2026-06-01
 **版本**: v3.1-design
 **状态**: planning
-**与 v3.1-rag.md 的关系**: 本文档定义 v3.1→v3.3 完整 AI 技术栈演进路线（多提供商、Embedding、VectorStore、OCR、SpeechAnalyzer 等）。`reqs/v3.1-rag.md` 是 v3.1 RAG 部分的 REQ 文件，覆盖文件分块、Embedding、向量索引、语义搜索、本地生成。本设计文档中 Phase 1 的 RAG 相关步骤对应 v3.1-rag.md 中的 REQ-3.1-01~07；Phase 1 中多提供商、OCR、SpeechAnalyzer 等非 RAG 功能目前无独立 REQ 文件，待 v3.1 开发时按需补充。
+**与 v3.1-rag.md 的关系**: 本文档定义 v3.1→v3.3 完整 AI 技术栈演进路线（多提供商、Embedding、VectorStore、OCR、SpeechAnalyzer 等）。`../reqs/v3.1-rag.md` 是 v3.1 RAG 部分的 REQ 文件，覆盖文件分块、Embedding、向量索引、语义搜索、本地生成。本设计文档中 Phase 1 的 RAG 相关步骤对应 v3.1-rag.md 中的 REQ-3.1-01~07；Phase 1 中多提供商、OCR、SpeechAnalyzer 等非 RAG 功能目前无独立 REQ 文件，待 v3.1 开发时按需补充。
 **作者**: AI Architect Team (Bruce + workflow agents)
 
 ## 1. 概述
@@ -489,7 +489,7 @@ func testPathAnonymizationAppliedBeforeCloudSend() { ... }
 
 - 当前 AI 模块: `Sources/AI/` (21 files)
 - 当前 AI 测试: `Tests/AITests/`
-- 主架构 spec: `docs/superpowers/specs/2026-05-26-deep-finder-design.md`
+- 主架构 spec: `docs/superpowers/specs/design/2026-05-26-deep-finder-design.md`
 - v3.0 AI spec: `docs/superpowers/specs/reqs/v3.0-ai.md`
 - v3.1 RAG spec: `docs/superpowers/specs/reqs/v3.1-rag.md`
 - 产品配置: `PRODUCT.toml` + `Sources/Index/ProductConfig.swift`
