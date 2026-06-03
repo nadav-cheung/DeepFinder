@@ -12,7 +12,7 @@ import UniformTypeIdentifiers
 /// - Generous horizontal rhythm (12pt inner, 16pt outer padding)
 /// - Selection: accent-tinted background with cornerRadius 8, subtle elevation shadow
 /// - Hover: featherlight .quaternary wash, 0.15s ease
-struct ResultRowView: View {
+struct ResultRowView: View, Equatable {
 
     let result: SearchResult
     let isSelected: Bool
@@ -20,6 +20,14 @@ struct ResultRowView: View {
     var workspace: (any WorkspaceProtocol)? = nil
 
     @State private var isHovered = false
+
+    // MARK: - Equatable (REQ-3.2-14)
+
+    nonisolated static func == (lhs: ResultRowView, rhs: ResultRowView) -> Bool {
+        lhs.result.record.id == rhs.result.record.id
+            && lhs.isSelected == rhs.isSelected
+            && lhs.query == rhs.query
+    }
 
     // MARK: - Design Tokens
 

@@ -433,6 +433,7 @@ struct ResultsListView: View {
             isSelected: index == state.selectedIndex,
             query: state.currentQuery
         )
+        .equatable()  // REQ-3.2-14: skip re-render when props unchanged
         .id(index)
         .accessibilityIdentifier("result_row_\(index)")
         .background(rowBackground(for: index))
