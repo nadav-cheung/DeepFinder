@@ -299,7 +299,7 @@
 
 ---
 
-## v3.2 -- Search UI Refinement (37 REQs, 22 done, 3 partial, 12 not-started)
+## v3.2 -- Search UI Refinement (37 REQs, 21 done, 2 partial, 14 not-started)
 
 Scope: `Sources/GUI/` only. Design doc: `../design/2026-06-03-v3.2-search-ui-design.md`.
 

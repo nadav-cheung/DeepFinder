@@ -11,14 +11,14 @@
 | 最低系统 | macOS 26 (Tahoe) |
 | 架构 | arm64 only |
 | 技术栈 | Swift (zero external deps) |
-| 应用形态 | v1.0 CLI（daemon + REPL + single-shot），v2.0 加 GUI（Menu Bar App），v3.0 加 AI 语义搜索 |
+| 应用形态 | v1.0 CLI（daemon + REPL + single-shot），v2.0 GUI（Menu Bar App），v3.0 AI 语义搜索 |
 | 开源 | 是 |
 | 数据目录 | ~/.deep-finder/ |
 | 分发渠道 | v1.0: GitHub Releases + Homebrew formula, v2.0: + Cask |
 
 ## 功能路线图
 
-渐进式开发。v1.0 = CLI-first，v2.0 = 加 GUI。每个版本独立可用。
+渐进式开发。v1.0 = CLI-first，v2.0 = GUI，v3.0 = AI 语义搜索。每个版本独立可用。
 
 **设计原则**：性能优先，内存/CPU 不受约束。SearchProvider 协议 + 插件式架构确保新功能不影响现有代码。
 
@@ -617,9 +617,17 @@ prefix before pinyin before substring). `MatchType` is `Comparable` via
 
 ### 3.2 SearchCoordinator
 
-plain actor（NOT @MainActor）。daemon 进程无 UI 上下文。v2.0 GUI client 端做 @MainActor 包装。
+plain actor（NOT @MainActor）。daemon 进程无 UI 上下文。v2.0 GUI client 端使用 @MainActor 包装。
 
 **分页**：默认 100 条，CLI 通过 --limit/--offset 翻页，REPL 通过 :more 加载更多。
+
+**AI 查询流程（v3.0）**：当用户输入自然语言查询时，SearchCoordinator 将查询路由至 AI 管道：
+
+1. **NLSearchTranslator** — 使用 LLM（通过 `AIModelProvider.translateToSearchSyntax`）将自然语言（如 "找上周改过的大文件"）转换为结构化 `SearchQuery`
+2. **NLEmbeddingProvider** — 对文件名/元数据生成本地向量嵌入（CoreML），用于语义相似度匹配
+3. **VectorStore** — 执行向量相似度搜索（余弦距离），返回语义相关结果
+4. **Cloud providers** — 通过 `ProviderRegistry` 调用云端 LLM（DeepSeek、Qwen、Anthropic、Gemini），用于意图理解、结果重排和摘要生成
+5. **Privacy boundary** — 仅文件元数据（名称、大小、扩展名、日期）发送至云端；文件内容永不外传。路径中的用户名默认脱敏（`/Users/nadav/` → `~/`）
 
 ### 3.3 排序策略
 
@@ -1006,7 +1014,89 @@ v2.0 已完全实现 — 19 个源文件在 `Sources/GUI/`，测试在 `Tests/GU
 
 ---
 
-## 7. 安全
+## 7. Media 模块（v2.1）
+
+v2.1 媒体元数据提取和索引。所有提取器通过统一 `MediaMetadataExtractor` 协议，异步并行提取，结果存入 `MediaMetadataIndex` 供搜索过滤使用。
+
+### 7.1 元数据提取管线
+
+| 提取器 | 元数据 | 实现框架 |
+|--------|--------|----------|
+| `ImageMetadataExtractor` | EXIF（相机型号、光圈、ISO、GPS 坐标）、尺寸（宽×高）、色彩空间、DPI | ImageIO / CoreGraphics |
+| `AudioMetadataExtractor` | ID3 标签（标题、艺术家、专辑、年份、音轨号）、时长、比特率、采样率、声道数 | AVFoundation |
+| `VideoMetadataExtractor` | 编解码器、分辨率（宽×高）、帧率、时长、比特率、创建日期 | AVFoundation |
+| `PDFMetadataExtractor` | 页数、作者、标题、主题、关键词、创建者应用 | PDFKit |
+
+### 7.2 MediaMetadataIndex
+
+`MediaMetadataIndex` 作为 `InMemoryIndex` 的扩展存储，将提取的元数据与 `FileRecord` 关联：
+
+- 每个 `FileRecord.ID` → 可选的 `MediaMetadata` 值类型
+- 支持范围过滤（如 `width:>2560`、`duration:>300`）
+- 支持精确匹配（如 `artist:周杰伦`、`pdf-author:xxx`）
+- 增量更新：仅在文件修改时间变化时重新提取
+- 提取失败不阻塞索引：损坏文件静默跳过，保留空元数据标记
+
+### 7.3 支持格式
+
+| 类别 | 格式 |
+|------|------|
+| 图片 | JPEG, PNG, HEIC, TIFF, RAW（CR2/NEF/ARW） |
+| 音频 | MP3, AAC, FLAC, WAV, ALAC |
+| 视频 | MP4, MOV, AVI, MKV |
+| 文档 | PDF |
+
+---
+
+## 8. Services 模块（v2.2）
+
+v2.2 服务集成层，使 DeepFinder 可通过 HTTP API、URL Scheme 和脚本进行外部调用。
+
+### 8.1 HTTPSearchService
+
+REST API 服务，在 `localhost:{port}` 上监听 HTTP 请求：
+
+- **端点**：`GET /api/search?q=<query>&limit=N&offset=N` — 执行搜索，返回 JSON 结果
+- **认证**：Bearer token（存储在 `~/.deep-finder/session/http-token`，权限 600）
+- **CORS**：仅允许 `localhost` 来源
+- **速率限制**：每客户端每秒最多 30 请求
+- 与 daemon 通过 IPC 通信，自身不持有索引
+
+### 8.2 URLSchemeHandler
+
+`deepfinder://` URL scheme 处理器，支持应用间集成：
+
+- `deepfinder://search?q=<keyword>` — 打开搜索面板并执行查询
+- `deepfinder://open?path=<abs-path>` — 在 Finder 中定位文件
+- 通过 `NSAppleEventManager` 注册，GUI app 启动时安装
+
+### 8.3 SearchIntent（脚本桥接）
+
+AppleScript / Shortcuts 桥接层：
+
+- `SearchIntent` 类实现 `NSScriptCommand`，处理来自 AppleScript 的搜索请求
+- 支持标准 sdef（脚本定义）词汇表：`search`、`reveal`、`open file`
+- 输入/输出均为 JSON，与 Shortcuts 的 "Run AppleScript" 动作兼容
+
+### 8.4 SearchScriptCommand
+
+命令行脚本执行器，JSON I/O：
+
+```bash
+echo '{"query":"report.pdf","limit":10}' | deepfinder script search
+# → {"results":[...],"total":42}
+
+deepfinder script reveal --path "/Users/nadav/Documents/report.pdf"
+# → {"action":"reveal","status":"ok"}
+```
+
+- 输入：stdin JSON 或命令行参数
+- 输出：stdout JSON（`--null` 标志支持 null 分隔输出）
+- 退出码与 CLI 单次查询一致（0=成功，1=无结果，2=daemon 错误）
+
+---
+
+## 9. 安全
 
 | 措施 | 说明 |
 |------|------|
@@ -1022,7 +1112,7 @@ v2.0 已完全实现 — 19 个源文件在 `Sources/GUI/`，测试在 `Tests/GU
 
 ---
 
-## 8. 项目结构
+## 10. 项目结构
 
 **Single-library architecture.** Sources/ holds all modules (Index, Search, FS, Persist, Daemon, CLI, GUI, AI, Media, Services) under one monolithic `DeepFinder` library target. Two thin executables (`DeepFinderCLI`, `DeepFinderDaemon`) each contain only a `main.swift` and link the shared library. A single `DeepFinderTests` target covers all modules. This avoids cross-target dependency management while keeping build simple. Splitting into sub-libraries is planned to improve build parallelism and enforce module boundaries (see CLAUDE.md).
 
@@ -1072,12 +1162,13 @@ let package = Package(
         .library(name: "DeepFinder", targets: ["DeepFinder"]),
         .executable(name: "deepfinder", targets: ["DeepFinderCLI"]),
         .executable(name: "deepfinder-daemon", targets: ["DeepFinderDaemon"]),
+        .executable(name: "DeepFinderApp", targets: ["DeepFinderApp"]),
     ],
     targets: [
         .target(
             name: "DeepFinder",
             path: "Sources",
-            exclude: ["CLIEntry", "DaemonEntry"],
+            exclude: ["CLIEntry", "DaemonEntry", "AppEntry"],
             linkerSettings: [
                 .linkedLibrary("edit")
             ]
@@ -1092,6 +1183,11 @@ let package = Package(
             dependencies: ["DeepFinder"],
             path: "Sources/DaemonEntry"
         ),
+        .executableTarget(
+            name: "DeepFinderApp",
+            dependencies: ["DeepFinder"],
+            path: "Sources/AppEntry"
+        ),
         .testTarget(
             name: "DeepFinderTests",
             dependencies: ["DeepFinder"],
@@ -1102,9 +1198,10 @@ let package = Package(
 ```
 
 **Build products:**
-- `DeepFinder` (library) — all modules, linked by CLI and daemon
+- `DeepFinder` (library) — all modules, linked by CLI, daemon, and GUI app
 - `deepfinder` (executable) — thin `CLIEntry/main.swift` calling `CLIMain`
 - `deepfinder-daemon` (executable) — thin `DaemonEntry/main.swift` calling `DaemonMain`
+- `DeepFinderApp` (executable) — thin `AppEntry/main.swift` calling `AppDelegate`
 
 **Dependency direction (one-way, no cycles):**
 ```
@@ -1117,7 +1214,7 @@ Index layer has zero UI/CLI dependencies and can be tested in isolation.
 
 ---
 
-## 9. 性能基准（M4+ 目标）
+## 11. 性能基准（M4+ 目标）
 
 | 指标 | 目标 | 测试方法 |
 |------|------|----------|
@@ -1134,7 +1231,7 @@ Index layer has zero UI/CLI dependencies and can be tested in isolation.
 
 ---
 
-## 10. 实现顺序（v0.1 — v1.0）
+## 12. 实现顺序（v0.1 — v1.0）
 
 | Phase | 版本 | 内容 | 依赖 |
 |-------|------|------|------|
