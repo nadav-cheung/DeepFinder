@@ -136,6 +136,8 @@ enum MatchExplainer: Sendable {
             return "name length <= \(n)"
         case .nameLengthRange(let range):
             return "name length \(range.lowerBound)...\(range.upperBound)"
+        case .caseSensitiveText(let text):
+            return "case-sensitive match '\(text)'"
         }
     }
 

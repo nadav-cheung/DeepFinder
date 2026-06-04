@@ -80,6 +80,8 @@ enum SearchFilter: Sendable, Equatable {
     case nameLengthMax(Int)
     /// Filename Unicode scalar count in closed range (REQ-1.5-05)
     case nameLengthRange(ClosedRange<Int>)
+    /// Case-sensitive substring match (REQ-1.1-05: `case:Report` → exact-case match)
+    case caseSensitiveText(String)
 
     // MARK: - Matching
 
@@ -138,6 +140,8 @@ enum SearchFilter: Sendable, Equatable {
             return record.name.unicodeScalars.count <= max
         case .nameLengthRange(let range):
             return range.contains(record.name.unicodeScalars.count)
+        case .caseSensitiveText(let text):
+            return record.name.contains(text)
         }
     }
 

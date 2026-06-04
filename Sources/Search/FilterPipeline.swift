@@ -83,6 +83,10 @@ struct FilterPipeline: Sendable {
                 parsedFilters.append(.fileType(.picture))
             case "doc":
                 parsedFilters.append(.fileType(.document))
+            case "case":
+                if !value.isEmpty {
+                    parsedFilters.append(.caseSensitiveText(value))
+                }
             default:
                 break
             }
