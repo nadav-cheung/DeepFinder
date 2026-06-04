@@ -190,7 +190,7 @@ actor IndexPersistence {
 
             // Encrypt existing plaintext paths if migrating from v2 or earlier.
             // Fresh v3 databases handle this automatically (paths are encrypted on write).
-            // Inlined to avoid calling actor-isolated methods from nonisolated init.
+            // Static method called directly to avoid actor-isolated instance methods during init.
             try Self.migratePlaintextPathsIfNeeded(db: db)
         }
 
@@ -246,7 +246,10 @@ actor IndexPersistence {
 
         var transactionStarted = false
         do { try exec("BEGIN IMMEDIATE"); transactionStarted = true }
-        catch { logger.warning("BEGIN IMMEDIATE failed in saveRecords: \(error.localizedDescription, privacy: .public)") }
+        catch {
+            logger.warning("BEGIN IMMEDIATE failed in saveRecords: \(error.localizedDescription, privacy: .public)")
+            return
+        }
         defer {
             if transactionStarted {
                 do { try exec("COMMIT") }
@@ -670,6 +673,29 @@ actor IndexPersistence {
 
     /// Parse a row WITHOUT decrypting path/parent_path. Used during migration.
     private nonisolated static func recordFromStatementRaw(_ stmt: OpaquePointer) -> FileRecord {
+        let columns = parseColumns(from: stmt)
+        return FileRecord(
+            id: columns.id,
+            name: columns.name,
+            originalName: columns.originalName,
+            path: String(cString: sqlite3_column_text(stmt, 3)),
+            parentPath: String(cString: sqlite3_column_text(stmt, 4)),
+            isDirectory: columns.isDirectory,
+            size: columns.size,
+            createdAt: columns.createdAt,
+            modifiedAt: columns.modifiedAt,
+            extension: columns.ext,
+            metadata: columns.metadata
+        )
+    }
+
+    /// Parse common columns (everything except path/parent_path) from a statement row.
+    /// Used by both `recordFromStatement` (with decryption) and `recordFromStatementRaw` (without).
+    private nonisolated static func parseColumns(from stmt: OpaquePointer) -> (
+        id: UInt32, name: String, originalName: String,
+        isDirectory: Bool, size: Int64, createdAt: Date, modifiedAt: Date,
+        ext: String?, metadata: ExtractedMetadata?
+    ) {
         let metadata: ExtractedMetadata? = {
             guard sqlite3_column_type(stmt, 10) != SQLITE_NULL,
                   let jsonPtr = sqlite3_column_text(stmt, 10) else { return nil }
@@ -678,17 +704,15 @@ actor IndexPersistence {
             return try? JSONDecoder().decode(ExtractedMetadata.self, from: data)
         }()
 
-        return FileRecord(
+        return (
             id: UInt32(sqlite3_column_int64(stmt, 0)),
             name: String(cString: sqlite3_column_text(stmt, 1)),
             originalName: String(cString: sqlite3_column_text(stmt, 2)),
-            path: String(cString: sqlite3_column_text(stmt, 3)),
-            parentPath: String(cString: sqlite3_column_text(stmt, 4)),
             isDirectory: sqlite3_column_int(stmt, 5) != 0,
             size: Int64(sqlite3_column_int64(stmt, 6)),
             createdAt: Date(timeIntervalSince1970: sqlite3_column_double(stmt, 7)),
             modifiedAt: Date(timeIntervalSince1970: sqlite3_column_double(stmt, 8)),
-            extension: columnTextOrNil(stmt, 9),
+            ext: columnTextOrNil(stmt, 9),
             metadata: metadata
         )
     }
@@ -768,17 +792,7 @@ actor IndexPersistence {
     /// Returns nil if decryption fails (e.g. corrupted ciphertext), allowing the
     /// caller to skip the record rather than ingesting garbage paths.
     private func recordFromStatement(_ stmt: OpaquePointer) -> FileRecord? {
-        let metadata: ExtractedMetadata? = {
-            guard sqlite3_column_type(stmt, 10) != SQLITE_NULL,
-                  let jsonPtr = sqlite3_column_text(stmt, 10) else { return nil }
-            let jsonStr = String(cString: jsonPtr)
-            guard let data = jsonStr.data(using: .utf8) else { return nil }
-            if let decoded = try? JSONDecoder().decode(ExtractedMetadata.self, from: data) {
-                return decoded
-            }
-            logger.warning("Failed to decode metadata_json for record in recordFromStatement — dropping metadata")
-            return nil
-        }()
+        let columns = Self.parseColumns(from: stmt)
 
         let rawPath = String(cString: sqlite3_column_text(stmt, 3))
         let rawParentPath = String(cString: sqlite3_column_text(stmt, 4))
@@ -805,17 +819,17 @@ actor IndexPersistence {
         }
 
         return FileRecord(
-            id: UInt32(sqlite3_column_int64(stmt, 0)),
-            name: String(cString: sqlite3_column_text(stmt, 1)),
-            originalName: String(cString: sqlite3_column_text(stmt, 2)),
+            id: columns.id,
+            name: columns.name,
+            originalName: columns.originalName,
             path: path,
             parentPath: parentPath,
-            isDirectory: sqlite3_column_int(stmt, 5) != 0,
-            size: Int64(sqlite3_column_int64(stmt, 6)),
-            createdAt: Date(timeIntervalSince1970: sqlite3_column_double(stmt, 7)),
-            modifiedAt: Date(timeIntervalSince1970: sqlite3_column_double(stmt, 8)),
-            extension: Self.columnTextOrNil(stmt, 9),
-            metadata: metadata
+            isDirectory: columns.isDirectory,
+            size: columns.size,
+            createdAt: columns.createdAt,
+            modifiedAt: columns.modifiedAt,
+            extension: columns.ext,
+            metadata: columns.metadata
         )
     }
 
@@ -832,26 +846,13 @@ actor IndexPersistence {
     /// Silently returns on failure. Metadata values (event cursor, etc.) are non-critical;
     /// a missed write means the daemon will rescan more aggressively on next startup.
     private func saveMetadata(key: String, value: String) {
-        let sql = "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)"
-        var stmt: OpaquePointer?
-        guard prepare(sql, &stmt) == SQLITE_OK, let stmt else { return }
-        defer { sqlite3_finalize(stmt) }
-
-        sqlite3_bind_text(stmt, 1, key, -1, SQLTransient)
-        sqlite3_bind_text(stmt, 2, value, -1, SQLTransient)
-        sqlite3_step(stmt)
+        guard let db else { return }
+        Self.writeMetadataValue(db: db, key: key, value: value)
     }
 
     /// Read a value from the metadata table.
     private func loadMetadata(key: String) -> String? {
-        let sql = "SELECT value FROM metadata WHERE key = ?"
-        var stmt: OpaquePointer?
-        guard prepare(sql, &stmt) == SQLITE_OK, let stmt else { return nil }
-        defer { sqlite3_finalize(stmt) }
-
-        sqlite3_bind_text(stmt, 1, key, -1, SQLTransient)
-        let rc = sqlite3_step(stmt)
-        guard rc == SQLITE_ROW else { return nil }
-        return String(cString: sqlite3_column_text(stmt, 0))
+        guard let db else { return nil }
+        return Self.readMetadataValue(db: db, key: key)
     }
 }
