@@ -97,26 +97,12 @@ actor VolumeManager {
         monitor.monitorVolumes()
     }
 
-    /// Determine whether a given volume should be indexed based on excluded volume paths.
+    /// Determine whether a given volume should be indexed.
     ///
-    /// Policy:
-    /// - Local volumes (root "/"): always indexed
-    /// - External volumes (USB/Thunderbolt): indexed by default, skippable via excludedVolumes
-    /// - Network volumes (SMB/AFP/NFS): indexed by default, skippable via excludedVolumes
-    /// - Any volume in excludedVolumes is never indexed
+    /// Policy: all volumes are indexed unless their path appears in `excludedVolumes`.
+    /// External and network volumes are indexed by default (consistent with v2.0 behavior).
     func shouldIndex(volume: VolumeInfo, excludedVolumes: Set<String>) -> Bool {
-        // Check exclusion list first
-        if excludedVolumes.contains(volume.path) {
-            return false
-        }
-
-        // Local root volume is always indexed
-        if !volume.isExternal && !volume.isNetwork {
-            return true
-        }
-
-        // External and network volumes are indexed by default unless excluded
-        return true
+        !excludedVolumes.contains(volume.path)
     }
 }
 
@@ -169,14 +155,17 @@ final class SystemVolumeMonitor: VolumeMonitor {
                 forName: NSWorkspace.didMountNotification,
                 object: nil,
                 queue: .main
-            ) { notification in
-                guard let volumeURL = notification.userInfo?["NSDevicePath"] as? String else { return }
-                guard !knownVolumes.contains(volumeURL) else { return }
-                knownVolumes.insert(volumeURL)
-
-                let url = URL(fileURLWithPath: volumeURL)
-                if let info = Self.volumeInfo(from: url) {
-                    continuation.yield(.mounted(info))
+            ) { _ in
+                // NSDevicePath was removed from userInfo circa macOS 10.6.
+                // Diff against the current mount list to detect new volumes.
+                let current = Self.currentMountPaths()
+                let newVolumes = current.subtracting(knownVolumes)
+                for path in newVolumes {
+                    knownVolumes.insert(path)
+                    let url = URL(fileURLWithPath: path)
+                    if let info = Self.volumeInfo(from: url) {
+                        continuation.yield(.mounted(info))
+                    }
                 }
             }
 
@@ -184,12 +173,13 @@ final class SystemVolumeMonitor: VolumeMonitor {
                 forName: NSWorkspace.didUnmountNotification,
                 object: nil,
                 queue: .main
-            ) { notification in
-                guard let volumePath = notification.userInfo?["NSDevicePath"] as? String else { return }
-                guard knownVolumes.contains(volumePath) else { return }
-                knownVolumes.remove(volumePath)
-
-                continuation.yield(.unmounted(path: volumePath))
+            ) { _ in
+                let current = Self.currentMountPaths()
+                let removedVolumes = knownVolumes.subtracting(current)
+                for path in removedVolumes {
+                    knownVolumes.remove(path)
+                    continuation.yield(.unmounted(path: path))
+                }
             }
 
             observers = [mountedObserver, unmountedObserver]

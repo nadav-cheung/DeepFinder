@@ -141,17 +141,18 @@ final class FSEventStreamImpl: FileSystemEventStream, @unchecked Sendable {
     // MARK: - Cleanup
 
     deinit {
-        // Safe to use queue.sync here: deinit cannot be called from within the
-        // serial queue (no retain cycle — the stream does not retain self).
-        // This guarantees no callbacks fire during or after cleanup.
-        queue.sync {
-            guard _isRunning, let stream else { return }
+        // Use queue.async to avoid potential deadlock: if the last strong reference
+        // is held by a closure on the serial queue itself, queue.sync would deadlock.
+        // queue.async is safe here because deinit runs after all strong references are
+        // gone, so no further method calls can arrive. The async block will drain on
+        // the queue after any in-flight callback completes.
+        nonisolated(unsafe) let stream: OpaquePointer? = self.stream
+        let running = self._isRunning
+        queue.async {
+            guard running, let stream else { return }
             FSEventStreamStop(stream)
             FSEventStreamInvalidate(stream)
             FSEventStreamRelease(stream)
-            _isRunning = false
-            self.stream = nil
-            self.eventHandler = nil
         }
     }
 }

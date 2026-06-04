@@ -38,6 +38,9 @@ enum FileEvent: Sendable, Hashable {
         if flags & FSEventStreamEventFlags(kFSEventStreamEventFlagItemChangeOwner) != 0 {
             events.insert(.metadataChanged)
         }
+        if flags & FSEventStreamEventFlags(kFSEventStreamEventFlagItemXattrMod) != 0 {
+            events.insert(.metadataChanged)
+        }
         return events
     }
 }
