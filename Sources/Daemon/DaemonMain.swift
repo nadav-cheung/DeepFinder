@@ -444,12 +444,24 @@ public actor DaemonMain {
             return Array(results.prefix(5).map(\.name))
         }
 
+        // ConfigStore for IPC config_get/config_set (REQ-0.4-05)
+        let configStore = ConfigStore(configPath: resolvedDataDir + "/settings.json")
+
+        let configGetProvider: @Sendable (String?) async -> String? = { key in
+            await configStore.get(key: key ?? "")
+        }
+        let configSetProvider: @Sendable (String, String) async -> Void = { key, value in
+            try? await configStore.set(key: key, value: value)
+        }
+
         let ipcServer = IPCServer(
             socketPath: resolvedSocketPath,
             coordinator: coordinator,
             statsProvider: statsProvider,
             indexStatusProvider: indexStatusProvider,
-            suggestProvider: suggestProvider
+            suggestProvider: suggestProvider,
+            configGetProvider: configGetProvider,
+            configSetProvider: configSetProvider
         )
         try await ipcServer.start()
         self.ipcServer = ipcServer

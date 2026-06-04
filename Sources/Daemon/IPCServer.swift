@@ -54,6 +54,8 @@ actor IPCServer {
     private let indexStatusProvider: @Sendable () async -> DaemonIndexStatus
     private let duplicateProvider: @Sendable (DuplicateQueryStrategy) async -> [DuplicateGroup]
     private let suggestProvider: @Sendable (String) async -> [String]
+    private let configGetProvider: @Sendable (String?) async -> String?
+    private let configSetProvider: @Sendable (String, String) async -> Void
 
     private var listenFD: Int32 = -1
     private var acceptTask: Task<Void, Never>?
@@ -105,6 +107,8 @@ actor IPCServer {
         },
         duplicateProvider: @escaping @Sendable (DuplicateQueryStrategy) async -> [DuplicateGroup] = { _ in [] },
         suggestProvider: @escaping @Sendable (String) async -> [String] = { _ in [] },
+        configGetProvider: @escaping @Sendable (String?) async -> String? = { _ in nil },
+        configSetProvider: @escaping @Sendable (String, String) async -> Void = { _, _ in },
         maxConnsPerSecond: Int = Constants.IPC.maxConnsPerSecond,
         maxConcurrentClients: Int = Constants.IPC.maxConcurrentClients
     ) {
@@ -114,6 +118,8 @@ actor IPCServer {
         self.indexStatusProvider = indexStatusProvider
         self.duplicateProvider = duplicateProvider
         self.suggestProvider = suggestProvider
+        self.configGetProvider = configGetProvider
+        self.configSetProvider = configSetProvider
         self.maxConnsPerSecond = maxConnsPerSecond
         self.maxConcurrentClients = maxConcurrentClients
     }
@@ -512,10 +518,12 @@ actor IPCServer {
         case .cancel:
             return .ack
 
-        case .configGet:
+        case .configGet(let key):
+            let _ = await configGetProvider(key)
             return .ack
 
-        case .configSet:
+        case .configSet(let key, let value):
+            await configSetProvider(key, value)
             return .ack
 
         case .indexStatus:
