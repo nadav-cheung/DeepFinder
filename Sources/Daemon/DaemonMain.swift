@@ -448,7 +448,18 @@ public actor DaemonMain {
         let configStore = ConfigStore(configPath: resolvedDataDir + "/settings.json")
 
         let configGetProvider: @Sendable (String?) async -> String? = { key in
-            await configStore.get(key: key ?? "")
+            if let key {
+                return await configStore.get(key: key)
+            }
+            // nil key = list all config as JSON
+            let config = await configStore.get()
+            return (try? JSONEncoder().encode([
+                "excludedPaths": (try? JSONEncoder().encode(config.excludedPaths)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]",
+                "excludedVolumes": (try? JSONEncoder().encode(config.excludedVolumes)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]",
+                "indexBatchSize": String(config.indexBatchSize),
+                "maxResults": String(config.maxResults),
+                "configVersion": String(config.configVersion),
+            ] as [String: String])).flatMap { String(data: $0, encoding: .utf8) }
         }
         let configSetProvider: @Sendable (String, String) async -> Void = { key, value in
             try? await configStore.set(key: key, value: value)

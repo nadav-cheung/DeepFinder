@@ -261,12 +261,12 @@ struct SavedFilter: Codable, Sendable, Equatable {
 enum IPCResponse: Codable, Sendable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case kind, results, queryID, error, stats, indexStatus, duplicates
-        case bookmarks, filters, suggestions
+        case bookmarks, filters, suggestions, configValue
     }
 
     private enum Kind: String, Codable {
         case results, error, stats, ack, indexStatus, duplicates
-        case bookmarks, filters, suggestions
+        case bookmarks, filters, suggestions, configValue
     }
 
     /// Search results for a completed query, with the corresponding query identifier.
@@ -287,6 +287,8 @@ enum IPCResponse: Codable, Sendable, Equatable {
     case filters([SavedFilter])
     /// Fuzzy suggestions for a query (REQ-1.0-03).
     case suggestions([String])
+    /// Config value response for configGet requests.
+    case configValue(String)
 
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -318,6 +320,9 @@ enum IPCResponse: Codable, Sendable, Equatable {
         case .suggestions(let terms):
             try c.encode(Kind.suggestions, forKey: .kind)
             try c.encode(terms, forKey: .suggestions)
+        case .configValue(let value):
+            try c.encode(Kind.configValue, forKey: .kind)
+            try c.encode(value, forKey: .configValue)
         }
     }
 
@@ -352,6 +357,9 @@ enum IPCResponse: Codable, Sendable, Equatable {
         case .suggestions:
             let terms = try c.decode([String].self, forKey: .suggestions)
             self = .suggestions(terms)
+        case .configValue:
+            let value = try c.decode(String.self, forKey: .configValue)
+            self = .configValue(value)
         }
     }
 }

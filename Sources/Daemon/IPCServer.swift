@@ -519,7 +519,9 @@ actor IPCServer {
             return .ack
 
         case .configGet(let key):
-            let _ = await configGetProvider(key)
+            if let value = await configGetProvider(key) {
+                return .configValue(value)
+            }
             return .ack
 
         case .configSet(let key, let value):

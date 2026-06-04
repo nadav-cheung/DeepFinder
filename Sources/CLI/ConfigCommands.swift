@@ -32,9 +32,12 @@ struct ConfigCommandRunner {
         }
 
         switch response {
-        case .ack:
-            output.write("OK\n")
+        case .configValue(let value):
+            output.write("\(value)\n")
             return 0
+        case .ack:
+            output.writeError("Error: key not found\n")
+            return 1
         case .error(let ipcError):
             output.writeError("Error: \(ipcError)\n")
             return 3
@@ -106,18 +109,15 @@ struct ConfigCommandRunner {
         }
 
         switch response {
-        case .ack:
-            // Daemon acknowledged the list request.
-            // Format a table of known config keys.
-            let defaults = DaemonConfig.defaults
-            let rows = [
-                ("excludedPaths", String(describing: defaults.excludedPaths)),
-                ("indexBatchSize", String(defaults.indexBatchSize)),
-                ("maxResults", String(defaults.maxResults)),
-                ("configVersion", String(defaults.configVersion)),
-            ]
-            for (key, value) in rows {
-                output.write("  \(key)\t\(value)\n")
+        case .configValue(let jsonString):
+            // Daemon returned all config as JSON — display as key-value table
+            if let data = jsonString.data(using: .utf8),
+               let dict = try? JSONDecoder().decode([String: String].self, from: data) {
+                for (key, value) in dict.sorted(by: { $0.key < $1.key }) {
+                    output.write("  \(key)\t\(value)\n")
+                }
+            } else {
+                output.write("\(jsonString)\n")
             }
             return 0
         case .error(let ipcError):
