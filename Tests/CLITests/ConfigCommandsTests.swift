@@ -19,7 +19,7 @@ struct ConfigCommandsTests {
 
     @Test("get existing key sends configGet request and returns success")
     func testGetExistingKey() async {
-        let mock = MockIPCClient(response: .ack)
+        let mock = MockIPCClient(response: .configValue("500"))
         let output = CapturingOutput()
 
         let exitCode = await ConfigCommandRunner.get(
@@ -89,7 +89,7 @@ struct ConfigCommandsTests {
 
     @Test("list sends configGet with nil key and returns success")
     func testListConfig() async {
-        let mock = MockIPCClient(response: .ack)
+        let mock = MockIPCClient(response: .configValue("{}"))
         let output = CapturingOutput()
 
         let exitCode = await ConfigCommandRunner.list(
