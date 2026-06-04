@@ -1,4 +1,4 @@
-// Sources/Media/ExtractedMetadata.swift
+// Sources/Index/ExtractedMetadata.swift
 import Foundation
 
 /// A polymorphic metadata value extracted from a media file.

@@ -54,13 +54,13 @@ enum ResultCategory: String, CaseIterable, Sendable {
     /// Human-readable name for UI display.
     var displayName: String {
         switch self {
-        case .code:      return "Code"
-        case .documents:  return "Documents"
-        case .images:     return "Images"
-        case .video:      return "Video"
-        case .audio:      return "Audio"
-        case .archives:   return "Archives"
-        case .other:      return "Other"
+        case .code:      return "代码"
+        case .documents:  return "文档"
+        case .images:     return "图片"
+        case .video:      return "视频"
+        case .audio:      return "音频"
+        case .archives:   return "归档"
+        case .other:      return "其他"
         }
     }
 

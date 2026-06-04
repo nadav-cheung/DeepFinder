@@ -15,11 +15,7 @@ enum IPCServerError: Error, Sendable, Equatable {
     case socketCreationFailed(String)
     case bindFailed(String)
     case listenFailed(String)
-    case notRunning
     case alreadyRunning
-    /// Peer credential verification failed (uid mismatch, invalid pid, etc.).
-    /// The associated value is the client file descriptor that was rejected.
-    case peerVerificationFailed(Int32)
 }
 
 // MARK: - IPCServer
