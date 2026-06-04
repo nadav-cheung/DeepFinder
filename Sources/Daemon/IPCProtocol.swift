@@ -75,6 +75,7 @@ enum IPCRequest: Codable, Sendable, Equatable {
         case query, cancel, stats, configGet, configSet, indexStatus, duplicateQuery
         case bookmarkList, bookmarkSave, bookmarkDelete
         case filterList, filterSave, filterDelete
+        case suggest
     }
 
     /// Execute a search query with an optional result limit.
@@ -103,6 +104,8 @@ enum IPCRequest: Codable, Sendable, Equatable {
     case filterSave(name: String, expression: String)
     /// Delete a filter macro by name (REQ-1.3-06).
     case filterDelete(name: String)
+    /// Request fuzzy suggestions for a query (REQ-1.0-03).
+    case suggest(query: String)
 
     // Custom Codable: encodes a `kind` discriminator + `ipcProtocolVersion` field.
 
@@ -148,6 +151,9 @@ enum IPCRequest: Codable, Sendable, Equatable {
         case .filterDelete(let name):
             try c.encode(Kind.filterDelete, forKey: .kind)
             try c.encode(name, forKey: .filterName)
+        case .suggest(let query):
+            try c.encode(Kind.suggest, forKey: .kind)
+            try c.encode(query, forKey: .query)
         }
     }
 
@@ -208,6 +214,9 @@ enum IPCRequest: Codable, Sendable, Equatable {
         case .filterDelete:
             let name = try c.decode(String.self, forKey: .filterName)
             self = .filterDelete(name: name)
+        case .suggest:
+            let query = try c.decode(String.self, forKey: .query)
+            self = .suggest(query: query)
         }
     }
 }
@@ -252,12 +261,12 @@ struct SavedFilter: Codable, Sendable, Equatable {
 enum IPCResponse: Codable, Sendable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case kind, results, queryID, error, stats, indexStatus, duplicates
-        case bookmarks, filters
+        case bookmarks, filters, suggestions
     }
 
     private enum Kind: String, Codable {
         case results, error, stats, ack, indexStatus, duplicates
-        case bookmarks, filters
+        case bookmarks, filters, suggestions
     }
 
     /// Search results for a completed query, with the corresponding query identifier.
@@ -276,6 +285,8 @@ enum IPCResponse: Codable, Sendable, Equatable {
     case bookmarks([SearchBookmark])
     /// Saved filter macro list response (REQ-1.3-06).
     case filters([SavedFilter])
+    /// Fuzzy suggestions for a query (REQ-1.0-03).
+    case suggestions([String])
 
     func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
@@ -304,6 +315,9 @@ enum IPCResponse: Codable, Sendable, Equatable {
         case .filters(let fs):
             try c.encode(Kind.filters, forKey: .kind)
             try c.encode(fs, forKey: .filters)
+        case .suggestions(let terms):
+            try c.encode(Kind.suggestions, forKey: .kind)
+            try c.encode(terms, forKey: .suggestions)
         }
     }
 
@@ -335,6 +349,9 @@ enum IPCResponse: Codable, Sendable, Equatable {
         case .filters:
             let fs = try c.decode([SavedFilter].self, forKey: .filters)
             self = .filters(fs)
+        case .suggestions:
+            let terms = try c.decode([String].self, forKey: .suggestions)
+            self = .suggestions(terms)
         }
     }
 }

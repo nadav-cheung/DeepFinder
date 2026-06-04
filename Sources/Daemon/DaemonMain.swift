@@ -439,11 +439,17 @@ public actor DaemonMain {
             )
         }
 
+        let suggestProvider: @Sendable (String) async -> [String] = {
+            let results = await capturedIndex.search(query: $0)
+            return Array(results.prefix(5).map(\.name))
+        }
+
         let ipcServer = IPCServer(
             socketPath: resolvedSocketPath,
             coordinator: coordinator,
             statsProvider: statsProvider,
-            indexStatusProvider: indexStatusProvider
+            indexStatusProvider: indexStatusProvider,
+            suggestProvider: suggestProvider
         )
         try await ipcServer.start()
         self.ipcServer = ipcServer

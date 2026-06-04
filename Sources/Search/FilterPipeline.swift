@@ -75,6 +75,14 @@ struct FilterPipeline: Sendable {
                 if let filter = parseNameLengthFilter(value) {
                     parsedFilters.append(filter)
                 }
+            case "audio":
+                parsedFilters.append(.fileType(.audio))
+            case "video":
+                parsedFilters.append(.fileType(.video))
+            case "pic":
+                parsedFilters.append(.fileType(.picture))
+            case "doc":
+                parsedFilters.append(.fileType(.document))
             default:
                 break
             }

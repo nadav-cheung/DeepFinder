@@ -39,7 +39,13 @@ struct SingleShot {
         switch response {
         case .results(let results, _):
             if results.isEmpty {
-                return (CLIOutput(), .noResults)
+                // Try fuzzy suggestions (REQ-1.0-03)
+                var suggestion: String?
+                if let suggestResponse = try? await client.send(.suggest(query: query)),
+                   case .suggestions(let terms) = suggestResponse, !terms.isEmpty {
+                    suggestion = "Did you mean: \(terms.joined(separator: ", "))?\n"
+                }
+                return (CLIOutput(stderr: suggestion ?? ""), .noResults)
             }
 
             // Apply client-side sort if requested

@@ -408,4 +408,30 @@ struct IPCProtocolTests {
         let decoded = try JSONDecoder().decode(IPCResponse.self, from: data)
         #expect(decoded == original)
     }
+
+    // MARK: - Suggest (REQ-1.0-03)
+
+    @Test("suggest request round-trip")
+    func testSuggestRequestRoundTrip() throws {
+        let original = IPCRequest.suggest(query: "reprot")
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(IPCRequest.self, from: data)
+        #expect(decoded == original)
+    }
+
+    @Test("suggestions response round-trip")
+    func testSuggestionsResponseRoundTrip() throws {
+        let original = IPCResponse.suggestions(["report.pdf", "report_final.docx"])
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(IPCResponse.self, from: data)
+        #expect(decoded == original)
+    }
+
+    @Test("suggestions with empty list round-trip")
+    func testEmptySuggestionsRoundTrip() throws {
+        let original = IPCResponse.suggestions([])
+        let data = try JSONEncoder().encode(original)
+        let decoded = try JSONDecoder().decode(IPCResponse.self, from: data)
+        #expect(decoded == original)
+    }
 }

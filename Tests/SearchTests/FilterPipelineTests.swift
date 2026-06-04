@@ -335,4 +335,52 @@ struct FilterPipelineTests {
         #expect(filtered[0].record.name == "abcdef")
         #expect(filtered[1].record.name == "hello world")
     }
+
+    // MARK: - File type group query parsing (REQ-1.2-04)
+
+    @Test("audio: modifier parses to fileType(.audio)")
+    func testAudioModifierParsing() {
+        let pipeline = FilterPipeline.parse(from: [("audio", "")])
+        #expect(pipeline.filters.count == 1)
+        #expect(pipeline.filters[0] == .fileType(.audio))
+    }
+
+    @Test("video: modifier parses to fileType(.video)")
+    func testVideoModifierParsing() {
+        let pipeline = FilterPipeline.parse(from: [("video", "")])
+        #expect(pipeline.filters.count == 1)
+        #expect(pipeline.filters[0] == .fileType(.video))
+    }
+
+    @Test("pic: modifier parses to fileType(.picture)")
+    func testPicModifierParsing() {
+        let pipeline = FilterPipeline.parse(from: [("pic", "")])
+        #expect(pipeline.filters.count == 1)
+        #expect(pipeline.filters[0] == .fileType(.picture))
+    }
+
+    @Test("doc: modifier parses to fileType(.document)")
+    func testDocModifierParsing() {
+        let pipeline = FilterPipeline.parse(from: [("doc", "")])
+        #expect(pipeline.filters.count == 1)
+        #expect(pipeline.filters[0] == .fileType(.document))
+    }
+
+    @Test("doc: filter end-to-end filters PDFs and Word docs")
+    func testDocFilterEndToEnd() {
+        let pipeline = FilterPipeline.parse(from: [("doc", "")])
+        let results: [SearchResult] = [
+            makeResult(id: 1, name: "report.pdf", extension: "pdf"),
+            makeResult(id: 2, name: "photo.png", extension: "png"),
+            makeResult(id: 3, name: "notes.docx", extension: "docx"),
+            makeResult(id: 4, name: "main.swift", extension: "swift"),
+            makeResult(id: 5, name: "readme.txt", extension: "txt"),
+        ]
+        let filtered = pipeline.apply(to: results)
+        #expect(filtered.count == 3)
+        let names = filtered.map(\.record.name)
+        #expect(names.contains("report.pdf"))
+        #expect(names.contains("notes.docx"))
+        #expect(names.contains("readme.txt"))
+    }
 }

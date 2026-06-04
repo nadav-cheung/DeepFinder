@@ -164,7 +164,8 @@ extension QueryParser {
         "case", "file", "folder", "ext", "path",
         "size", "dm", "depth", "width", "height",
         "duration", "pages", "pagecount", "fps", "bitrate",
-        "artist", "album", "title", "genre", "codec"
+        "artist", "album", "title", "genre", "codec",
+        "audio", "video", "pic", "doc"
     ]
 
     /// Tokenize raw input into a flat list of tokens.

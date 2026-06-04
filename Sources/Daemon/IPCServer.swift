@@ -53,6 +53,7 @@ actor IPCServer {
     private let statsProvider: @Sendable () async -> DaemonStats
     private let indexStatusProvider: @Sendable () async -> DaemonIndexStatus
     private let duplicateProvider: @Sendable (DuplicateQueryStrategy) async -> [DuplicateGroup]
+    private let suggestProvider: @Sendable (String) async -> [String]
 
     private var listenFD: Int32 = -1
     private var acceptTask: Task<Void, Never>?
@@ -103,6 +104,7 @@ actor IPCServer {
             DaemonIndexStatus(state: "unknown", filesIndexed: 0, lastScanDate: nil)
         },
         duplicateProvider: @escaping @Sendable (DuplicateQueryStrategy) async -> [DuplicateGroup] = { _ in [] },
+        suggestProvider: @escaping @Sendable (String) async -> [String] = { _ in [] },
         maxConnsPerSecond: Int = Constants.IPC.maxConnsPerSecond,
         maxConcurrentClients: Int = Constants.IPC.maxConcurrentClients
     ) {
@@ -111,6 +113,7 @@ actor IPCServer {
         self.statsProvider = statsProvider
         self.indexStatusProvider = indexStatusProvider
         self.duplicateProvider = duplicateProvider
+        self.suggestProvider = suggestProvider
         self.maxConnsPerSecond = maxConnsPerSecond
         self.maxConcurrentClients = maxConcurrentClients
     }
@@ -528,6 +531,10 @@ actor IPCServer {
              .filterList, .filterSave, .filterDelete:
             // These are handled locally by the CLI; daemon returns ack for forward compat.
             return .ack
+
+        case .suggest(let query):
+            let terms = await suggestProvider(query)
+            return .suggestions(terms)
         }
     }
 

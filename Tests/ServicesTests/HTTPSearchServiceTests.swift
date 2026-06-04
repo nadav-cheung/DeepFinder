@@ -197,7 +197,7 @@ struct HTTPSearchServiceTests {
         let response = HTTPRouter.buildResponse(statusCode: 200, body: "{\"status\":\"ok\"}")
         let headers = parseHeaders(response)
 
-        #expect(headers["Access-Control-Allow-Origin"] == "*")
+        #expect(headers["Access-Control-Allow-Origin"] == "http://localhost:*")
         #expect(headers["Content-Type"] == "application/json")
         #expect(headers["Content-Length"] == "15")
         #expect(headers["Connection"] == "close")

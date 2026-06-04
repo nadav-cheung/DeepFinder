@@ -379,7 +379,7 @@ enum HTTPRouter {
             "HTTP/1.1 \(statusCode) \(statusText)",
             "Content-Type: application/json",
             "Content-Length: \(bodyData.count)",
-            "Access-Control-Allow-Origin: *",
+            "Access-Control-Allow-Origin: http://localhost:*",
             "Connection: close",
         ]
         let headerString = headerLines.joined(separator: "\r\n") + "\r\n\r\n"
@@ -428,7 +428,7 @@ enum HTTPRouter {
             "HTTP/1.1 \(statusCode) \(statusText)",
             "Content-Type: application/json",
             "Content-Length: \(bodyData.count)",
-            "Access-Control-Allow-Origin: *",
+            "Access-Control-Allow-Origin: http://localhost:*",
             "Connection: close",
         ]
         return headerLines.joined(separator: "\r\n") + "\r\n\r\n" + body
