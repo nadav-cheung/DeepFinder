@@ -76,7 +76,7 @@ Both statements are **false**. This is not just a documentation bug — it is a 
   settings.json    <-- ai.apiKey key REMOVED from config dict
 
 Keychain (login keychain, ~/Library/Keychains/login.keychain-db):
-  Service: com.nadav.deepfinder.apikeys
+  Service: cn.com.nadav.deepfinder.apikeys
   Account: anthropic   → Data: sk-ant-...
   Account: deepseek    → Data: sk-...
   Account: qwen        → Data: sk-...
@@ -115,12 +115,12 @@ Use `kSecClassGenericPassword` — the standard class for application credential
 | Attribute | Value | Notes |
 |---|---|---|
 | `kSecClass` | `kSecClassGenericPassword` | |
-| `kSecAttrService` | `"com.nadav.deepfinder.apikeys"` | Single service for all provider keys |
+| `kSecAttrService` | `"cn.com.nadav.deepfinder.apikeys"` | Single service for all provider keys |
 | `kSecAttrAccount` | Provider name: `"anthropic"`, `"deepseek"`, `"qwen"`, `"gemini"`, `"openai"`, `"zhipu"`, `"moonshot"`, `"minimax"`, `"custom"` | Matches `ProviderInfo.name` |
 | `kSecAttrLabel` | `"DeepFinder API Key — {DisplayName}"` | Human-readable for Keychain Access UI |
 | `kSecAttrAccessible` | `kSecAttrAccessibleWhenUnlocked` | Key available while user is logged in. Does NOT survive device passcode removal. |
 | `kSecAttrSynchronizable` | `kCFBooleanFalse` | **Explicitly disable iCloud Keychain sync**. These keys are device-specific; syncing them to other Macs/iPhones is a security liability. |
-| `kSecAttrAccessGroup` | *(omit)* | Not needed for single-app macOS CLI/daemon. Omit to use default. If the daemon and CLI need to share (same team ID), set to `"com.nadav.deepfinder"` with Keychain Sharing entitlement. See §3.4. |
+| `kSecAttrAccessGroup` | *(omit)* | Not needed for single-app macOS CLI/daemon. Omit to use default. If the daemon and CLI need to share (same team ID), set to `"cn.com.nadav.deepfinder"` with Keychain Sharing entitlement. See §3.4. |
 | `kSecValueData` | `apiKey.data(using: .utf8)!` | UTF-8 encoded key bytes |
 
 ### 3.3 Accessibility Level Rationale
@@ -144,13 +144,13 @@ Use `kSecClassGenericPassword` — the standard class for application credential
 ### 3.4 Access Group — CLI vs Daemon vs GUI App
 
 DeepFinder has three executables:
-- `deepfinder` (CLI) — bundle ID `com.nadav.deepfinder.cli`
-- `deepfinder-daemon` — bundle ID `com.nadav.deepfinder.daemon`
-- `DeepFinder.app` (GUI) — bundle ID `com.nadav.deepfinder`
+- `deepfinder` (CLI) — bundle ID `cn.com.nadav.deepfinder.cli`
+- `deepfinder-daemon` — bundle ID `cn.com.nadav.deepfinder.daemon`
+- `DeepFinder.app` (GUI) — bundle ID `cn.com.nadav.deepfinder`
 
 On macOS, **Keychain access groups require code signing with the same Team ID**. Since these are all distributed together under the same signing identity, they share access by default. If the team ID is consistent across all three binaries, the default access group works.
 
-**If needed**: Add a shared access group `"com.nadav.deepfinder"` and the Keychain Sharing entitlement to all three targets. This is handled automatically by Xcode when the capability is added.
+**If needed**: Add a shared access group `"cn.com.nadav.deepfinder"` and the Keychain Sharing entitlement to all three targets. This is handled automatically by Xcode when the capability is added.
 
 For Homebrew/SPM distribution (no code signing), macOS grants keychain access per-binary based on the binary's path hash. Each executable gets its own keychain ACL entry. This is acceptable for CLI/daemon since they run in the same user session.
 
@@ -280,7 +280,7 @@ actor KeychainStore {
 
     /// Service name used as the primary lookup key for all DeepFinder API keys.
     /// MUST match the value used in the migration script.
-    static let service = "com.nadav.deepfinder.apikeys"
+    static let service = "cn.com.nadav.deepfinder.apikeys"
 
     private static let logger = Logger(subsystem: Product.loggingSubsystem, category: "keychain")
 
@@ -330,7 +330,7 @@ For `save(account:key:label:)`:
 ```
 1. Build query dict:
    [kSecClass: kSecClassGenericPassword,
-    kSecAttrService: "com.nadav.deepfinder.apikeys",
+    kSecAttrService: "cn.com.nadav.deepfinder.apikeys",
     kSecAttrAccount: account,
     kSecAttrLabel: label,
     kSecAttrAccessible: kSecAttrAccessibleWhenUnlocked,
@@ -348,7 +348,7 @@ For `load(account:) -> String?`:
 ```
 1. Build query dict:
    [kSecClass: kSecClassGenericPassword,
-    kSecAttrService: "com.nadav.deepfinder.apikeys",
+    kSecAttrService: "cn.com.nadav.deepfinder.apikeys",
     kSecAttrAccount: account,
     kSecReturnData: true,
     kSecMatchLimit: kSecMatchLimitOne]
@@ -461,7 +461,7 @@ to:
 ```
 | `~/.deep-finder/settings.json` | Configuration (no API keys stored here) | 600 (owner only) |
 ...
-| `~/Library/Keychains/login.keychain-db` | API keys stored via `SecItemAdd`/`SecItemCopyMatching` (Keychain Services) under service `com.nadav.deepfinder.apikeys` | System-managed, encrypted with Secure Enclave |
+| `~/Library/Keychains/login.keychain-db` | API keys stored via `SecItemAdd`/`SecItemCopyMatching` (Keychain Services) under service `cn.com.nadav.deepfinder.apikeys` | System-managed, encrypted with Secure Enclave |
 ```
 
 **Add new section** after "Data Storage":
@@ -473,7 +473,7 @@ DeepFinder stores API keys exclusively in the macOS Keychain, never in plaintext
 
 | Property | Value |
 |---|---|
-| Keychain service | `com.nadav.deepfinder.apikeys` |
+| Keychain service | `cn.com.nadav.deepfinder.apikeys` |
 | Item class | Generic Password (`kSecClassGenericPassword`) |
 | Accessibility | `kSecAttrAccessibleWhenUnlocked` (available while logged in) |
 | iCloud sync | **Disabled** — keys are device-specific, never leave the Mac |
@@ -569,7 +569,7 @@ File: `Tests/AITests/KeychainMigrationTests.swift`
 - [ ] Keychain Access.app shows DeepFinder entries under "All Items"
 - [ ] Each entry shows correct "Account" and "Where" (service name)
 - [ ] Access Control tab shows application path
-- [ ] `security find-generic-password -s "com.nadav.deepfinder.apikeys"` returns entries
+- [ ] `security find-generic-password -s "cn.com.nadav.deepfinder.apikeys"` returns entries
 - [ ] After `keychain reset`, entries are gone
 - [ ] `.env` file deleted or renamed to `.env.backup` after migration
 - [ ] `.env.migrated` sentinel file present

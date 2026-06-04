@@ -200,7 +200,7 @@ struct LifecycleTests {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
 
-        let plistPath = dir.appendingPathComponent("com.nadav.deepfinder.daemon.plist").path
+        let plistPath = dir.appendingPathComponent("cn.com.nadav.deepfinder.daemon.plist").path
 
         // Install
         try LaunchAgent.installPlist(at: plistPath)

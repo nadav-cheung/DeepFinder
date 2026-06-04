@@ -78,7 +78,7 @@ public final class StatusBarController: NSObject, StatusBarControllerActions {
 
     // MARK: - Logging
 
-    private let logger = Logger(subsystem: "com.nadav.deepfinder.daemon", category: "status-bar")
+    private let logger = Logger(subsystem: "cn.com.nadav.deepfinder.daemon", category: "status-bar")
 
     // MARK: - State
 

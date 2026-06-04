@@ -674,7 +674,7 @@ plain actor（NOT @MainActor）。daemon 进程无 UI 上下文。v2.0 GUI clien
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.nadav.deepfinder.daemon</string>
+    <string>cn.com.nadav.deepfinder.daemon</string>
     <key>ProgramArguments</key>
     <array>
         <string>/usr/local/bin/deepfinder</string>

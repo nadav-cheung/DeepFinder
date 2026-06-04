@@ -129,7 +129,7 @@ deepfinder daemon restart
 
 ### LaunchAgent plist Reference
 
-The generated plist is located at `~/Library/LaunchAgents/com.nadav.deepfinder.daemon.plist`:
+The generated plist is located at `~/Library/LaunchAgents/cn.com.nadav.deepfinder.daemon.plist`:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
@@ -138,7 +138,7 @@ The generated plist is located at `~/Library/LaunchAgents/com.nadav.deepfinder.d
 <plist version="1.0">
 <dict>
     <key>Label</key>
-    <string>com.nadav.deepfinder.daemon</string>
+    <string>cn.com.nadav.deepfinder.daemon</string>
     <key>Program</key>
     <string>/opt/homebrew/bin/deepfinder-daemon</string>
     <key>ProgramArguments</key>
@@ -357,10 +357,10 @@ deepfinder uninstall
 deepfinder install
 
 # Check plist syntax
-plutil -lint ~/Library/LaunchAgents/com.nadav.deepfinder.daemon.plist
+plutil -lint ~/Library/LaunchAgents/cn.com.nadav.deepfinder.daemon.plist
 
 # Manually load for testing
-launchctl load ~/Library/LaunchAgents/com.nadav.deepfinder.daemon.plist
+launchctl load ~/Library/LaunchAgents/cn.com.nadav.deepfinder.daemon.plist
 ```
 
 ### High Memory Usage

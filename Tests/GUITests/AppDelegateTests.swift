@@ -328,12 +328,12 @@ struct AppDelegateNotificationTests {
 
     @Test(".toggleSearchPanel has correct name")
     func testToggleSearchPanelName() {
-        #expect(Notification.Name.toggleSearchPanel == Notification.Name(rawValue: "com.nadav.deepfinder.toggleSearchPanel"))
+        #expect(Notification.Name.toggleSearchPanel == Notification.Name(rawValue: "cn.com.nadav.deepfinder.toggleSearchPanel"))
     }
 
     @Test(".showSettings has correct name")
     func testShowSettingsName() {
-        #expect(Notification.Name.showSettings == Notification.Name(rawValue: "com.nadav.deepfinder.showSettings"))
+        #expect(Notification.Name.showSettings == Notification.Name(rawValue: "cn.com.nadav.deepfinder.showSettings"))
     }
 
     @Test("Notification names are unique")

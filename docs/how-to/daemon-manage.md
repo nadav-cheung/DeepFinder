@@ -83,10 +83,10 @@ To have the daemon start automatically when you log in, install the LaunchAgent:
 deepfinder install
 ```
 
-This creates `~/Library/LaunchAgents/com.nadav.deepfinder.daemon.plist`. macOS launchd picks it up on next login, or you can load it immediately:
+This creates `~/Library/LaunchAgents/cn.com.nadav.deepfinder.daemon.plist`. macOS launchd picks it up on next login, or you can load it immediately:
 
 ```bash
-launchctl load ~/Library/LaunchAgents/com.nadav.deepfinder.daemon.plist
+launchctl load ~/Library/LaunchAgents/cn.com.nadav.deepfinder.daemon.plist
 ```
 
 To remove the auto-start behavior:
@@ -104,7 +104,7 @@ This removes the plist and unloads it from launchd if currently loaded.
 | `~/.deep-finder/session/daemon.pid` | Running daemon PID |
 | `~/.deep-finder/session/ipc.sock` | Unix domain socket for CLI/GUI communication |
 | `~/.deep-finder/cache/index.db` | SQLite WAL index database |
-| `~/Library/LaunchAgents/com.nadav.deepfinder.daemon.plist` | LaunchAgent plist (auto-start) |
+| `~/Library/LaunchAgents/cn.com.nadav.deepfinder.daemon.plist` | LaunchAgent plist (auto-start) |
 
 ### Crash recovery
 

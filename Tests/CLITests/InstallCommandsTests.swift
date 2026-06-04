@@ -29,7 +29,7 @@ struct InstallCommandsTests {
         let tempDir = makeTempDir()
         defer { cleanup(tempDir) }
 
-        let plistPath = tempDir + "/com.nadav.deepfinder.daemon.plist"
+        let plistPath = tempDir + "/cn.com.nadav.deepfinder.daemon.plist"
 
         let exitCode = try InstallCommandRunner.install(plistPath: plistPath)
         #expect(exitCode == 0)
@@ -50,7 +50,7 @@ struct InstallCommandsTests {
         let tempDir = makeTempDir()
         defer { cleanup(tempDir) }
 
-        let plistPath = tempDir + "/com.nadav.deepfinder.daemon.plist"
+        let plistPath = tempDir + "/cn.com.nadav.deepfinder.daemon.plist"
 
         // Create a dummy file to simulate existing install
         try "dummy".write(toFile: plistPath, atomically: true, encoding: .utf8)
@@ -72,7 +72,7 @@ struct InstallCommandsTests {
         let tempDir = makeTempDir()
         defer { cleanup(tempDir) }
 
-        let plistPath = tempDir + "/com.nadav.deepfinder.daemon.plist"
+        let plistPath = tempDir + "/cn.com.nadav.deepfinder.daemon.plist"
 
         // Create a plist file first
         try LaunchAgent.installPlist(at: plistPath)
@@ -92,7 +92,7 @@ struct InstallCommandsTests {
         let tempDir = makeTempDir()
         defer { cleanup(tempDir) }
 
-        let plistPath = tempDir + "/com.nadav.deepfinder.daemon.plist"
+        let plistPath = tempDir + "/cn.com.nadav.deepfinder.daemon.plist"
 
         // Don't create the file — simulate "not installed"
         let output = CapturingOutput()
@@ -112,7 +112,7 @@ struct InstallCommandsTests {
         let tempDir = makeTempDir()
         defer { cleanup(tempDir) }
 
-        let plistPath = tempDir + "/com.nadav.deepfinder.daemon.plist"
+        let plistPath = tempDir + "/cn.com.nadav.deepfinder.daemon.plist"
 
         _ = try InstallCommandRunner.install(plistPath: plistPath)
 

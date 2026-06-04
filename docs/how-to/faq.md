@@ -217,8 +217,8 @@ deepfinder :stats
 ```bash
 brew uninstall deepfinder
 rm -rf ~/.deep-finder/
-launchctl unload ~/Library/LaunchAgents/com.nadav.deepfinder.daemon.plist
-rm ~/Library/LaunchAgents/com.nadav.deepfinder.daemon.plist
+launchctl unload ~/Library/LaunchAgents/cn.com.nadav.deepfinder.daemon.plist
+rm ~/Library/LaunchAgents/cn.com.nadav.deepfinder.daemon.plist
 ```
 
 This removes the binary, all index and config data, and the LaunchAgent that

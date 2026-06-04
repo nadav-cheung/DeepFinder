@@ -8,7 +8,7 @@
     <key>CFBundleExecutable</key>
     <string>DeepFinderApp</string>
     <key>CFBundleIdentifier</key>
-    <string>com.nadav.deepfinder</string>
+    <string>cn.com.nadav.deepfinder</string>
     <key>CFBundleName</key>
     <string>DeepFinder</string>
     <key>CFBundleDisplayName</key>

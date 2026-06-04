@@ -351,7 +351,7 @@ status with `notarytool info`. If the notarization status is
 
 ### "package has no bundle identifier"
 
-Add `--bundle-id "com.nadav.deepfinder"` to the `notarytool submit`
+Add `--bundle-id "cn.com.nadav.deepfinder"` to the `notarytool submit`
 command if Apple requires an explicit bundle identifier.
 
 ### Certificate not found in temporary keychain

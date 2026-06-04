@@ -22,7 +22,7 @@ If this didn't help, [open an issue](../SUPPORT.md) and include your daemon stat
 The daemon refuses to start, or CLI commands show "daemon not running" / connection refused.
 
 1. **Stale socket file** -- If the daemon crashed without cleaning up, a stale socket file blocks the next start. Remove it: `rm ~/.deep-finder/session/ipc.sock`. Then restart the daemon with `deepfinder daemon start`.
-2. **launchd conflict** -- A stale LaunchAgent registration may be holding a reference. Check with `launchctl list | grep deepfinder`. If a stale entry exists, unload it: `launchctl unload ~/Library/LaunchAgents/com.nadav.deepfinder.daemon.plist`, then restart.
+2. **launchd conflict** -- A stale LaunchAgent registration may be holding a reference. Check with `launchctl list | grep deepfinder`. If a stale entry exists, unload it: `launchctl unload ~/Library/LaunchAgents/cn.com.nadav.deepfinder.daemon.plist`, then restart.
 3. **Permission denied on data directory** -- The daemon needs read/write access to `~/.deep-finder`. Ensure correct permissions: `chmod 700 ~/.deep-finder` and verify the directory is owned by your user: `ls -ld ~/.deep-finder`.
 
 If this didn't help, [open an issue](../SUPPORT.md) and include your daemon status (`deepfinder daemon status`) and any error output.

@@ -6,7 +6,7 @@ import SwiftUI
 /// View model driving the first-launch onboarding flow.
 ///
 /// Manages the onboarding UI state: permissions setup and completion.
-/// Sets `UserDefaults` key `com.nadav.deepfinder.didCompleteOnboarding` when
+/// Sets `UserDefaults` key `cn.com.nadav.deepfinder.didCompleteOnboarding` when
 /// the user finishes onboarding, so subsequent launches skip it.
 @MainActor
 final class OnboardingViewModel: ObservableObject {

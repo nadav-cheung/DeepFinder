@@ -424,14 +424,14 @@ DeepFinder uses three permission levels, defined as compile-time constants in `P
 | `~/.deep-finder/settings.json` | File | `0o600` | User configuration; may contain preferences that reveal usage patterns. |
 | `~/.deep-finder/.env` | File | `0o600` | API keys and encryption keys; highest-sensitivity file. Compromise = cloud AI account access. |
 | `~/.deep-finder/history` | File | `0o600` | CLI command history; reveals search queries. |
-| `~/Library/LaunchAgents/com.nadav.deepfinder.plist` | File | `0o644` | LaunchAgent plist; standard permissions required by `launchd`. User-owned directory already limits write access. |
+| `~/Library/LaunchAgents/cn.com.nadav.deepfinder.plist` | File | `0o644` | LaunchAgent plist; standard permissions required by `launchd`. User-owned directory already limits write access. |
 
 ### 7.3 Why Not Root-Owned Paths
 
 DeepFinder intentionally places all files under `~/.deep-finder/` (user home directory) rather than system paths like `/Library/` or `/var/`. This is a deliberate security choice:
 
 1. **No privilege escalation surface**: The daemon runs as the user, not as root. No SUID binary, no `SMJobBless`, no privileged helper.
-2. **No system directory pollution**: Uninstalling DeepFinder is `rm -rf ~/.deep-finder` + `launchctl bootout gui/$UID/com.nadav.deepfinder`. No orphaned files in system directories.
+2. **No system directory pollution**: Uninstalling DeepFinder is `rm -rf ~/.deep-finder` + `launchctl bootout gui/$UID/cn.com.nadav.deepfinder`. No orphaned files in system directories.
 3. **TCC compatibility**: User-level daemons have the same privacy permissions as the user — no need for special entitlements that could be exploited.
 4. **"Daemon Ex Plist" immunity**: The 2025 vulnerability class where uninstalled apps leave privileged LaunchDaemon plists in `/Library/LaunchDaemons/` does not apply to user-level LaunchAgents in `~/Library/LaunchAgents/`.
 

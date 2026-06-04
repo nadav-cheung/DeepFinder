@@ -1,7 +1,7 @@
 /// Manages the macOS LaunchAgent plist for auto-starting the DeepFinder daemon on login.
 ///
 /// Generates, installs, and uninstalls the launchd plist at
-/// `~/Library/LaunchAgents/com.nadav.deepfinder.daemon.plist`. The plist configures
+/// `~/Library/LaunchAgents/cn.com.nadav.deepfinder.daemon.plist`. The plist configures
 /// `RunAtLoad` and `KeepAlive` so launchd starts the daemon at login and restarts it on crash.
 import Foundation
 
@@ -33,7 +33,7 @@ enum LaunchAgentError: Error, CustomStringConvertible, Equatable {
 /// Manages the macOS LaunchAgent plist for auto-starting the DeepFinder daemon.
 ///
 /// The LaunchAgent plist is installed at:
-/// `~/Library/LaunchAgents/com.nadav.deepfinder.daemon.plist`
+/// `~/Library/LaunchAgents/cn.com.nadav.deepfinder.daemon.plist`
 ///
 /// Installation is typically done via `deepfinder install` (v0.7).
 /// The daemon can also be auto-spawned by the CLI without a LaunchAgent.
@@ -59,7 +59,7 @@ enum LaunchAgent {
     /// Generate the LaunchAgent plist XML content.
     ///
     /// The plist configures:
-    /// - Label: `com.nadav.deepfinder.daemon`
+    /// - Label: `cn.com.nadav.deepfinder.daemon`
     /// - Program: full path to the `deepfinder-daemon` binary
     /// - Arguments: (none)
     /// - RunAtLoad: `true` (start on login)
@@ -105,7 +105,7 @@ enum LaunchAgent {
     /// Creates parent directories if needed. Writes the plist atomically.
     ///
     /// - Parameter path: File system path to write the plist.
-    ///   Defaults to `~/Library/LaunchAgents/com.nadav.deepfinder.daemon.plist`.
+    ///   Defaults to `~/Library/LaunchAgents/cn.com.nadav.deepfinder.daemon.plist`.
     /// - Throws: `LaunchAgentError.plistWriteFailed` if the file cannot be written.
     static func installPlist(at path: String = defaultPlistPath) throws {
         let plistContent = generatePlist()
@@ -131,7 +131,7 @@ enum LaunchAgent {
     /// Remove the LaunchAgent plist from the given path.
     ///
     /// - Parameter path: File system path of the plist to remove.
-    ///   Defaults to `~/Library/LaunchAgents/com.nadav.deepfinder.daemon.plist`.
+    ///   Defaults to `~/Library/LaunchAgents/cn.com.nadav.deepfinder.daemon.plist`.
     /// - Throws: `LaunchAgentError.plistRemoveFailed` if the file exists but cannot be removed.
     /// - Throws: `LaunchAgentError.plistNotFound` if the file does not exist.
     static func uninstallPlist(at path: String = defaultPlistPath) throws {

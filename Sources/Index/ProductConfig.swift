@@ -24,7 +24,7 @@ enum Product {
     static let daemonCommand = "deepfinder-daemon"
 
     /// macOS bundle identifier and LaunchAgent label.
-    static let identifier = "com.nadav.deepfinder"
+    static let identifier = "cn.com.nadav.deepfinder"
 
     // MARK: - Paths
 
