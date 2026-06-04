@@ -261,6 +261,11 @@ enum HTTPRouter {
         searchResults: [[String: String]] = [],
         stats: [String: Any] = [:]
     ) -> (statusCode: Int, body: String) {
+        // Handle CORS preflight
+        if request.method == "OPTIONS" {
+            return (204, "")
+        }
+
         guard request.method == "GET" else {
             return (405, "{\"error\":\"Method not allowed\"}")
         }
@@ -379,7 +384,7 @@ enum HTTPRouter {
             "HTTP/1.1 \(statusCode) \(statusText)",
             "Content-Type: application/json",
             "Content-Length: \(bodyData.count)",
-            "Access-Control-Allow-Origin: http://localhost:*",
+            "Access-Control-Allow-Origin: *",
             "Connection: close",
         ]
         let headerString = headerLines.joined(separator: "\r\n") + "\r\n\r\n"
@@ -428,7 +433,7 @@ enum HTTPRouter {
             "HTTP/1.1 \(statusCode) \(statusText)",
             "Content-Type: application/json",
             "Content-Length: \(bodyData.count)",
-            "Access-Control-Allow-Origin: http://localhost:*",
+            "Access-Control-Allow-Origin: *",
             "Connection: close",
         ]
         return headerLines.joined(separator: "\r\n") + "\r\n\r\n" + body
