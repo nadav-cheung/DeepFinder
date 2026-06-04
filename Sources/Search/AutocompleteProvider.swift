@@ -12,9 +12,12 @@ actor AutocompleteProvider {
     /// The index used for filename lookups.
     private let index: InMemoryIndex
 
-    /// REPL commands available for suggestion. Matches REPLCommand.allCases.
-    private static let replCommands: [String] =
-        REPLCommand.allCases.map { ":\($0.rawValue)" }
+    /// REPL commands available for suggestion.
+    /// Hardcoded here to avoid Search→CLI dependency. Keep in sync with REPLCommand.allCases.
+    private static let replCommands: [String] = [
+        ":help", ":quit", ":stats", ":config", ":daemon",
+        ":open", ":reveal", ":explain", ":dataPreview", ":undo",
+    ]
 
     /// Create an autocomplete provider backed by the given index.
     ///
