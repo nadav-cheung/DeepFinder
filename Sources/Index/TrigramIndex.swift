@@ -124,7 +124,8 @@ struct TrigramIndex {
 
     /// Remove `id` from all trigram posting lists and the name store.
     /// No-op if the id was never inserted.
-    mutating func remove(name: String, id: UInt32) {
+    /// - Parameter name: Unused; kept for API symmetry with FullSubstringMap.remove.
+    mutating func remove(name _: String, id: UInt32) {
         guard let storedName = names.removeValue(forKey: id) else { return }
         _count -= 1
 

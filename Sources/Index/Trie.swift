@@ -1,7 +1,7 @@
 /// A generic Trie (prefix tree) for O(k) prefix lookup, where k is the query length.
 ///
-/// Used for filename indexing as `Trie<UnicodeScalar, UInt32>` where the value is
-/// a `FileRecord.ID`. All input should be NFC-normalized before insertion.
+/// Used for filename indexing as `Trie<UnicodeScalar, Set<UInt32>>` where the value is
+/// a set of `FileRecord.ID`s. All input should be NFC-normalized before insertion.
 ///
 /// Copy-on-write: this is a value type (struct). Copying a Trie shares the
 /// underlying node graph; the first mutation after a copy deep-clones the

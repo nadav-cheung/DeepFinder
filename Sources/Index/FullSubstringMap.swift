@@ -31,6 +31,9 @@ struct FullSubstringMap {
     /// Names longer than `maxNameLength` characters are silently skipped.
     /// Re-inserting the same `id` with a different name does NOT remove the old
     /// substrings — callers must `remove` first if updating.
+    ///
+    /// - Note: Input is expected to be pre-normalized by InMemoryIndex; the
+    ///   NFC normalization here is defensive/idempotent.
     mutating func insert(name: String, id: UInt32) {
         let normalized = name.precomposedStringWithCanonicalMapping
         guard normalized.count <= Self.maxNameLength else { return }
