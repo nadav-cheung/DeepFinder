@@ -135,9 +135,10 @@ struct CLIMainTests {
         let (_, exitCode) = await CLIMain.run(args: ["--limit", "5", "test"], clientProvider: mock)
         #expect(exitCode == .noResults)
         // Verify the mock received the correct limit
-        let lastReq = await mock.lastRequest
-        #expect(lastReq != nil)
-        if case .query(_, let limit) = lastReq! {
+        let allRequests = await mock.requests
+        let queryReq = allRequests.first { if case .query = $0 { true } else { false } }
+        #expect(queryReq != nil)
+        if case .query(_, let limit) = queryReq! {
             #expect(limit == 5)
         } else {
             Issue.record("Expected query request")
@@ -165,6 +166,7 @@ actor MockIPCClient: IPCClientProtocol {
     let response: IPCResponse?
     let error: Error?
     var lastRequest: IPCRequest?
+    var requests: [IPCRequest] = []
 
     init(response: IPCResponse) {
         self.response = response
@@ -178,6 +180,7 @@ actor MockIPCClient: IPCClientProtocol {
 
     func send(_ request: IPCRequest) async throws -> IPCResponse {
         self.lastRequest = request
+        self.requests.append(request)
         if let error {
             throw error
         }
