@@ -4,7 +4,6 @@
 ///
 /// ## Components
 /// - ``IndexPersistence`` -- actor-isolated SQLite wrapper for FileRecord CRUD
-/// - ``IndexRecovery`` -- database corruption detection and recovery utilities
 ///
 /// ## Design
 /// - Database location: `~/.deep-finder/cache/index.db` (permissions 600)
@@ -79,7 +78,7 @@ enum PersistenceError: Error, CustomStringConvertible {
 /// **SQLite configuration**: WAL journal mode with `synchronous=NORMAL` for a balance
 /// of durability and performance. The `-wal` and `-shm` files are co-located with the
 /// main database file. On unclean shutdown, the WAL is replayed automatically by SQLite
-/// on the next open, or manually via ``IndexRecovery.recoverFromWALCorruption()``.
+/// on the next open.
 actor IndexPersistence {
 
     // MARK: - Schema
@@ -407,81 +406,6 @@ actor IndexPersistence {
         deleteRecords(ids)
         logger.info("Deleted \(ids.count) records by path prefix (via in-memory decryption)")
         return ids.count
-    }
-
-    // MARK: - Metadata Batch Operations
-
-    /// Batch save metadata for multiple files.
-    ///
-    /// Updates only the `metadata_json` column for the given file IDs.
-    /// Uses a prepared statement and explicit transaction for throughput.
-    ///
-    /// - Parameter entries: Array of (fileID, metadata) pairs to update.
-    /// - Note: Silently returns on prepare failure. See ``saveRecords`` for rationale.
-    func saveMetadataBatch(_ entries: [(fileID: UInt32, metadata: ExtractedMetadata)]) {
-        guard !entries.isEmpty else { return }
-
-        do { try exec("BEGIN IMMEDIATE") }
-        catch { logger.warning("BEGIN IMMEDIATE failed in saveMetadataBatch: \(error.localizedDescription, privacy: .public)") }
-        defer {
-            do { try exec("COMMIT") }
-            catch { logger.warning("COMMIT failed in saveMetadataBatch: \(error.localizedDescription, privacy: .public)") }
-        }
-
-        let sql = "UPDATE file_records SET metadata_json = ? WHERE id = ?"
-        var stmt: OpaquePointer?
-        guard prepare(sql, &stmt) == SQLITE_OK, let stmt else { return }
-        defer { sqlite3_finalize(stmt) }
-
-        let encoder = JSONEncoder()
-        for entry in entries {
-            sqlite3_reset(stmt)
-            if let jsonData = try? encoder.encode(entry.metadata),
-               let jsonStr = String(data: jsonData, encoding: .utf8) {
-                sqlite3_bind_text(stmt, 1, jsonStr, -1, SQLTransient)
-            } else {
-                logger.warning("Failed to encode metadata for fileID \(entry.fileID)")
-                sqlite3_bind_null(stmt, 1)
-            }
-            sqlite3_bind_int64(stmt, 2, sqlite3_int64(entry.fileID))
-            // sqlite3_step result intentionally ignored. See saveRecords for rationale.
-            sqlite3_step(stmt)
-        }
-    }
-
-    /// Load all metadata entries from the database.
-    ///
-    /// Returns an array of (fileID, metadata) pairs for all records that have metadata.
-    func loadAllMetadata() throws -> [(fileID: UInt32, metadata: ExtractedMetadata)] {
-        let sql = "SELECT id, metadata_json FROM file_records WHERE metadata_json IS NOT NULL"
-
-        var stmt: OpaquePointer?
-        guard prepare(sql, &stmt) == SQLITE_OK, let stmt else {
-            throw PersistenceError.prepareFailed(sql, sqlite3_errcode(db))
-        }
-        defer { sqlite3_finalize(stmt) }
-
-        let decoder = JSONDecoder()
-        var results: [(fileID: UInt32, metadata: ExtractedMetadata)] = []
-        while true {
-            let rc = sqlite3_step(stmt)
-            if rc == SQLITE_ROW {
-                let fileID = UInt32(sqlite3_column_int64(stmt, 0))
-                guard let jsonPtr = sqlite3_column_text(stmt, 1) else { continue }
-                let jsonStr = String(cString: jsonPtr)
-                guard let data = jsonStr.data(using: .utf8) else { continue }
-                guard let metadata = try? decoder.decode(ExtractedMetadata.self, from: data) else {
-                    logger.warning("Failed to decode metadata_json for record \(fileID)")
-                    continue
-                }
-                results.append((fileID, metadata))
-            } else if rc == SQLITE_DONE {
-                break
-            } else {
-                throw PersistenceError.stepFailed(rc)
-            }
-        }
-        return results
     }
 
     // MARK: - Event Cursor

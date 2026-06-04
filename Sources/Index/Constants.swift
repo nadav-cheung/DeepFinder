@@ -48,7 +48,6 @@ enum Constants {
 
     // MARK: - Search
     enum Search {
-        static let providerTimeout: TimeInterval = 5.0
         static let maxRegexLength = 256
 
         /// Maximum number of bookmarks a user can save.
@@ -198,12 +197,4 @@ enum Constants {
         static let secondsPerHour: TimeInterval = 3600
     }
 
-    // MARK: - Paths
-    enum Paths {
-        /// Standard Homebrew/Unix binary installation directory.
-        /// Used as a fallback when resolving daemon binary location.
-        /// Only correct for Homebrew installs; SPM builds resolve via
-        /// `Bundle.main.executablePath` first.
-        static let defaultBinDir = "/usr/local/bin"
-    }
 }

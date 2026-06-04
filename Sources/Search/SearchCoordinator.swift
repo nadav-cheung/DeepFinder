@@ -52,10 +52,6 @@ actor SearchCoordinator {
     private var lastQueryID: String?
     private let resultLimit: Int
 
-    /// Timeout per provider in seconds. Stored for future streaming providers.
-    /// MVP providers are synchronous and always complete instantly.
-    var providerTimeout: TimeInterval = Constants.Search.providerTimeout
-
     // MARK: - Init
 
     /// Create a coordinator with the given providers and result cap.
