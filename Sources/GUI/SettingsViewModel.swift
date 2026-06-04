@@ -72,6 +72,14 @@ final class SettingsViewModel {
     /// Alert message shown when auto-launch registration fails.
     var autoLaunchError: String?
 
+    // MARK: - Permission State
+
+    /// Whether Full Disk Access has been granted.
+    var fdaGranted: Bool = false
+
+    /// Whether Accessibility permission has been granted.
+    var accessibilityGranted: Bool = false
+
     // MARK: - Dependencies
 
     private let configProvider: any SettingsConfigProvider
@@ -93,9 +101,16 @@ final class SettingsViewModel {
 
     // MARK: - Config Loading
 
+    /// Refresh permission statuses from the system.
+    func refreshPermissionStatus() {
+        fdaGranted = PermissionChecker.isFDAGranted()
+        accessibilityGranted = PermissionChecker.isAccessibilityGranted()
+    }
+
     /// Load excluded paths and index stats from the config provider.
     func loadConfig() async {
         excludedPaths = await configProvider.getExcludedPaths()
+        refreshPermissionStatus()
     }
 
     /// Load index statistics from the daemon.

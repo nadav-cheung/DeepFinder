@@ -14,13 +14,13 @@ struct SettingsView: View {
         )) {
             generalTab
                 .tabItem {
-                    Label("General", systemImage: "gearshape")
+                    Label("通用", systemImage: "gearshape")
                 }
                 .tag(SettingsTab.general)
 
             indexTab
                 .tabItem {
-                    Label("Index", systemImage: "doc.text.magnifyingglass")
+                    Label("索引", systemImage: "doc.text.magnifyingglass")
                 }
                 .tag(SettingsTab.index)
 
@@ -32,7 +32,7 @@ struct SettingsView: View {
 
             aboutTab
                 .tabItem {
-                    Label("About", systemImage: "info.circle")
+                    Label("关于", systemImage: "info.circle")
                 }
                 .tag(SettingsTab.about)
         }
@@ -51,9 +51,9 @@ struct SettingsView: View {
         @Bindable var vm = viewModel
         return ScrollView {
             VStack(spacing: 16) {
-                glassSection("Hotkey") {
+                glassSection("全局快捷键") {
                     HStack {
-                        Text("Global Hotkey")
+                        Text("全局快捷键")
                             .font(.body)
                         Spacer()
                         Text(viewModel.hotkeyDisplay)
@@ -61,7 +61,7 @@ struct SettingsView: View {
                             .padding(.horizontal, 10)
                             .padding(.vertical, 5)
                             .background(.quaternary, in: .rect(cornerRadius: 6))
-                        Button("Reset to Default") {
+                        Button("恢复默认") {
                             viewModel.resetHotkeyDisplay()
                         }
                         .buttonStyle(.bordered)
@@ -69,16 +69,16 @@ struct SettingsView: View {
                     }
                 }
 
-                glassSection("Auto-Launch") {
+                glassSection("开机启动") {
                     VStack(alignment: .leading, spacing: 8) {
                         HStack {
-                            Toggle("Launch at Login", isOn: Binding(
+                            Toggle("开机时启动", isOn: Binding(
                                 get: { viewModel.autoLaunchEnabled },
                                 set: { newValue in Task { await viewModel.setAutoLaunch(newValue) } }
                             ))
                             Spacer()
                             statusBadge(
-                                text: viewModel.autoLaunchEnabled ? "Enabled" : "Disabled",
+                                text: viewModel.autoLaunchEnabled ? "已启用" : "已禁用",
                                 color: viewModel.autoLaunchEnabled ? .green : .secondary
                             )
                         }
@@ -95,10 +95,10 @@ struct SettingsView: View {
                     }
                 }
 
-                glassSection("Excluded Paths") {
+                glassSection("排除路径") {
                     VStack(alignment: .leading, spacing: 10) {
                         if viewModel.excludedPaths.isEmpty {
-                            Text("No excluded paths")
+                            Text("无排除路径")
                                 .font(.callout)
                                 .foregroundStyle(.tertiary)
                                 .frame(maxWidth: .infinity, alignment: .center)
@@ -131,10 +131,10 @@ struct SettingsView: View {
                             .padding(.vertical, 2)
 
                         HStack(spacing: 10) {
-                            TextField("Path to exclude", text: $vm.newPathText)
+                            TextField("输入要排除的路径", text: $vm.newPathText)
                                 .textFieldStyle(.roundedBorder)
                                 .font(.system(.body, design: .monospaced))
-                            Button("Add") {
+                            Button("添加") {
                                 let path = viewModel.newPathText.trimmingCharacters(in: .whitespacesAndNewlines)
                                 guard !path.isEmpty else { return }
                                 Task { await viewModel.addPath(path) }
@@ -142,6 +142,43 @@ struct SettingsView: View {
                             }
                             .disabled(viewModel.newPathText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                             .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                        }
+                    }
+                }
+
+                glassSection("权限") {
+                    VStack(spacing: 10) {
+                        HStack {
+                            Text("完全磁盘访问")
+                                .font(.body)
+                            Spacer()
+                            statusBadge(
+                                text: viewModel.fdaGranted ? "已授权" : "未授权",
+                                color: viewModel.fdaGranted ? .green : .red
+                            )
+                        }
+
+                        Divider()
+
+                        HStack {
+                            Text("辅助功能")
+                                .font(.body)
+                            Spacer()
+                            statusBadge(
+                                text: viewModel.accessibilityGranted ? "已授权" : "未授权",
+                                color: viewModel.accessibilityGranted ? .green : .red
+                            )
+                        }
+
+                        Divider()
+
+                        HStack {
+                            Spacer()
+                            Button("打开系统设置") {
+                                PermissionChecker.openFDASettings()
+                            }
+                            .buttonStyle(.bordered)
                             .controlSize(.small)
                         }
                     }
@@ -156,23 +193,23 @@ struct SettingsView: View {
     private var indexTab: some View {
         ScrollView {
             VStack(spacing: 16) {
-                glassSection("Index Status") {
+                glassSection("索引状态") {
                     if let stats = viewModel.indexStats {
                         VStack(spacing: 10) {
                             statusRow(
-                                label: "State",
+                                label: "状态",
                                 value: stats.state.capitalized,
                                 color: stats.state == "live" ? .green : .orange
                             )
                             Divider()
                             statusRow(
-                                label: "Files Indexed",
+                                label: "已索引文件",
                                 value: stats.filesIndexed.formatted()
                             )
                             if let date = stats.lastScanDate {
                                 Divider()
                                 statusRow(
-                                    label: "Last Scan",
+                                    label: "上次扫描",
                                     value: date.formatted(.dateTime)
                                 )
                             }
@@ -181,7 +218,7 @@ struct SettingsView: View {
                         HStack(spacing: 8) {
                             ProgressView()
                                 .controlSize(.small)
-                            Text("Loading...")
+                            Text("加载中...")
                                 .foregroundStyle(.secondary)
                                 .font(.callout)
                         }
@@ -190,10 +227,10 @@ struct SettingsView: View {
                     }
                 }
 
-                glassSection("Maintenance") {
+                glassSection("维护") {
                     VStack(spacing: 12) {
                         HStack {
-                            Button("Rebuild Index") {
+                            Button("重建索引") {
                                 Task { await viewModel.rebuildIndex() }
                             }
                             .disabled(viewModel.isRebuilding)
@@ -206,7 +243,7 @@ struct SettingsView: View {
                             HStack(spacing: 8) {
                                 ProgressView()
                                     .controlSize(.small)
-                                Text("Rebuilding index...")
+                                Text("正在重建索引...")
                                     .font(.callout)
                                     .foregroundStyle(.secondary)
                             }
@@ -224,14 +261,14 @@ struct SettingsView: View {
         @Bindable var vm = viewModel
         return ScrollView {
             VStack(spacing: 16) {
-                glassSection("AI Assist") {
+                glassSection("AI 助手") {
                     VStack(spacing: 12) {
-                        Toggle("Enable AI Assist", isOn: Binding(
+                        Toggle("启用 AI 助手", isOn: Binding(
                             get: { viewModel.aiEnabled },
                             set: { newValue in Task { await viewModel.setAIEnabled(newValue) } }
                         ))
 
-                        Picker("Model", selection: Binding(
+                        Picker("模型", selection: Binding(
                             get: { viewModel.aiModel },
                             set: { newValue in Task { await viewModel.setAIModel(newValue) } }
                         )) {
@@ -243,8 +280,8 @@ struct SettingsView: View {
                     }
                 }
 
-                glassSection("API Key") {
-                    SecureField("API Key", text: Binding(
+                glassSection("API 密钥") {
+                    SecureField("API 密钥", text: Binding(
                         get: { viewModel.aiAPIKeyText },
                         set: { newValue in
                             viewModel.aiAPIKeyText = newValue
@@ -255,30 +292,30 @@ struct SettingsView: View {
                     .disabled(!viewModel.aiEnabled)
                 }
 
-                glassSection("Privacy") {
+                glassSection("隐私") {
                     VStack(spacing: 12) {
-                        Toggle("Send Metadata to Cloud", isOn: Binding(
+                        Toggle("发送元数据到云端", isOn: Binding(
                             get: { viewModel.aiSendMetadata },
                             set: { newValue in Task { await viewModel.setAISendMetadata(newValue) } }
                         ))
                         .disabled(!viewModel.aiEnabled)
 
-                        Toggle("Path Anonymization", isOn: Binding(
+                        Toggle("路径匿名化", isOn: Binding(
                             get: { viewModel.aiPathAnonymization },
                             set: { newValue in Task { await viewModel.setAIPathAnonymization(newValue) } }
                         ))
                     }
                 }
 
-                glassSection("Local Features") {
-                    Toggle("Local Vision Analysis", isOn: Binding(
+                glassSection("本地功能") {
+                    Toggle("本地视觉分析", isOn: Binding(
                         get: { viewModel.aiLocalVision },
                         set: { newValue in Task { await viewModel.setAILocalVision(newValue) } }
                     ))
                 }
 
-                glassSection("Diagnostics") {
-                    Button("Preview Data") {
+                glassSection("诊断") {
+                    Button("预览数据") {
                         Task {
                             await viewModel.loadAIPreview()
                             viewModel.aiPreviewVisible = true
@@ -296,7 +333,7 @@ struct SettingsView: View {
         )) {
             VStack(alignment: .leading, spacing: 16) {
                 HStack {
-                    Text("AI Data Preview")
+                    Text("AI 数据预览")
                         .font(.headline)
                     Spacer()
                     Button {
@@ -320,7 +357,7 @@ struct SettingsView: View {
 
                 HStack {
                     Spacer()
-                    Button("Close") {
+                    Button("关闭") {
                         viewModel.aiPreviewVisible = false
                     }
                     .keyboardShortcut(.cancelAction)
@@ -338,32 +375,57 @@ struct SettingsView: View {
         VStack(spacing: 20) {
             Spacer()
 
-            VStack(spacing: 12) {
-                Image(systemName: "magnifyingglass")
-                    .font(.system(size: 56, weight: .light))
-                    .foregroundStyle(
-                        LinearGradient(
-                            colors: [.teal, .blue],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
+            GlassEffectContainer(intensity: .clear, cornerRadius: 16, borderWidth: nil) {
+                VStack(spacing: 12) {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(
+                                LinearGradient(
+                                    colors: [GlowColors.teal, GlowColors.violet],
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                            .frame(width: 64, height: 64)
+                        Image(systemName: "magnifyingglass")
+                            .font(.system(size: 28, weight: .medium))
+                            .foregroundStyle(.white)
+                    }
+
+                    Text(Product.name)
+                        .font(.title)
+                        .fontWeight(.bold)
+
+                    Text("Version \(viewModel.version)")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+
+                    Text("macOS 快速文件搜索工具")
+                        .font(.body)
+                        .foregroundStyle(.tertiary)
+
+                    Rectangle()
+                        .fill(
+                            LinearGradient(
+                                colors: [GlowColors.teal, GlowColors.violet, GlowColors.coral, GlowColors.amber],
+                                startPoint: .leading,
+                                endPoint: .trailing
+                            )
                         )
-                    )
-                    .padding(.bottom, 4)
+                        .frame(height: 1)
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 4)
 
-                Text(Product.name)
-                    .font(.title)
-                    .fontWeight(.bold)
-
-                Text("Version \(viewModel.version)")
-                    .font(.subheadline)
+                    HStack(spacing: 16) {
+                        Link("GitHub", destination: URL(string: "https://github.com/nadav-cheung/DeepFinder")!)
+                        Link("问题反馈", destination: URL(string: "https://github.com/nadav-cheung/DeepFinder/issues")!)
+                        Link("文档", destination: URL(string: "https://github.com/nadav-cheung/DeepFinder#readme")!)
+                    }
+                    .font(.caption)
                     .foregroundStyle(.secondary)
-
-                Text("Fast file search for macOS")
-                    .font(.body)
-                    .foregroundStyle(.tertiary)
+                }
+                .padding(24)
             }
-            .padding(24)
-            .background(.quaternary.opacity(0.5), in: .rect(cornerRadius: 16))
 
             Spacer()
         }
@@ -389,7 +451,7 @@ struct SettingsView: View {
                 content()
             }
             .padding(16)
-            .background(.quaternary.opacity(0.6), in: .rect(cornerRadius: 12))
+            .background(.quaternary.opacity(0.4), in: .rect(cornerRadius: 12))
         }
     }
 

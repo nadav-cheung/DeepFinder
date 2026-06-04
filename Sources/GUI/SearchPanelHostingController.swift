@@ -47,6 +47,13 @@ public final class SearchPanelHostingController {
         self.viewModel = viewModel
     }
 
+    /// Wires an IndexHealthMonitor to the search panel's view model.
+    ///
+    /// Called by AppDelegate after creating both the search panel and the monitor.
+    func setIndexHealthMonitor(_ monitor: IndexHealthMonitor) {
+        viewModel.indexHealthMonitor = monitor
+    }
+
     // MARK: - Panel Lifecycle
 
     /// Show the search panel, centering on the screen where the mouse is located.

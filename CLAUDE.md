@@ -10,7 +10,7 @@ DeepFinder — a macOS file search app rivaling Windows Everything. **v1.0 = CLI
 
 **产品名配置**：`PRODUCT.toml` 是产品名的唯一来源。代码中通过 `Product` enum（`Sources/Index/ProductConfig.swift`）引用。改产品名只改 `PRODUCT.toml` + `ProductConfig.swift`，不散落到其他文件。文档中用显示名 "DeepFinder" 即可。
 
-**Status**: `v3.0.0` ✅ **完成** — CLI + daemon + GUI + AI semantic search + media metadata + services. Full roadmap v0.1 through v3.0 complete. v3.2 (Search UI refinement) in progress. Spec: `docs/superpowers/specs/`. OSS readiness assessment: `docs/superpowers/plans/2026-05-31-oss-readiness-assessment.md`.
+**Status**: `v3.2.0` ✅ **完成** — CLI + daemon + GUI + AI semantic search + media metadata + services. Full roadmap v0.1 through v3.2 complete. Spec: `docs/superpowers/specs/`. OSS readiness assessment: `docs/superpowers/plans/2026-05-31-oss-readiness-assessment.md`.
 
 Zero external dependencies — pure Swift + Apple frameworks only (Foundation, CoreServices, Carbon, SQLite3). CLI via Darwin.readline + ANSI escape codes.
 
@@ -39,10 +39,12 @@ swift run deepfinder                     # CLI interactive REPL (after v0.6)
 | `v2.1` | 媒体元数据 | ✅ 完成并打标签 |
 | `v2.2` | 服务集成 | ✅ 完成并打标签 |
 | **`v3.0`** | **AI 语义** | ✅ 完成并打标签 |
+| `v3.1` | Search UI refinement | ✅ 完成并打标签 |
+| `v3.2` | Search UI refinement | ✅ 完成并打标签 |
 
 **Workflow**: Each version develops on its `dev/vX.Y` branch. When deliverables pass all tests and review, merge to `main` and tag `vX.Y.Z`. Next version branches from `main`.
 
-**Version file**: `VERSION` at repo root — single line, e.g. `3.0.0`. Bump on milestone completion.
+**Version file**: `VERSION` at repo root — single line, e.g. `3.2.0`. Bump on milestone completion.
 
 ## Development Workflow
 
@@ -191,15 +193,15 @@ Sources/
   CLIEntry/                  # CLI executable entry point (main.swift)
   DaemonEntry/               # Daemon executable entry point (main.swift)
   AppEntry/                  # GUI app executable entry point (main.swift)
-  Index/                      # FileRecord, Trie, FullSubstringMap, TrigramIndex, PinyinIndex, InMemoryIndex
-  Search/                     # SearchProvider, SearchCoordinator, QueryTerm, SearchTypes, SearchResult, FilterPipeline, SearchSorter, ContentScanner
-  FS/                         # FileSystemEventStream, FileScanner, FSEventWatcher, MockEventStream, VolumeManager
-  Persist/                    # IndexPersistence (SQLite WAL), IndexRecovery
-  Daemon/                     # DaemonMain, IPCServer, IPCProtocol, IPCClient, ConfigStore, LaunchAgent
-  CLI/                        # CLIMain, ArgParser, SingleShot, REPL, TerminalFormatter, ConfigCommands, DaemonCommands, InstallCommands
-  GUI/                        # SearchPanelView, SearchBarView, ResultsListView, SearchViewModel, AppDelegate, GlobalHotkey, IntelligenceGlow, GlassEffectContainer, OnboardingView, QuickLookPreview, SettingsView, StatusBarController, SpeechOverlayView
-  AI/                         # AIConfig, AIContext, AIModelProvider, AnthropicProvider, ClipboardSearch, CloudEmbeddingProvider, CrossLanguageSearch, DeepSeekProvider, EmbeddingProvider, FileMetadataSummary, GeminiProvider, HTTPClient, ImageSimilaritySearch, KeychainStore, LocalSpeechProvider, LocalVisionProvider, MatchExplainer, NLEmbeddingProvider, NLOperations, NLSearchTranslator, PromptLoader, Prompts/, ProviderRegistry, QwenProvider, ResultSummarizer, SearchAdvisor, SemanticGrouper, SpeechAuthorization, VectorStore, VisionTaggingCoordinator
-  Media/                      # ImageMetadataExtractor, AudioMetadataExtractor, VideoMetadataExtractor, PDFMetadataExtractor, MediaMetadataIndex
+  Index/                      # FileRecord, Trie, FullSubstringMap, TrigramIndex, PinyinIndex, InMemoryIndex, Constants, ExtractedMetadata, ProductConfig
+  Search/                     # SearchProvider, SearchCoordinator, QueryTerm, SearchTypes, SearchFilter, FilterPipeline, SearchSorter, ContentScanner, ContentSearchProvider, DuplicateFinder, FileHasher, FileIndexProvider, AutocompleteProvider, PatternMatcher, SearchBookmark
+  FS/                         # FileSystemEventStream, FileScanner, FSEventWatcher, FSEventStreamImpl, MockEventStream, VolumeManager
+  Persist/                    # IndexPersistence (SQLite WAL), PathEncryption, SchemaMigrator, SecretsStore
+  Daemon/                     # DaemonMain, IPCServer, IPCProtocol, IPCClient, IPCFraming, ConfigStore, LaunchAgent
+  CLI/                        # CLIMain, ArgParser, SingleShot, REPL, REPLCommands, REPLHistory, TerminalFormatter, CLIOutputWriter, ConfigCommands, DaemonCommands, InstallCommands, FuzzyCorrection, ServeMode, IPCClientProtocol
+  GUI/                        # SearchPanelView, SearchPanelHostingController, ResultsListView, ResultsListState, ResultRowView, ResultCategory, ResultContextMenu, ResultDragView, SearchViewModel, SearchFilterBar, SearchHistory, AppDelegate, GlobalHotkey, HotkeyPermissionHelper, IntelligenceGlow, GlassEffectContainer, OnboardingView, QuickLookPreview, SettingsView, SettingsViewModel, SettingsProviders, SettingsWindow, StatusBarController, SpeechOverlayView, AccessHistory, ActionPanelView, EmptyStateView, FileDetailView, KeyboardHintBar, ToastView, WorkspaceProtocol
+  AI/                         # AIConfig, AIContext, AIModelProvider, AnthropicProvider, ClipboardSearch, CloudEmbeddingProvider, CrossLanguageSearch, DeepSeekProvider, EmbeddingProvider, FileMetadataSummary, GeminiProvider, HTTPClient, ImageSimilaritySearch, LocalSpeechProvider, LocalVisionProvider, MatchExplainer, NLEmbeddingProvider, NLOperations, NLSearchTranslator, PromptLoader, Prompts/, ProviderRegistry, QwenProvider, ResultSummarizer, SearchAdvisor, SemanticGrouper, SpeechAuthorization, VectorStore, VisionTaggingCoordinator
+  Media/                      # MetadataExtractor, ImageMetadataExtractor, AudioMetadataExtractor, VideoMetadataExtractor, PDFMetadataExtractor
   Services/                   # HTTPSearchService, URLSchemeHandler, SearchIntent, SearchScriptCommand
 Tests/
   IndexTests/ SearchTests/ FSTests/ PersistTests/ DaemonTests/ CLITests/ GUITests/ AITests/ MediaTests/ ServicesTests/
@@ -207,7 +209,7 @@ docs/
   superpowers/specs/          # design/ (architecture), ux/ (UX reqs), reqs/ (per-version REQ files, index at reqs/00-overview.md)
   superpowers/plans/          # implementation plans, OSS readiness assessment
 Package.swift                 # Single monolithic DeepFinder library target (split into sub-libraries planned)
-VERSION                       # Current: 3.0.0
+VERSION                       # Current: 3.2.0
 ```
 
 ## Architecture
@@ -229,6 +231,7 @@ Index layer has zero UI/CLI dependencies and can be tested in isolation.
 - `DeepFinder` (library) — all modules at path `Sources/` (excludes CLIEntry/, DaemonEntry/)
 - `DeepFinderCLI` (executable) — CLI entry point, depends on DeepFinder, path `Sources/CLIEntry/`
 - `DeepFinderDaemon` (executable) — daemon entry point, depends on DeepFinder, path `Sources/DaemonEntry/`
+- `DeepFinderApp` (executable) — GUI app entry point, depends on DeepFinder, path `Sources/AppEntry/`
 - `DeepFinderTests` (test target) — depends on `DeepFinder`, path `Tests/`
 
 **Concurrency model:**

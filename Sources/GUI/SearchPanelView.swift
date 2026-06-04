@@ -69,10 +69,30 @@ struct SearchPanelView: View {
         ) {
             VStack(spacing: 0) {
                 searchBarArea
-                Divider()
+                Rectangle()
+                    .fill(.separator.opacity(0.3))
+                    .frame(height: 0.5)
+                    .padding(.horizontal, 8)
                 // REQ-3.2-35: category filter bar
                 SearchFilterBar(activeFilters: $activeFilters)
-                Divider()
+                Rectangle()
+                    .fill(.separator.opacity(0.3))
+                    .frame(height: 0.5)
+                    .padding(.horizontal, 8)
+                // Index health banner (degraded state)
+                if let monitor = viewModel.indexHealthMonitor,
+                   case .degraded = monitor.healthState {
+                    IndexHealthBanner(
+                        healthState: monitor.healthState,
+                        onOpenSettings: { NotificationCenter.default.post(name: .showSettings, object: nil) }
+                    )
+                }
+
+                // Index building progress (indexing state)
+                if let monitor = viewModel.indexHealthMonitor,
+                   case .indexing(let filesIndexed) = monitor.healthState {
+                    IndexBuildingProgressView(filesIndexed: filesIndexed)
+                }
                 contentArea
             }
             .frame(minWidth: 480, maxWidth: 800)
@@ -308,7 +328,19 @@ struct SearchPanelView: View {
             // REQ-3.2-06: keyboard hints at top.
             KeyboardHintBar()
 
-            Divider()
+            // Feature discovery tip (rotates on each panel open)
+            let undismissedTips = FeatureTip.undismissed
+            if !undismissedTips.isEmpty {
+                let tip = undismissedTips[placeholderIndex % undismissedTips.count]
+                FeatureDiscoveryTipCard(tip: tip) {
+                    // Force re-read of undismissed tips
+                    viewModel.searchText = viewModel.searchText
+                }
+            }
+
+            Rectangle()
+                .fill(.separator.opacity(0.3))
+                .frame(height: 0.5)
                 .padding(.horizontal, 12)
 
             // REQ-3.2-02: search history list.
@@ -423,7 +455,12 @@ struct SearchPanelView: View {
     }
 
     private var noResultsView: some View {
-        EmptyStateView(query: viewModel.searchText, hasAIEnabled: true)
+        EmptyStateView(
+            query: viewModel.searchText,
+            hasAIEnabled: true,
+            fdaGranted: viewModel.fdaGranted,
+            onOpenSettings: { NotificationCenter.default.post(name: .showSettings, object: nil) }
+        )
     }
 
     private var daemonDisconnectedView: some View {
@@ -433,15 +470,15 @@ struct SearchPanelView: View {
                 .foregroundStyle(.orange)
 
             VStack(spacing: 4) {
-                Text("Daemon not connected")
+                Text("搜索服务未连接")
                     .font(.system(size: 14, weight: .semibold))
-                Text("The search daemon is not running. Start it from the menu bar or wait for it to auto-start.")
+                Text("搜索服务未运行，请从菜单栏启动或等待自动启动。")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
             }
 
-            Button("Retry") {
+            Button("重试") {
                 Task { await viewModel.search() }
             }
             .buttonStyle(.borderedProminent)
@@ -458,7 +495,7 @@ struct SearchPanelView: View {
                 .foregroundStyle(.red)
 
             VStack(spacing: 4) {
-                Text("Search Error")
+                Text("搜索出错")
                     .font(.system(size: 14, weight: .semibold))
                 Text(message)
                     .font(.system(size: 12))
@@ -466,7 +503,7 @@ struct SearchPanelView: View {
                     .multilineTextAlignment(.center)
             }
 
-            Button("Retry") {
+            Button("重试") {
                 Task { await viewModel.search() }
             }
             .buttonStyle(.borderedProminent)

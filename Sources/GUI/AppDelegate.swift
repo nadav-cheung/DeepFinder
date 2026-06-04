@@ -108,6 +108,9 @@ public final class DeepFinderAppDelegate: NSObject, NSApplicationDelegate {
     /// Daemon spawner for auto-start on launch.
     private var daemonSpawner: (any DaemonSpawner)?
 
+    /// Index health monitor for tracking daemon index status.
+    private var indexHealthMonitor: IndexHealthMonitor?
+
     // MARK: - Init
 
     /// Create the app delegate with the given configuration.
@@ -147,6 +150,13 @@ public final class DeepFinderAppDelegate: NSObject, NSApplicationDelegate {
 
         // Create search panel controller.
         searchPanelController = configuration.searchPanelFactory()
+
+        // Create index health monitor and wire to search panel.
+        let ipcClientForMonitor = IPCClient(socketPath: Product.socketPath)
+        let monitor = IndexHealthMonitor(ipcClient: ipcClientForMonitor)
+        self.indexHealthMonitor = monitor
+        monitor.startPolling()
+        searchPanelController?.setIndexHealthMonitor(monitor)
 
         // Create status bar controller with wired actions.
         statusBarController = configuration.statusBarControllerFactory(
@@ -192,6 +202,10 @@ public final class DeepFinderAppDelegate: NSObject, NSApplicationDelegate {
 
     public func applicationWillTerminate(_ notification: Notification) {
         logger.info("applicationWillTerminate — cleaning up")
+
+        // Stop index health monitoring.
+        indexHealthMonitor?.stopPolling()
+        indexHealthMonitor = nil
 
         // Unregister global hotkey.
         globalHotkey?.unregister()

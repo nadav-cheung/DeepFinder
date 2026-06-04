@@ -55,10 +55,10 @@ enum IndexStatusBadge: String, Sendable, Equatable {
     /// Tooltip text for the status bar item.
     var tooltip: String {
         switch self {
-        case .idle: "\(Product.name) — Idle"
-        case .indexing: "\(Product.name) — Indexing..."
-        case .live: "\(Product.name) — Ready"
-        case .error: "\(Product.name) — Index Error"
+        case .idle: "\(Product.name) — 空闲"
+        case .indexing: "\(Product.name) — 正在索引..."
+        case .live: "\(Product.name) — 就绪"
+        case .error: "\(Product.name) — 索引错误"
         }
     }
 }
@@ -208,7 +208,7 @@ public final class StatusBarController: NSObject, StatusBarControllerActions {
         menu.addItem(searchItem)
 
         let settingsItem = NSMenuItem(
-            title: "Settings...",
+            title: "设置...",
             action: #selector(contextSettingsClicked),
             keyEquivalent: ","
         )
@@ -225,10 +225,16 @@ public final class StatusBarController: NSObject, StatusBarControllerActions {
         updateItem.target = self
         menu.addItem(updateItem)
 
+        if indexStatus == .indexing {
+            let indexingItem = NSMenuItem(title: "正在索引...", action: nil, keyEquivalent: "")
+            indexingItem.isEnabled = false
+            menu.addItem(indexingItem)
+        }
+
         menu.addItem(NSMenuItem.separator())
 
         let quitItem = NSMenuItem(
-            title: "Quit \(Product.name)",
+            title: "退出 \(Product.name)",
             action: #selector(contextQuitClicked),
             keyEquivalent: "q"
         )

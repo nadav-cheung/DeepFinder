@@ -65,6 +65,12 @@ final class SearchViewModel: ObservableObject {
     private let ipcClient: IPCClientProtocol
     let workspace: WorkspaceProtocol
 
+    /// Index health monitor for displaying banners and progress in the search panel.
+    weak var indexHealthMonitor: IndexHealthMonitor?
+
+    /// Whether Full Disk Access is currently granted.
+    var fdaGranted: Bool { PermissionChecker.isFDAGranted() }
+
     // MARK: - Init
 
     init(
