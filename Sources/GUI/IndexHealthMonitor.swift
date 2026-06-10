@@ -56,8 +56,11 @@ final class IndexHealthMonitor {
     /// IPC client for querying the daemon. Optional — if nil, polling yields `.unknown`.
     private let ipcClient: (any IPCClientProtocol)?
 
-    /// Polling interval in seconds.
-    private let pollingInterval: TimeInterval
+    /// Polling interval while indexing (active progress updates).
+    private static let activeInterval: TimeInterval = 5
+
+    /// Polling interval when live or degraded (reduced IPC traffic).
+    private static let idleInterval: TimeInterval = 30
 
     /// Task holding the active polling loop.
     /// `nonisolated(unsafe)` because `Task.cancel()` is safe to call from any context
@@ -70,24 +73,26 @@ final class IndexHealthMonitor {
     ///
     /// - Parameters:
     ///   - ipcClient: IPC client for daemon queries. Pass `nil` in previews/tests.
-    ///   - pollingInterval: Interval between status checks. Defaults to 5 seconds.
+    ///   - pollingInterval: Ignored — kept for backward compatibility. Polling is adaptive.
     init(
         ipcClient: (any IPCClientProtocol)?,
         pollingInterval: TimeInterval = 5
     ) {
         self.ipcClient = ipcClient
-        self.pollingInterval = pollingInterval
     }
 
     // MARK: - Lifecycle
 
     /// Starts the polling loop. Safe to call multiple times — stops previous loop first.
+    ///
+    /// Uses adaptive intervals: 5s while indexing, 30s when live or degraded.
     func startPolling() {
         stopPolling()
         pollingTask = Task { [weak self] in
             while !Task.isCancelled {
                 await self?.refreshState()
-                try? await Task.sleep(for: .seconds(self?.pollingInterval ?? 5))
+                let interval = self?.currentInterval ?? Self.activeInterval
+                try? await Task.sleep(for: .seconds(interval))
             }
         }
     }
@@ -104,6 +109,16 @@ final class IndexHealthMonitor {
     }
 
     // MARK: - Private
+
+    /// Adaptive polling interval based on current health state.
+    private var currentInterval: TimeInterval {
+        switch healthState {
+        case .indexing:
+            return Self.activeInterval
+        default:
+            return Self.idleInterval
+        }
+    }
 
     /// Queries the daemon and updates `healthState`.
     private func refreshState() async {

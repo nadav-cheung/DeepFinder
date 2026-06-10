@@ -5,6 +5,12 @@ import SwiftUI
 /// Settings window content with four tabs: General, Index, AI, About.
 struct SettingsView: View {
 
+    private enum Design {
+        static let privacyBadgeFontSize: CGFloat = 10
+        static let privacyBadgeHPadding: CGFloat = 6
+        static let privacyBadgeVPadding: CGFloat = 2
+    }
+
     let viewModel: SettingsViewModel
 
     var body: some View {
@@ -36,6 +42,7 @@ struct SettingsView: View {
                 }
                 .tag(SettingsTab.about)
         }
+        .tabViewStyle(.automatic)
         .frame(minWidth: 520, idealWidth: 560, minHeight: 400, idealHeight: 480)
         .task {
             await viewModel.loadConfig()
@@ -105,25 +112,9 @@ struct SettingsView: View {
                                 .padding(.vertical, 8)
                         } else {
                             ForEach(viewModel.excludedPaths, id: \.self) { path in
-                                HStack(spacing: 8) {
-                                    Image(systemName: "folder.badge.minus")
-                                        .foregroundStyle(.secondary)
-                                        .font(.callout)
-                                    Text(path)
-                                        .font(.system(.body, design: .monospaced))
-                                        .lineLimit(1)
-                                        .truncationMode(.middle)
-                                    Spacer()
-                                    Button {
-                                        Task { await viewModel.removePath(path) }
-                                    } label: {
-                                        Image(systemName: "minus.circle.fill")
-                                            .foregroundStyle(.red.opacity(0.8))
-                                    }
-                                    .buttonStyle(.borderless)
-                                    .accessibilityLabel("Remove \(path)")
+                                ExcludedPathRow(path: path) {
+                                    Task { await viewModel.removePath(path) }
                                 }
-                                .padding(.vertical, 2)
                             }
                         }
 
@@ -143,6 +134,22 @@ struct SettingsView: View {
                             .disabled(viewModel.newPathText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                             .buttonStyle(.borderedProminent)
                             .controlSize(.small)
+                        }
+
+                        if !viewModel.newPathText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("将排除匹配此路径的所有文件")
+                                    .font(DeepFinderTypography.metadata(size: 11))
+                                    .foregroundStyle(.tertiary)
+                                Text(viewModel.newPathText)
+                                    .font(DeepFinderTypography.metadata(size: 11))
+                                    .foregroundStyle(GlowColors.teal)
+                                    .lineLimit(1)
+                                    .truncationMode(.middle)
+                            }
+                            .padding(.leading, 2)
+                            .accessibilityElement(children: .combine)
+                            .accessibilityLabel("路径匹配预览: \(viewModel.newPathText)")
                         }
                     }
                 }
@@ -261,12 +268,26 @@ struct SettingsView: View {
         @Bindable var vm = viewModel
         return ScrollView {
             VStack(spacing: 16) {
+                // Privacy notice
+                Text("🔒 所有 AI 功能默认关闭。标注为「本地」的功能完全在设备上运行，数据不会离开你的 Mac。")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, 4)
+
                 glassSection("AI 助手") {
                     VStack(spacing: 12) {
-                        Toggle("启用 AI 助手", isOn: Binding(
-                            get: { viewModel.aiEnabled },
-                            set: { newValue in Task { await viewModel.setAIEnabled(newValue) } }
-                        ))
+                        privacyRail(color: GlowColors.amber.opacity(0.3)) {
+                            Toggle(isOn: Binding(
+                                get: { viewModel.aiEnabled },
+                                set: { newValue in Task { await viewModel.setAIEnabled(newValue) } }
+                            )) {
+                                HStack(spacing: 6) {
+                                    Text("启用 AI 助手")
+                                    cloudBadge
+                                }
+                            }
+                        }
 
                         Picker("模型", selection: Binding(
                             get: { viewModel.aiModel },
@@ -281,24 +302,36 @@ struct SettingsView: View {
                 }
 
                 glassSection("API 密钥") {
-                    SecureField("API 密钥", text: Binding(
-                        get: { viewModel.aiAPIKeyText },
-                        set: { newValue in
-                            viewModel.aiAPIKeyText = newValue
-                            Task { await viewModel.setAIKey(newValue) }
+                    privacyRail(color: GlowColors.amber.opacity(0.3)) {
+                        HStack(spacing: 6) {
+                            SecureField("API 密钥", text: Binding(
+                                get: { viewModel.aiAPIKeyText },
+                                set: { newValue in
+                                    viewModel.aiAPIKeyText = newValue
+                                    Task { await viewModel.setAIKey(newValue) }
+                                }
+                            ))
+                            .textFieldStyle(.roundedBorder)
+                            .disabled(!viewModel.aiEnabled)
+                            cloudBadge
                         }
-                    ))
-                    .textFieldStyle(.roundedBorder)
-                    .disabled(!viewModel.aiEnabled)
+                    }
                 }
 
                 glassSection("隐私") {
                     VStack(spacing: 12) {
-                        Toggle("发送元数据到云端", isOn: Binding(
-                            get: { viewModel.aiSendMetadata },
-                            set: { newValue in Task { await viewModel.setAISendMetadata(newValue) } }
-                        ))
-                        .disabled(!viewModel.aiEnabled)
+                        privacyRail(color: GlowColors.amber.opacity(0.3)) {
+                            Toggle(isOn: Binding(
+                                get: { viewModel.aiSendMetadata },
+                                set: { newValue in Task { await viewModel.setAISendMetadata(newValue) } }
+                            )) {
+                                HStack(spacing: 6) {
+                                    Text("发送元数据到云端")
+                                    cloudBadge
+                                }
+                            }
+                            .disabled(!viewModel.aiEnabled)
+                        }
 
                         Toggle("路径匿名化", isOn: Binding(
                             get: { viewModel.aiPathAnonymization },
@@ -308,10 +341,17 @@ struct SettingsView: View {
                 }
 
                 glassSection("本地功能") {
-                    Toggle("本地视觉分析", isOn: Binding(
-                        get: { viewModel.aiLocalVision },
-                        set: { newValue in Task { await viewModel.setAILocalVision(newValue) } }
-                    ))
+                    privacyRail(color: GlowColors.teal.opacity(0.3)) {
+                        Toggle(isOn: Binding(
+                            get: { viewModel.aiLocalVision },
+                            set: { newValue in Task { await viewModel.setAILocalVision(newValue) } }
+                        )) {
+                            HStack(spacing: 6) {
+                                Text("本地视觉分析")
+                                localBadge
+                            }
+                        }
+                    }
                 }
 
                 glassSection("诊断") {
@@ -378,7 +418,7 @@ struct SettingsView: View {
             GlassEffectContainer(intensity: .clear, cornerRadius: 16, borderWidth: nil) {
                 VStack(spacing: 12) {
                     ZStack {
-                        RoundedRectangle(cornerRadius: 12)
+                        RoundedRectangle(cornerRadius: 14)
                             .fill(
                                 LinearGradient(
                                     colors: [GlowColors.teal, GlowColors.violet],
@@ -386,22 +426,22 @@ struct SettingsView: View {
                                     endPoint: .bottomTrailing
                                 )
                             )
-                            .frame(width: 64, height: 64)
+                            .frame(width: 72, height: 72)
+                            .shadow(color: GlowColors.teal.opacity(0.2), radius: 20, y: 4)
                         Image(systemName: "magnifyingglass")
-                            .font(.system(size: 28, weight: .medium))
+                            .font(.system(size: 30, weight: .medium))
                             .foregroundStyle(.white)
                     }
 
                     Text(Product.name)
-                        .font(.title)
-                        .fontWeight(.bold)
+                        .font(DeepFinderTypography.heading(size: 22))
 
                     Text("Version \(viewModel.version)")
-                        .font(.subheadline)
+                        .font(DeepFinderTypography.metadata(size: 13))
                         .foregroundStyle(.secondary)
 
                     Text("macOS 快速文件搜索工具")
-                        .font(.body)
+                        .font(DeepFinderTypography.body(size: 13))
                         .foregroundStyle(.tertiary)
 
                     Rectangle()
@@ -412,20 +452,30 @@ struct SettingsView: View {
                                 endPoint: .trailing
                             )
                         )
-                        .frame(height: 1)
+                        .frame(height: 1.5)
+                        .shadow(color: GlowColors.violet.opacity(0.15), radius: 4, y: 1)
                         .padding(.horizontal, 16)
                         .padding(.vertical, 4)
 
                     HStack(spacing: 16) {
-                        Link("GitHub", destination: URL(string: "https://github.com/nadav-cheung/DeepFinder")!)
-                        Link("问题反馈", destination: URL(string: "https://github.com/nadav-cheung/DeepFinder/issues")!)
-                        Link("文档", destination: URL(string: "https://github.com/nadav-cheung/DeepFinder#readme")!)
+                        settingsLink("GitHub", url: "https://github.com/nadav-cheung/DeepFinder")
+                        settingsLink("问题反馈", url: "https://github.com/nadav-cheung/DeepFinder/issues")
+                        settingsLink("文档", url: "https://github.com/nadav-cheung/DeepFinder#readme")
                     }
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
                 }
                 .padding(24)
             }
+
+            // Share / recommend section
+            VStack(alignment: .leading, spacing: 12) {
+                Text("推荐给朋友")
+                    .font(DeepFinderTypography.subheading(size: 14))
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 4)
+
+                SharePromptView()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             Spacer()
         }
@@ -442,16 +492,19 @@ struct SettingsView: View {
     ) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(title)
-                .font(.headline)
+                .font(DeepFinderTypography.subheading(size: 13))
                 .foregroundStyle(.secondary)
-                .textCase(.uppercase)
                 .padding(.leading, 4)
 
             VStack(alignment: .leading, spacing: 6) {
                 content()
             }
-            .padding(16)
+            .padding(18)
             .background(.quaternary.opacity(0.4), in: .rect(cornerRadius: 12))
+            .overlay(
+                RoundedRectangle(cornerRadius: 12)
+                    .stroke(.separator.opacity(0.3), lineWidth: 0.5)
+            )
         }
     }
 
@@ -481,5 +534,114 @@ struct SettingsView: View {
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(color.opacity(0.12), in: Capsule())
+            .animation(.spring(duration: 0.3, bounce: 0.15), value: color.description)
+    }
+
+    // MARK: - Privacy Rail Helper
+
+    /// Wraps content in a row with a thin colored left border (privacy rail).
+    private func privacyRail<Content: View>(
+        color: Color,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        HStack(spacing: 0) {
+            RoundedRectangle(cornerRadius: 1.5)
+                .fill(color)
+                .frame(width: 3)
+                .shadow(color: color.opacity(0.2), radius: 3)
+            content()
+                .padding(.leading, 10)
+        }
+    }
+
+    // MARK: - Settings Link Helper
+
+    /// A styled link for the About tab with hover brightening.
+    private func settingsLink(_ title: String, url: String) -> some View {
+        SettingsLinkRow(title: title, url: url)
+    }
+
+    // MARK: - Privacy Badge Helpers
+
+    /// Badge indicating on-device (local) processing.
+    private var localBadge: some View {
+        Text("本地")
+            .font(.system(size: Design.privacyBadgeFontSize, weight: .medium))
+            .foregroundStyle(GlowColors.teal)
+            .padding(.horizontal, Design.privacyBadgeHPadding)
+            .padding(.vertical, Design.privacyBadgeVPadding)
+            .background(GlowColors.teal.opacity(0.12), in: Capsule())
+            .accessibilityLabel("本地处理")
+    }
+
+    /// Badge indicating cloud-based processing.
+    private var cloudBadge: some View {
+        Text("云端")
+            .font(.system(size: Design.privacyBadgeFontSize, weight: .medium))
+            .foregroundStyle(GlowColors.amber)
+            .padding(.horizontal, Design.privacyBadgeHPadding)
+            .padding(.vertical, Design.privacyBadgeVPadding)
+            .background(GlowColors.amber.opacity(0.12), in: Capsule())
+            .accessibilityLabel("云端处理")
+    }
+}
+
+// MARK: - Excluded Path Row
+
+/// A single excluded path row with hover background.
+private struct ExcludedPathRow: View {
+    let path: String
+    let onRemove: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "folder.badge.minus")
+                .foregroundStyle(.secondary)
+                .font(.callout)
+            Text(path)
+                .font(.system(.body, design: .monospaced))
+                .lineLimit(1)
+                .truncationMode(.middle)
+            Spacer()
+            Button(action: onRemove) {
+                Image(systemName: "minus.circle.fill")
+                    .foregroundStyle(.red.opacity(0.8))
+            }
+            .buttonStyle(.borderless)
+            .accessibilityLabel("Remove \(path)")
+        }
+        .padding(.vertical, 4)
+        .padding(.horizontal, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 6)
+                .fill(.quaternary.opacity(isHovered ? 0.3 : 0))
+        )
+        .animation(.spring(duration: 0.25, bounce: 0.1), value: isHovered)
+        .onHover { hovering in
+            isHovered = hovering
+        }
+    }
+}
+
+// MARK: - Settings Link Row
+
+/// A styled link with underline on hover for the About tab.
+private struct SettingsLinkRow: View {
+    let title: String
+    let url: String
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Link(title, destination: URL(string: url)!)
+            .font(DeepFinderTypography.badge(size: 12))
+            .foregroundStyle(.secondary)
+            .underline(isHovered)
+            .animation(.easeInOut(duration: 0.15), value: isHovered)
+            .onHover { hovering in
+                isHovered = hovering
+            }
     }
 }

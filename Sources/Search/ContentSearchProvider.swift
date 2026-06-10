@@ -86,6 +86,9 @@ actor ContentSearchProvider: SearchProvider {
             // REQ-1.4-04: stop scanning when I/O budget is exhausted
             if totalBytesRead >= ioBudget { break }
 
+            // Skip files exceeding the per-file size limit
+            guard record.size <= Constants.ContentScanner.maxFileSize else { continue }
+
             let matches = ContentScanner.scan(
                 fileAtPath: record.path,
                 query: query.normalizedQuery,

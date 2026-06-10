@@ -56,15 +56,7 @@ struct GeminiProvider: AIModelProvider, Sendable {
                     request.setValue(apiKey, forHTTPHeaderField: "x-goog-api-key")
                     request.httpBody = body
 
-                    let response = try await httpClient.perform(request)
-                    guard response.statusCode == 200 else {
-                        if response.statusCode == 429 {
-                            continuation.finish(throwing: AIError.rateLimited)
-                        } else {
-                            continuation.finish(throwing: AIError.networkError("HTTP \(response.statusCode)"))
-                        }
-                        return
-                    }
+                    let response = try await performWithRetry(request: request)
                     parseSSEStream(response.data, continuation: continuation)
                     continuation.finish()
                 } catch let error as AIError {
@@ -91,6 +83,55 @@ struct GeminiProvider: AIModelProvider, Sendable {
     }
 
     // MARK: - Private
+
+    /// Perform an HTTP request with exponential backoff retry.
+    ///
+    /// Retry strategy (max 3 attempts):
+    /// - HTTP 200-399: return immediately
+    /// - HTTP 429: sleep for 2^attempt seconds (with +/-25% jitter), then retry
+    /// - Transport error: sleep for 2^attempt seconds, then retry
+    /// - Other HTTP errors: throw immediately (no retry)
+    /// - After 3 failed attempts for 429/transport: throw `AIError.rateLimited`
+    ///   or `AIError.networkError` respectively
+    private func performWithRetry(request: URLRequest) async throws -> HTTPClientResponse {
+        var lastError: Error = AIError.networkError("Unknown")
+        let maxAttempts = Constants.AI.maxRetryAttempts
+        for attempt in 0..<maxAttempts {
+            do {
+                let response = try await httpClient.perform(request)
+                if response.statusCode == 429 {
+                    lastError = AIError.rateLimited
+                    if attempt < maxAttempts - 1 {
+                        let delay = Double(1 << attempt) * (0.75 + Double.random(in: 0...0.5))
+                        try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                        continue
+                    }
+                    throw AIError.rateLimited
+                }
+                if response.statusCode >= 400 {
+                    throw AIError.networkError("HTTP \(response.statusCode)")
+                }
+                return response
+            } catch let error as AIError {
+                if error == .rateLimited {
+                    lastError = error
+                    if attempt < maxAttempts - 1 {
+                        continue
+                    }
+                }
+                throw error
+            } catch {
+                lastError = error
+                if attempt < maxAttempts - 1 {
+                    let delay = Double(1 << attempt)
+                    try await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+                    continue
+                }
+                throw error
+            }
+        }
+        throw lastError
+    }
 
     private func buildRequestBody(prompt: String, context: AIContext?) throws -> Data {
         var parts: [[String: Any]] = [["text": prompt]]

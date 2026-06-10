@@ -60,6 +60,10 @@ struct FilterPipeline: Sendable {
                 if let filter = SearchFilter.parseDateFilter(value, referenceDate: Date()) {
                     parsedFilters.append(filter)
                 }
+            case "dc":
+                if let filter = SearchFilter.parseDateCreatedFilter(value, referenceDate: Date()) {
+                    parsedFilters.append(filter)
+                }
             case "depth":
                 if let filter = parseDepthFilter(value) {
                     parsedFilters.append(filter)

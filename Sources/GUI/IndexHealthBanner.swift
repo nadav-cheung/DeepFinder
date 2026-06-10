@@ -17,6 +17,7 @@ struct IndexHealthBanner: View {
     var onOpenSettings: () -> Void = {}
 
     @State private var isDismissed: Bool = false
+    @State private var dismissHovering: Bool = false
 
     // MARK: - Design Tokens
 
@@ -31,7 +32,7 @@ struct IndexHealthBanner: View {
     var body: some View {
         if !isDismissed, case .degraded(let reason) = healthState {
             bannerContent(reason: reason)
-                .transition(.opacity.combined(with: .move(edge: .top)))
+                .transition(.opacity.combined(with: .move(edge: .top)).animation(.spring(duration: 0.3, bounce: 0.15)))
         }
     }
 
@@ -39,6 +40,12 @@ struct IndexHealthBanner: View {
 
     private func bannerContent(reason: DegradationReason) -> some View {
         HStack(spacing: 8) {
+            // Left accent bar
+            RoundedRectangle(cornerRadius: 2)
+                .fill(.orange)
+                .frame(width: 3)
+                .padding(.vertical, 2)
+
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: Design.iconSize))
                 .foregroundStyle(.orange)
@@ -58,17 +65,7 @@ struct IndexHealthBanner: View {
             .buttonStyle(.plain)
             .foregroundStyle(Color.accentColor)
 
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    isDismissed = true
-                }
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("关闭警告")
+            dismissButton
         }
         .padding(.horizontal, Design.hPadding)
         .padding(.vertical, 8)
@@ -76,6 +73,32 @@ struct IndexHealthBanner: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityMessage(for: reason))
         .accessibilityHint("双击打开设置")
+    }
+
+    // MARK: - Dismiss Button
+
+    private var dismissButton: some View {
+        Button {
+            withAnimation(.spring(duration: 0.3, bounce: 0.15)) {
+                isDismissed = true
+            }
+        } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 10))
+                .foregroundStyle(dismissHovering ? .secondary : .tertiary)
+                .padding(4)
+                .background(
+                    Circle()
+                        .fill(Color.primary.opacity(dismissHovering ? 0.08 : 0))
+                )
+        }
+        .buttonStyle(.plain)
+        .onHover { hovering in
+            withAnimation(.spring(duration: 0.2, bounce: 0.1)) {
+                dismissHovering = hovering
+            }
+        }
+        .accessibilityLabel("关闭警告")
     }
 
     // MARK: - Helpers

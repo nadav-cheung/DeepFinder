@@ -88,6 +88,13 @@ enum ContentScanner: Sendable {
         let url = URL(fileURLWithPath: path)
         guard FileManager.default.fileExists(atPath: path) else { return [] }
 
+        // Skip files exceeding the size limit to avoid memory exhaustion
+        if let attrs = try? FileManager.default.attributesOfItem(atPath: path),
+           let fileSize = attrs[.size] as? Int64,
+           fileSize > Constants.ContentScanner.maxFileSize {
+            return []
+        }
+
         // Read raw data
         guard let rawData = try? Data(contentsOf: url) else {
             Self.logger.debug("ContentScanner: failed to read data from \(path, privacy: .public) — file may be locked or have been deleted")

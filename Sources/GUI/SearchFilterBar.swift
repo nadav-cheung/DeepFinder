@@ -92,40 +92,63 @@ struct SearchFilterBar: View {
                 }
             }
             .padding(.horizontal, 12)
-            .padding(.vertical, 6)
+            .padding(.vertical, 8)
         }
     }
 
     // MARK: - Pill Button
 
     private func pillButton(for type: FilterType) -> some View {
-        let isActive = activeFilters.contains(type)
-
-        return Button {
-            withAnimation(.easeInOut(duration: 0.15)) {
-                if isActive {
-                    activeFilters.remove(type)
-                } else {
-                    activeFilters.insert(type)
+        FilterPillButton(
+            type: type,
+            isActive: activeFilters.contains(type),
+            toggle: {
+                withAnimation(.spring(duration: 0.3, bounce: 0.2)) {
+                    if activeFilters.contains(type) {
+                        activeFilters.remove(type)
+                    } else {
+                        activeFilters.insert(type)
+                    }
                 }
             }
-        } label: {
+        )
+    }
+}
+
+// MARK: - FilterPillButton
+
+/// Individual pill button with hover state tracking.
+private struct FilterPillButton: View {
+    let type: FilterType
+    let isActive: Bool
+    let toggle: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: toggle) {
             HStack(spacing: 4) {
                 Image(systemName: type.systemImage)
                     .font(.system(size: 12))
 
                 Text(type.label)
                     .font(.system(size: 12))
+                    .fontWeight(.medium)
             }
             .padding(.horizontal, 10)
-            .padding(.vertical, 5)
+            .padding(.vertical, 6)
             .background(
-                isActive ? AnyShapeStyle(.tint) : AnyShapeStyle(.quaternary),
+                isActive ? AnyShapeStyle(.tint) : AnyShapeStyle(.quaternary.opacity(isHovered ? 0.7 : 1.0)),
                 in: .capsule
             )
+            .shadow(color: isActive ? Color.accentColor.opacity(0.2) : .clear, radius: 3, y: 1)
             .foregroundStyle(isActive ? .white : .primary)
+            .animation(.spring(duration: 0.2, bounce: 0.15), value: isHovered)
         }
         .buttonStyle(.plain)
+        .onHover { hovering in
+            isHovered = hovering
+        }
         .accessibilityLabel(type.label)
         .accessibilityAddTraits(isActive ? .isSelected : [])
     }

@@ -359,4 +359,135 @@ struct SearchFilterTests {
         let emoji = makeFile(name: "🎉", ext: nil)
         #expect(!filter.matches(emoji))
     }
+
+    // MARK: - Date-Created Filters
+
+    @Test("dateCreatedAfter filter matches records created after date")
+    func dateCreatedAfterFilterMatches() {
+        let refDate = Date(timeIntervalSince1970: 1_000_000)
+        let filter = SearchFilter.dateCreatedAfter(refDate)
+
+        let after = makeFile(createdAt: Date(timeIntervalSince1970: 1_000_001))
+        let before = makeFile(createdAt: Date(timeIntervalSince1970: 999_999))
+
+        #expect(filter.matches(after))
+        #expect(!filter.matches(before))
+    }
+
+    @Test("dateCreatedBefore filter matches records created before date")
+    func dateCreatedBeforeFilterMatches() {
+        let refDate = Date(timeIntervalSince1970: 1_000_000)
+        let filter = SearchFilter.dateCreatedBefore(refDate)
+
+        let before = makeFile(createdAt: Date(timeIntervalSince1970: 999_999))
+        let after = makeFile(createdAt: Date(timeIntervalSince1970: 1_000_001))
+
+        #expect(filter.matches(before))
+        #expect(!filter.matches(after))
+    }
+
+    // MARK: - parseDateCreatedFilter
+
+    @Test("parseDateCreatedFilter 'today' returns dateCreatedAfter midnight")
+    func parseDateCreatedFilterToday() {
+        let cal = Calendar(identifier: .gregorian)
+        let now = Date()
+        let midnight = cal.startOfDay(for: now)
+
+        let result = SearchFilter.parseDateCreatedFilter("today", referenceDate: now)
+        #expect(result != nil)
+
+        if case .dateCreatedAfter(let date) = result {
+            #expect(date == midnight)
+        } else {
+            Issue.record("Expected dateCreatedAfter, got \(String(describing: result))")
+        }
+    }
+
+    @Test("parseDateCreatedFilter 'yesterday' returns dateCreatedRange")
+    func parseDateCreatedFilterYesterday() {
+        let cal = Calendar(identifier: .gregorian)
+        let now = Date()
+        let todayStart = cal.startOfDay(for: now)
+        let yesterdayStart = cal.date(byAdding: .day, value: -1, to: todayStart)!
+
+        let result = SearchFilter.parseDateCreatedFilter("yesterday", referenceDate: now)
+        #expect(result != nil)
+
+        if case .dateCreatedRange(let range) = result {
+            #expect(range.lowerBound == yesterdayStart)
+            #expect(range.upperBound == todayStart)
+        } else {
+            Issue.record("Expected dateCreatedRange, got \(String(describing: result))")
+        }
+    }
+
+    @Test("parseDateCreatedFilter '>2024-01-01' returns dateCreatedAfter")
+    func parseDateCreatedFilterGreaterThan() {
+        let cal = Calendar(identifier: .gregorian)
+        let ref = cal.date(from: DateComponents(year: 2026, month: 6, day: 1))!
+        let result = SearchFilter.parseDateCreatedFilter(">2024-01-01", referenceDate: ref)
+        #expect(result != nil)
+
+        if case .dateCreatedAfter(let date) = result {
+            let expected = cal.date(from: DateComponents(year: 2024, month: 1, day: 1))!
+            #expect(date == expected)
+        } else {
+            Issue.record("Expected dateCreatedAfter, got \(String(describing: result))")
+        }
+    }
+
+    @Test("parseDateCreatedFilter '<2024-06-01' returns dateCreatedBefore")
+    func parseDateCreatedFilterLessThan() {
+        let cal = Calendar(identifier: .gregorian)
+        let ref = cal.date(from: DateComponents(year: 2026, month: 6, day: 1))!
+        let result = SearchFilter.parseDateCreatedFilter("<2024-06-01", referenceDate: ref)
+        #expect(result != nil)
+
+        if case .dateCreatedBefore(let date) = result {
+            let expected = cal.date(from: DateComponents(year: 2024, month: 6, day: 1))!
+            #expect(date == expected)
+        } else {
+            Issue.record("Expected dateCreatedBefore, got \(String(describing: result))")
+        }
+    }
+
+    @Test("parseDateCreatedFilter '2024-01-01..2024-03-31' returns dateCreatedRange")
+    func parseDateCreatedFilterExplicitRange() {
+        let cal = Calendar(identifier: .gregorian)
+        let ref = cal.date(from: DateComponents(year: 2026, month: 6, day: 1))!
+        let result = SearchFilter.parseDateCreatedFilter("2024-01-01..2024-03-31", referenceDate: ref)
+        #expect(result != nil)
+
+        if case .dateCreatedRange(let range) = result {
+            let jan1 = cal.date(from: DateComponents(year: 2024, month: 1, day: 1))!
+            let apr1 = cal.date(from: DateComponents(year: 2024, month: 4, day: 1))!
+            #expect(range.lowerBound == jan1)
+            #expect(range.upperBound == apr1)
+        } else {
+            Issue.record("Expected dateCreatedRange, got \(String(describing: result))")
+        }
+    }
+
+    @Test("parseDateCreatedFilter 'thisweek' returns dateCreatedAfter week start")
+    func parseDateCreatedFilterThisWeek() {
+        let cal = Calendar(identifier: .gregorian)
+        let now = Date()
+        let weekday = cal.component(.weekday, from: now)
+        let daysSinceStart = (weekday - cal.firstWeekday + 7) % 7
+        let weekStart = cal.date(
+            byAdding: .day,
+            value: -daysSinceStart,
+            to: cal.startOfDay(for: now)
+        )!
+
+        let result = SearchFilter.parseDateCreatedFilter("thisweek", referenceDate: now)
+        #expect(result != nil)
+
+        if case .dateCreatedAfter(let date) = result {
+            #expect(date == weekStart)
+        } else {
+            Issue.record("Expected dateCreatedAfter, got \(String(describing: result))")
+        }
+    }
 }

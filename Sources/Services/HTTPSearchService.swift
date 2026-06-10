@@ -102,13 +102,14 @@ actor HTTPSearchService {
 
     /// Start the HTTP server and wait for it to become ready.
     func start() async throws {
-        let parameters = NWParameters()
-        parameters.defaultProtocolStack.transportProtocol = NWProtocolTCP.Options()
+        let parameters = NWParameters.tcp
 
         guard let nwPort = NWEndpoint.Port(rawValue: port) else {
             throw HTTPError.invalidPort(port)
         }
-        let listener = try NWListener(using: parameters, on: nwPort)
+        parameters.requiredLocalEndpoint = .hostPort(host: NWEndpoint.Host("127.0.0.1"), port: nwPort)
+
+        let listener = try NWListener(using: parameters)
 
         let readyContinuation = AsyncStream.makeStream(of: Void.self, bufferingPolicy: .bufferingNewest(1))
         listener.stateUpdateHandler = { state in
@@ -327,6 +328,12 @@ enum HTTPRouter {
             return
         }
 
+        // Handle CORS preflight — no auth required
+        if request.method == "OPTIONS" {
+            sendResponse(connection: connection, statusCode: 204, body: "")
+            return
+        }
+
         // Auth check — /health is unauthenticated for liveness probes
         if request.path != "/health" {
             guard hasValidToken(request: request, authToken: authToken) else {
@@ -372,6 +379,7 @@ enum HTTPRouter {
         let statusText: String
         switch statusCode {
         case 200: statusText = "OK"
+        case 204: statusText = "No Content"
         case 400: statusText = "Bad Request"
         case 401: statusText = "Unauthorized"
         case 404: statusText = "Not Found"
@@ -384,8 +392,10 @@ enum HTTPRouter {
             "HTTP/1.1 \(statusCode) \(statusText)",
             "Content-Type: application/json",
             "Content-Length: \(bodyData.count)",
-            "Access-Control-Allow-Origin: *",
             "Connection: close",
+            "Access-Control-Allow-Origin: *",
+            "Access-Control-Allow-Methods: GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers: Content-Type, Authorization",
         ]
         let headerString = headerLines.joined(separator: "\r\n") + "\r\n\r\n"
         let responseData = (headerString.data(using: .utf8) ?? Data()) + bodyData
@@ -421,6 +431,7 @@ enum HTTPRouter {
         let statusText: String
         switch statusCode {
         case 200: statusText = "OK"
+        case 204: statusText = "No Content"
         case 400: statusText = "Bad Request"
         case 401: statusText = "Unauthorized"
         case 404: statusText = "Not Found"
@@ -433,8 +444,10 @@ enum HTTPRouter {
             "HTTP/1.1 \(statusCode) \(statusText)",
             "Content-Type: application/json",
             "Content-Length: \(bodyData.count)",
-            "Access-Control-Allow-Origin: *",
             "Connection: close",
+            "Access-Control-Allow-Origin: *",
+            "Access-Control-Allow-Methods: GET, POST, OPTIONS",
+            "Access-Control-Allow-Headers: Content-Type, Authorization",
         ]
         return headerLines.joined(separator: "\r\n") + "\r\n\r\n" + body
     }

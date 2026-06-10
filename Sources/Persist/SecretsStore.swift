@@ -107,10 +107,11 @@ struct SecretsStore: Sendable {
         // Set permissions before rename
         try FileManager.default.setAttributes([.posixPermissions: Product.privateFilePermissions], ofItemAtPath: tmpURL.path)
 
-        // Atomic rename: remove existing file first (moveItem refuses to overwrite)
+        // Atomic rename: use replaceItem to avoid crash-safety gap between remove+move
         if FileManager.default.fileExists(atPath: url.path) {
-            try FileManager.default.removeItem(at: url)
+            try FileManager.default.replaceItem(at: url, withItemAt: tmpURL, backupItemName: nil, options: [], resultingItemURL: nil)
+        } else {
+            try FileManager.default.moveItem(at: tmpURL, to: url)
         }
-        try FileManager.default.moveItem(at: tmpURL, to: url)
     }
 }

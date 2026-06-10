@@ -38,3 +38,66 @@ struct SearchFilesIntent: AppIntent {
         }
     }
 }
+
+// MARK: - GetFileInfoIntent
+
+/// AppIntent for retrieving metadata about a single file via Apple Shortcuts.
+///
+/// Given a file path, returns a JSON string containing file metadata:
+/// name, size, creation date, modification date, extension, and whether it is a directory.
+///
+/// - Parameter path: The absolute file path (required).
+/// - Returns: A JSON string of file metadata, or an empty string if not found.
+struct GetFileInfoIntent: AppIntent {
+    static let title: LocalizedStringResource = "Get File Info"
+    static let description: IntentDescription? = IntentDescription(
+        "Get metadata for a file by its path using \(Product.name). Returns a JSON string with name, size, dates, and type."
+    )
+
+    @Parameter(title: "File Path")
+    var path: String
+
+    func perform() async throws -> some IntentResult & ReturnsValue<String> {
+        let client = IPCClient(socketPath: Product.socketPath)
+        let request: IPCRequest = .query(path, limit: 1)
+        let response: IPCResponse
+        do {
+            response = try await client.send(request)
+        } catch {
+            return .result(value: "")
+        }
+        switch response {
+        case .results(let results, _) where !results.isEmpty:
+            let record = results[0].record
+            let json = Self.metadataJSON(from: record)
+            return .result(value: json)
+        default:
+            return .result(value: "")
+        }
+    }
+
+    /// Convert a FileRecord to a JSON string for Shortcuts consumption.
+    static func metadataJSON(from record: FileRecord) -> String {
+        let dict = metadataDict(from: record)
+        guard let data = try? JSONSerialization.data(withJSONObject: dict, options: [.sortedKeys]) else {
+            return ""
+        }
+        return String(data: data, encoding: .utf8) ?? ""
+    }
+
+    /// Convert a FileRecord to a flat string dictionary.
+    static func metadataDict(from record: FileRecord) -> [String: String] {
+        var info: [String: String] = [
+            "name": record.originalName,
+            "path": record.path,
+            "size": String(record.size),
+            "isDirectory": record.isDirectory ? "true" : "false",
+            "createdAt": ISO8601DateFormatter().string(from: record.createdAt),
+            "modifiedAt": ISO8601DateFormatter().string(from: record.modifiedAt),
+        ]
+        if let ext = record.extension {
+            info["extension"] = ext
+        }
+        return info
+    }
+}

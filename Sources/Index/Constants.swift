@@ -93,6 +93,10 @@ enum Constants {
 
         /// Maximum number of files to scan concurrently (REQ-1.4-04).
         static let maxConcurrentScans = 8
+
+        /// Maximum individual file size (in bytes) to scan for content search.
+        /// Files larger than 50 MB are skipped to avoid memory exhaustion.
+        static let maxFileSize: Int64 = 50_000_000
     }
 
     // MARK: - File Hashing
@@ -157,6 +161,9 @@ enum Constants {
 
         /// Maximum bytes to receive per NWConnection read callback (64 KB).
         static let maxReceiveSize = 65536
+
+        /// Maximum allowed value for the `limit` query parameter.
+        static let maxPageSize = 1000
     }
 
     // MARK: - GUI

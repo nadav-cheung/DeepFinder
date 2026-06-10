@@ -109,6 +109,8 @@ enum MatchExplainer: Sendable {
             return "date created filter"
         case .dateCreatedBefore:
             return "date created filter"
+        case .dateCreatedRange:
+            return "date created filter"
         case .extensionFilter(let exts):
             let joined = exts.sorted().joined(separator: ", ")
             return "extension filter (\(joined))"

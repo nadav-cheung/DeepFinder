@@ -190,6 +190,20 @@ struct HTTPSearchServiceTests {
         #expect(json?["error"] == "Method not allowed")
     }
 
+    @Test("OPTIONS preflight returns 204 with CORS headers")
+    func optionsPreflight() {
+        let request = HTTPRouter.HTTPRequest(method: "OPTIONS", path: "/search", queryParams: [:], headers: [:])
+        let (statusCode, body) = HTTPRouter.route(request: request)
+        #expect(statusCode == 204)
+        #expect(body == "")
+
+        let response = HTTPRouter.buildResponse(statusCode: 204, body: "")
+        let headers = parseHeaders(response)
+        #expect(headers["Access-Control-Allow-Origin"] == "*")
+        #expect(headers["Access-Control-Allow-Methods"] == "GET, POST, OPTIONS")
+        #expect(headers["Access-Control-Allow-Headers"] == "Content-Type, Authorization")
+    }
+
     // MARK: - Response Building Tests
 
     @Test("Response includes CORS and Content-Type headers")
@@ -198,6 +212,8 @@ struct HTTPSearchServiceTests {
         let headers = parseHeaders(response)
 
         #expect(headers["Access-Control-Allow-Origin"] == "*")
+        #expect(headers["Access-Control-Allow-Methods"] == "GET, POST, OPTIONS")
+        #expect(headers["Access-Control-Allow-Headers"] == "Content-Type, Authorization")
         #expect(headers["Content-Type"] == "application/json")
         #expect(headers["Content-Length"] == "15")
         #expect(headers["Connection"] == "close")

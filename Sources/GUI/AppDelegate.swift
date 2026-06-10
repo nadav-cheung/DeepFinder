@@ -108,9 +108,6 @@ public final class DeepFinderAppDelegate: NSObject, NSApplicationDelegate {
     /// Daemon spawner for auto-start on launch.
     private var daemonSpawner: (any DaemonSpawner)?
 
-    /// Index health monitor for tracking daemon index status.
-    private var indexHealthMonitor: IndexHealthMonitor?
-
     // MARK: - Init
 
     /// Create the app delegate with the given configuration.
@@ -148,15 +145,16 @@ public final class DeepFinderAppDelegate: NSObject, NSApplicationDelegate {
             object: nil
         )
 
+        // Register for URL scheme events (deepfinder://search?q=...).
+        NSAppleEventManager.shared().setEventHandler(
+            self,
+            andSelector: #selector(handleGetURLEvent(_:withReplyEvent:)),
+            forEventClass: AEEventClass(kInternetEventClass),
+            andEventID: AEEventID(kAEGetURL)
+        )
+
         // Create search panel controller.
         searchPanelController = configuration.searchPanelFactory()
-
-        // Create index health monitor and wire to search panel.
-        let ipcClientForMonitor = IPCClient(socketPath: Product.socketPath)
-        let monitor = IndexHealthMonitor(ipcClient: ipcClientForMonitor)
-        self.indexHealthMonitor = monitor
-        monitor.startPolling()
-        searchPanelController?.setIndexHealthMonitor(monitor)
 
         // Create status bar controller with wired actions.
         statusBarController = configuration.statusBarControllerFactory(
@@ -202,10 +200,6 @@ public final class DeepFinderAppDelegate: NSObject, NSApplicationDelegate {
 
     public func applicationWillTerminate(_ notification: Notification) {
         logger.info("applicationWillTerminate — cleaning up")
-
-        // Stop index health monitoring.
-        indexHealthMonitor?.stopPolling()
-        indexHealthMonitor = nil
 
         // Unregister global hotkey.
         globalHotkey?.unregister()
@@ -259,6 +253,38 @@ public final class DeepFinderAppDelegate: NSObject, NSApplicationDelegate {
     func requestQuit() {
         logger.info("requestQuit — user requested termination")
         NSApp?.terminate(nil)
+    }
+
+    // MARK: - URL Scheme
+
+    /// Handle a `deepfinder://` URL by parsing it and dispatching to the search panel.
+    ///
+    /// If the URL is a valid search URL, the search panel is shown and the query
+    /// is executed. Invalid/unrecognized URLs are logged and ignored.
+    func handleURL(_ url: URL) {
+        guard let searchURL = SearchURL.parse(url) else {
+            logger.warning("Unrecognized URL scheme event: \(url.absoluteString, privacy: .public)")
+            return
+        }
+
+        switch searchURL {
+        case .search(let query, _, _):
+            logger.info("URL scheme search: \(query, privacy: .public)")
+            showSearchPanel()
+            searchPanelController?.viewModel.searchFromHistory(query)
+        }
+    }
+
+    // MARK: - Apple Event Handler
+
+    /// NSAppleEventHandler for `GetURL` Apple Events (triggered by `deepfinder://` URLs).
+    @objc private func handleGetURLEvent(_ event: NSAppleEventDescriptor, withReplyEvent reply: NSAppleEventDescriptor) {
+        guard let urlString = event.paramDescriptor(forKeyword: AEKeyword(keyDirectObject))?.stringValue,
+              let url = URL(string: urlString) else {
+            logger.warning("GetURL Apple Event missing URL string")
+            return
+        }
+        handleURL(url)
     }
 
     // MARK: - Notification Handlers

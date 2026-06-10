@@ -120,6 +120,14 @@ actor InMemoryIndex {
         pinyinIndex.insert(name: name, id: id)
     }
 
+    /// Batch-insert multiple records in a single actor hop.
+    /// Much faster than individual inserts during startup reindexing.
+    func insertBatch(_ newRecords: [FileRecord]) {
+        for record in newRecords {
+            insert(record)
+        }
+    }
+
     /// Convenience: insert by name and path, creating a FileRecord with auto-ID.
     func insert(
         name: String,
@@ -265,9 +273,43 @@ actor InMemoryIndex {
     }
 
     /// Search with a limit on the number of results.
+    /// Short-circuits after finding `limit` results to avoid full materialization.
     func search(query: String, limit: Int) -> [FileRecord] {
-        let all = search(query: query)
-        return Array(all.prefix(limit))
+        let normalized = query.precomposedStringWithCanonicalMapping
+        let lowered = normalized.lowercased()
+        guard !lowered.isEmpty else { return [] }
+
+        let scalars = Array(lowered.unicodeScalars)
+
+        // Collect matched IDs from all sub-indices
+        var matchedIDs = Set<UInt32>()
+        if !scalars.isEmpty {
+            let trieResults = trie.search(prefix: scalars)
+            for set in trieResults {
+                matchedIDs.formUnion(set)
+                if matchedIDs.count >= limit { break }
+            }
+        }
+
+        if matchedIDs.count < limit {
+            let substringResults = substringMap.search(substring: lowered)
+            matchedIDs.formUnion(substringResults)
+        }
+        if matchedIDs.count < limit {
+            let trigramResults = trigramIndex.search(substring: lowered)
+            matchedIDs.formUnion(trigramResults)
+        }
+        if matchedIDs.count < limit {
+            let pinyinResults = pinyinIndex.search(pinyin: lowered)
+            matchedIDs.formUnion(pinyinResults)
+        }
+
+        // Sort by ID and take up to `limit`
+        return matchedIDs
+            .compactMap { id in records[id] }
+            .sorted { $0.id < $1.id }
+            .prefix(limit)
+            .map { $0 }
     }
 
     /// Return all indexed records. Useful for operations that need the full

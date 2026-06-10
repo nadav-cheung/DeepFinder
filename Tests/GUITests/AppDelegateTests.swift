@@ -319,6 +319,74 @@ struct AppDelegateTests {
 
         #expect(delegate.statusBarController?.indexStatus == .error)
     }
+
+    // MARK: - 18. URL scheme: valid search URL triggers searchFromHistory
+
+    @Test("handleURL with valid search URL sets searchText on viewModel")
+    @MainActor
+    func testHandleURLValidSearch() {
+        let (config, _) = makeTestConfiguration()
+        let delegate = DeepFinderAppDelegate(configuration: config)
+
+        delegate.applicationDidFinishLaunching(Notification(name: .init("test")))
+
+        let url = URL(string: "deepfinder://search?q=test%20query")!
+        delegate.handleURL(url)
+
+        let viewModel = delegate.searchPanelController?.viewModel
+        #expect(viewModel?.searchText == "test query")
+    }
+
+    // MARK: - 19. URL scheme: invalid host does not modify searchText
+
+    @Test("handleURL with invalid host does not modify searchText")
+    @MainActor
+    func testHandleURLInvalidHost() {
+        let (config, _) = makeTestConfiguration()
+        let delegate = DeepFinderAppDelegate(configuration: config)
+
+        delegate.applicationDidFinishLaunching(Notification(name: .init("test")))
+
+        let url = URL(string: "deepfinder://invalid")!
+        delegate.handleURL(url)
+
+        let viewModel = delegate.searchPanelController?.viewModel
+        #expect(viewModel?.searchText == "")
+    }
+
+    // MARK: - 20. URL scheme: wrong scheme does not modify searchText
+
+    @Test("handleURL with wrong scheme does not modify searchText")
+    @MainActor
+    func testHandleURLWrongScheme() {
+        let (config, _) = makeTestConfiguration()
+        let delegate = DeepFinderAppDelegate(configuration: config)
+
+        delegate.applicationDidFinishLaunching(Notification(name: .init("test")))
+
+        let url = URL(string: "https://search?q=test")!
+        delegate.handleURL(url)
+
+        let viewModel = delegate.searchPanelController?.viewModel
+        #expect(viewModel?.searchText == "")
+    }
+
+    // MARK: - 21. URL scheme: CJK query sets searchText correctly
+
+    @Test("handleURL with CJK query sets decoded searchText")
+    @MainActor
+    func testHandleURLCJKQuery() {
+        let (config, _) = makeTestConfiguration()
+        let delegate = DeepFinderAppDelegate(configuration: config)
+
+        delegate.applicationDidFinishLaunching(Notification(name: .init("test")))
+
+        let url = URL(string: "deepfinder://search?q=%E6%8A%A5%E5%91%8A")!
+        delegate.handleURL(url)
+
+        let viewModel = delegate.searchPanelController?.viewModel
+        #expect(viewModel?.searchText == "报告")
+    }
 }
 
 // MARK: - Notification Name Tests

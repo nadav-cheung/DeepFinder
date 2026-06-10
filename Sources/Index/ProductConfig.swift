@@ -69,7 +69,7 @@ enum Product {
 
     /// Current version string. Updated manually on each release.
     /// Kept in sync with the `VERSION` file at the repository root.
-    static let version = "3.0.0"
+    static let version = "3.2.0"
 
     // MARK: - Organization
 

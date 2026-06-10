@@ -56,26 +56,63 @@ enum TerminalFormatter {
         let lowercased = text.lowercased()
         let queryLower = query.lowercased()
 
+        // Try literal match first
+        if lowercased.contains(queryLower) {
+            return highlightRanges(
+                in: text,
+                ranges: literalMatchRanges(text: text, lowercased: lowercased, queryLower: queryLower),
+                colorCode: colorCode
+            )
+        }
+
+        // Fallback: pinyin-based match for ASCII queries against CJK text
+        let pinyinRanges = PinyinIndex.matchRanges(in: text, query: query)
+        if !pinyinRanges.isEmpty {
+            return highlightRanges(in: text, ranges: pinyinRanges, colorCode: colorCode)
+        }
+
+        return text
+    }
+
+    /// Find all ranges of literal case-insensitive matches in the text.
+    private static func literalMatchRanges(
+        text: String,
+        lowercased: String,
+        queryLower: String
+    ) -> [Range<String.Index>] {
+        var ranges: [Range<String.Index>] = []
+        var currentIndex = text.startIndex
+        while currentIndex < text.endIndex {
+            let searchRange = currentIndex..<text.endIndex
+            guard let range = lowercased.range(of: queryLower, range: searchRange) else { break }
+            ranges.append(range)
+            currentIndex = range.upperBound
+        }
+        return ranges
+    }
+
+    /// Apply ANSI highlight wrapping to the given character ranges in the text.
+    private static func highlightRanges(
+        in text: String,
+        ranges: [Range<String.Index>],
+        colorCode: String
+    ) -> String {
+        guard !ranges.isEmpty else { return text }
+
         var result = ""
         var currentIndex = text.startIndex
 
-        while currentIndex < text.endIndex {
-            let searchRange = currentIndex..<text.endIndex
-            guard let range = lowercased.range(of: queryLower, range: searchRange) else {
-                result += text[currentIndex...]
-                break
+        for range in ranges {
+            if currentIndex < range.lowerBound {
+                result += text[currentIndex..<range.lowerBound]
             }
-
-            // Append text before match
-            result += text[currentIndex..<range.lowerBound]
-
-            // Append highlighted match (use original casing from `text`)
-            // Selective reset: 22 = bold off, 39 = default foreground color.
-            // Avoids [0m which resets ALL attributes (would clobber surrounding styles).
             let originalMatch = text[range]
             result += "\u{1B}[1m\u{1B}[\(colorCode)m\(originalMatch)\u{1B}[22m\u{1B}[39m"
-
             currentIndex = range.upperBound
+        }
+
+        if currentIndex < text.endIndex {
+            result += text[currentIndex...]
         }
 
         return result

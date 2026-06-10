@@ -52,6 +52,30 @@ final class SearchViewModel: ObservableObject {
     /// REQ-3.2-02: Whether the history dropdown overlay is visible.
     @Published var showHistoryDropdown: Bool = false
 
+    /// Validates the current search query syntax and returns an error description
+    /// if the query is malformed (e.g., unbalanced quotes, incomplete operators).
+    var syntaxError: String? {
+        let query = searchText.trimmingCharacters(in: .whitespaces)
+        guard !query.isEmpty else { return nil }
+
+        // Check for unbalanced quotes
+        let quoteCount = query.filter { $0 == "\"" }.count
+        if quoteCount % 2 != 0 {
+            return "Unbalanced quotes in query"
+        }
+
+        // Check for incomplete operators (AND/OR/NOT at end of query)
+        let upper = query.uppercased()
+        let trailingOps = ["AND", "OR", "NOT"]
+        for op in trailingOps {
+            if upper.hasSuffix(" \(op)") || upper == op {
+                return "Incomplete operator: \(op)"
+            }
+        }
+
+        return nil
+    }
+
     // MARK: - History & Access Stores
 
     /// Search query history for the history dropdown. REQ-3.2-02.
@@ -70,6 +94,19 @@ final class SearchViewModel: ObservableObject {
 
     /// Whether Full Disk Access is currently granted.
     var fdaGranted: Bool { PermissionChecker.isFDAGranted() }
+
+    /// Whether a software update is available. Synced to views for update banners.
+    @Published var updateAvailable: Bool = false
+
+    // MARK: - Stored Tasks (prevent races and leaks)
+
+    /// Stored reference to the search task triggered from history, so we can
+    /// cancel the previous search before starting a new one.
+    private var historySearchTask: Task<Void, Never>?
+
+    /// Stored reference to the toast auto-dismiss task, so a new toast cancels
+    /// the previous dismiss timer.
+    private var toastDismissTask: Task<Void, Never>?
 
     // MARK: - Init
 
@@ -208,7 +245,8 @@ final class SearchViewModel: ObservableObject {
     /// Sets the search text to a history query and triggers a search immediately.
     func searchFromHistory(_ query: String) {
         searchText = query
-        Task { await search() }
+        historySearchTask?.cancel()
+        historySearchTask = Task { await search() }
     }
 
     /// Toggle history dropdown visibility. Only activates when search is empty.
@@ -225,10 +263,17 @@ final class SearchViewModel: ObservableObject {
     /// Shows a transient toast message that auto-dismisses after 1.5 seconds.
     func showToast(_ message: String) {
         toastMessage = message
-        Task {
+        toastDismissTask?.cancel()
+        toastDismissTask = Task {
             try? await Task.sleep(for: .seconds(1.5))
             guard !Task.isCancelled else { return }
             withAnimation { self.toastMessage = nil }
         }
+    }
+
+    /// Cancel all stored tasks. Call when the view model is no longer needed.
+    func cancelAllTasks() {
+        historySearchTask?.cancel()
+        toastDismissTask?.cancel()
     }
 }

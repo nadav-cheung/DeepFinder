@@ -11,7 +11,7 @@ struct KeyboardHintBar: View {
 
     // MARK: - Hint Model
 
-    private struct Hint: Identifiable {
+    fileprivate struct Hint: Identifiable {
         let symbol: String
         let label: String
         var id: String { symbol + label }
@@ -36,25 +36,53 @@ struct KeyboardHintBar: View {
     // MARK: - Body
 
     var body: some View {
-        HStack(spacing: 0) {
-            ForEach(Array(hints.enumerated()), id: \.element.id) { index, hint in
-                if index > 0 {
-                    Rectangle()
-                        .fill(.separator)
-                        .frame(width: 1, height: 10)
-                        .padding(.horizontal, 6)
-                }
+        VStack(spacing: 0) {
+            Rectangle()
+                .fill(.separator)
+                .frame(height: 0.5)
 
-                HStack(spacing: 3) {
-                    Text(hint.symbol)
-                        .monospaced()
-                    Text(hint.label)
+            HStack(spacing: 0) {
+                ForEach(Array(hints.enumerated()), id: \.element.id) { index, hint in
+                    if index > 0 {
+                        Rectangle()
+                            .fill(.separator)
+                            .frame(width: 1, height: 10)
+                            .padding(.horizontal, 6)
+                    }
+
+                    HintItem(hint: hint)
                 }
             }
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+            .padding(.vertical, 4)
+            .padding(.horizontal, 12)
         }
-        .font(.system(size: 11))
-        .foregroundStyle(.secondary)
-        .padding(.vertical, 4)
-        .padding(.horizontal, 12)
+    }
+}
+
+// MARK: - HintItem
+
+/// A single keyboard shortcut hint with elevated key background and hover brightness.
+private struct HintItem: View {
+    let hint: KeyboardHintBar.Hint
+
+    @State private var isHovered = false
+
+    var body: some View {
+        HStack(spacing: 3) {
+            Text(hint.symbol)
+                .font(.system(size: 11, weight: .medium, design: .monospaced))
+                .background(.quaternary.opacity(0.5), in: RoundedRectangle(cornerRadius: 4))
+                .padding(.horizontal, 2)
+                .padding(.vertical, 1)
+            Text(hint.label)
+        }
+        .brightness(isHovered ? 0.15 : 0)
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.15)) {
+                isHovered = hovering
+            }
+        }
     }
 }

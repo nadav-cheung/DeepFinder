@@ -248,13 +248,149 @@ struct PinyinIndex {
 
     /// Check if a string contains any CJK Unified Ideographs.
     private func tokenContainsChinese(_ s: String) -> Bool {
+        Self.containsChinese(s)
+    }
+
+    // MARK: - Public Helpers
+
+    /// A tokenized Chinese segment with its pinyin representation and position in the source string.
+    struct PinyinToken {
+        /// Full pinyin (no spaces/tone marks), e.g. "baogao"
+        public let fullPinyin: String
+        /// First-letter scalars, e.g. ["b", "g"]
+        public let firstLetters: [UnicodeScalar]
+        /// Range of the original CJK characters in the source string
+        public let range: Range<String.Index>
+    }
+
+    /// Tokenize a string into pinyin representations with character ranges.
+    /// Returns one `PinyinToken` per Chinese segment found by the tokenizer.
+    /// Non-Chinese tokens are skipped. Useful for highlighting CJK characters
+    /// that matched a pinyin query.
+    public static func tokenizeWithRanges(_ input: String) -> [PinyinToken] {
+        let cfStr = input as CFString
+        let locale = CFLocaleCopyCurrent()
+
+        let tokenizer = CFStringTokenizerCreate(
+            kCFAllocatorDefault,
+            cfStr,
+            CFRangeMake(0, CFStringGetLength(cfStr)),
+            CFOptionFlags(kCFStringTokenizerUnitWord),
+            locale
+        )
+
+        var results: [PinyinToken] = []
+
+        var tokenType = CFStringTokenizerAdvanceToNextToken(tokenizer)
+        while tokenType.rawValue != 0 {
+            let cfRange = CFStringTokenizerGetCurrentTokenRange(tokenizer)
+            let nsRange = NSRange(location: cfRange.location, length: cfRange.length)
+            let token = (input as NSString).substring(with: nsRange)
+
+            if containsChinese(token) {
+                let pinyin = tokenToPinyinStatic(token)
+                if !pinyin.fullPinyin.isEmpty,
+                   let range = Range(nsRange, in: input) {
+                    results.append(PinyinToken(
+                        fullPinyin: pinyin.fullPinyin,
+                        firstLetters: pinyin.firstLetters,
+                        range: range
+                    ))
+                }
+            }
+
+            tokenType = CFStringTokenizerAdvanceToNextToken(tokenizer)
+        }
+
+        return results
+    }
+
+    /// Returns character ranges in `text` whose pinyin representation matches `query`.
+    /// Tries both first-letter abbreviation and full pinyin matching.
+    /// Returns an empty array if no pinyin match is found.
+    public static func matchRanges(in text: String, query: String) -> [Range<String.Index>] {
+        let tokens = tokenizeWithRanges(text)
+        guard !tokens.isEmpty else { return [] }
+
+        let queryLower = query.lowercased()
+
+        // Build concatenated first-letter string across all tokens
+        let allFirstLetters = tokens.flatMap(\.firstLetters)
+        let firstLetterStr = String(String.UnicodeScalarView(allFirstLetters)).lowercased()
+
+        // Build concatenated full-pinyin string, tracking which token owns each character offset
+        var allFullPinyin = ""
+        var tokenOffsets: [(token: PinyinToken, pinyinOffset: Int)] = []
+        for token in tokens {
+            tokenOffsets.append((token, allFullPinyin.count))
+            allFullPinyin += token.fullPinyin.lowercased()
+        }
+
+        var matchedRanges: [Range<String.Index>] = []
+
+        // Try first-letter abbreviation match
+        if firstLetterStr.hasPrefix(queryLower) {
+            // Count how many first-letter characters the query consumes
+            var charCount = 0
+            for token in tokens {
+                charCount += token.firstLetters.count
+                if charCount >= queryLower.count {
+                    // Highlight from first token start through this token's end
+                    let end = token.range.upperBound
+                    matchedRanges.append(tokens[0].range.lowerBound..<end)
+                    break
+                }
+            }
+            if !matchedRanges.isEmpty { return matchedRanges }
+        }
+
+        // Try full pinyin prefix match per token
+        for (token, _) in tokenOffsets {
+            if token.fullPinyin.lowercased().hasPrefix(queryLower) {
+                matchedRanges.append(token.range)
+            }
+        }
+        if !matchedRanges.isEmpty { return matchedRanges }
+
+        // Try full pinyin prefix match on concatenated string (cross-token)
+        if allFullPinyin.hasPrefix(queryLower) {
+            // Find how far into the concatenated pinyin the query spans
+            var consumed = queryLower.count
+            var startToken = tokens[0]
+            var endBound = tokens[0].range.upperBound
+            for (token, offset) in tokenOffsets {
+                if offset < queryLower.count {
+                    endBound = token.range.upperBound
+                }
+            }
+            matchedRanges.append(startToken.range.lowerBound..<endBound)
+        }
+
+        return matchedRanges
+    }
+
+    // MARK: - Private Static Helpers
+
+    /// Check if a string contains any CJK Unified Ideographs.
+    private static func containsChinese(_ s: String) -> Bool {
         s.unicodeScalars.contains { scalar in
             let v = scalar.value
-            // CJK Unified Ideographs (common + extension A + compat + extension B)
             return (0x4E00...0x9FFF).contains(v)
                 || (0x3400...0x4DBF).contains(v)
                 || (0xF900...0xFAFF).contains(v)
                 || (0x20000...0x2A6DF).contains(v)
         }
+    }
+
+    /// Static version of tokenToPinyin for use without an instance.
+    private static func tokenToPinyinStatic(_ token: String) -> (fullPinyin: String, firstLetters: [UnicodeScalar]) {
+        let mutable = NSMutableString(string: token)
+        CFStringTransform(mutable, nil, kCFStringTransformToLatin, false)
+        CFStringTransform(mutable, nil, kCFStringTransformStripDiacritics, false)
+        let pinyin = (mutable as String).lowercased()
+        let syllables = pinyin.split(separator: " ")
+        let fullPinyin = syllables.joined()
+        let firstLetters = syllables.compactMap { $0.unicodeScalars.first }
+        return (fullPinyin, firstLetters)
     }
 }

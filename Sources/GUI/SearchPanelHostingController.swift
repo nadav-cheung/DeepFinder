@@ -29,7 +29,10 @@ private final class SearchPanel: NSPanel {
 public final class SearchPanelHostingController {
 
     private var panel: NSPanel?
-    private let viewModel: SearchViewModel
+
+    /// The view model driving the search panel. Exposed so that external events
+    /// (e.g., URL scheme deep links) can trigger searches through it.
+    let viewModel: SearchViewModel
 
     /// Fixed search bar height (padding + text field).
     private static let searchBarHeight: CGFloat = 48
@@ -45,13 +48,6 @@ public final class SearchPanelHostingController {
 
     init(viewModel: SearchViewModel) {
         self.viewModel = viewModel
-    }
-
-    /// Wires an IndexHealthMonitor to the search panel's view model.
-    ///
-    /// Called by AppDelegate after creating both the search panel and the monitor.
-    func setIndexHealthMonitor(_ monitor: IndexHealthMonitor) {
-        viewModel.indexHealthMonitor = monitor
     }
 
     // MARK: - Panel Lifecycle

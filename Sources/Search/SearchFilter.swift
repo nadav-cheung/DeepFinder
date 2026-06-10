@@ -54,6 +54,8 @@ enum SearchFilter: Sendable, Equatable {
     case dateCreatedAfter(Date)
     /// createdAt < date
     case dateCreatedBefore(Date)
+    /// createdAt in half-open range
+    case dateCreatedRange(Range<Date>)
     /// extension (lowercased) in set
     case extensionFilter(Set<String>)
     /// file (not directory)
@@ -104,6 +106,8 @@ enum SearchFilter: Sendable, Equatable {
             return record.createdAt > date
         case .dateCreatedBefore(let date):
             return record.createdAt < date
+        case .dateCreatedRange(let range):
+            return range.contains(record.createdAt)
         case .extensionFilter(let exts):
             guard let ext = record.extension else { return false }
             return exts.contains(ext.lowercased())
@@ -237,6 +241,74 @@ enum SearchFilter: Sendable, Equatable {
         }
     }
 
+    // MARK: - Date-Created Parsing
+
+    /// Parses a human-readable date filter string for creation date, relative to a reference date.
+    ///
+    /// Supported formats (same as ``parseDateFilter(_:,referenceDate:)``):
+    /// - `"today"`, `"yesterday"`, `"thisweek"`, `"thismonth"`, `"thisyear"`
+    /// - `">2024-01-01"` → created after date
+    /// - `"<2024-06-01"` → created before date
+    /// - `"2024-01-01..2024-03-31"` → date range (exclusive upper bound = start of next day)
+    static func parseDateCreatedFilter(_ input: String, referenceDate: Date) -> SearchFilter? {
+        let trimmed = input.trimmingCharacters(in: .whitespaces).lowercased()
+        let cal = Calendar(identifier: .gregorian)
+
+        // Comparison prefix: ">2024-01-01", "<2024-06-01", ">=2024-01-01", "<=2024-06-01"
+        if trimmed.hasPrefix(">=") {
+            guard let date = parseDateOnly(String(trimmed.dropFirst(2)), calendar: cal) else { return nil }
+            return .dateCreatedAfter(date)
+        }
+        if trimmed.hasPrefix(">") {
+            guard let date = parseDateOnly(String(trimmed.dropFirst()), calendar: cal) else { return nil }
+            return .dateCreatedAfter(date)
+        }
+        if trimmed.hasPrefix("<=") {
+            guard let date = parseDateOnly(String(trimmed.dropFirst(2)), calendar: cal) else { return nil }
+            return .dateCreatedBefore(date)
+        }
+        if trimmed.hasPrefix("<") {
+            guard let date = parseDateOnly(String(trimmed.dropFirst()), calendar: cal) else { return nil }
+            return .dateCreatedBefore(date)
+        }
+
+        switch trimmed {
+        case "today":
+            let start = cal.startOfDay(for: referenceDate)
+            return .dateCreatedAfter(start)
+
+        case "yesterday":
+            let todayStart = cal.startOfDay(for: referenceDate)
+            guard let yesterdayStart = cal.date(byAdding: .day, value: -1, to: todayStart) else {
+                return nil
+            }
+            return .dateCreatedRange(yesterdayStart..<todayStart)
+
+        case "thisweek":
+            let weekday = cal.component(.weekday, from: referenceDate)
+            let daysSinceStart = (weekday - cal.firstWeekday + 7) % 7
+            guard let weekStart = cal.date(
+                byAdding: .day,
+                value: -daysSinceStart,
+                to: cal.startOfDay(for: referenceDate)
+            ) else { return nil }
+            return .dateCreatedAfter(weekStart)
+
+        case "thismonth":
+            let components = cal.dateComponents([.year, .month], from: referenceDate)
+            guard let monthStart = cal.date(from: components) else { return nil }
+            return .dateCreatedAfter(monthStart)
+
+        case "thisyear":
+            let components = cal.dateComponents([.year], from: referenceDate)
+            guard let yearStart = cal.date(from: components) else { return nil }
+            return .dateCreatedAfter(yearStart)
+
+        default:
+            return parseExplicitDateCreatedRange(trimmed, calendar: cal)
+        }
+    }
+
     // MARK: - Private Helpers
 
     /// Count path components — delegates to the shared ``PathUtils/depth(_:)`` utility.
@@ -284,6 +356,17 @@ enum SearchFilter: Sendable, Equatable {
         // Upper bound is exclusive: advance to start of next day
         guard let nextDay = cal.date(byAdding: .day, value: 1, to: upper) else { return nil }
         return .dateModifiedRange(lower..<nextDay)
+    }
+
+    private static func parseExplicitDateCreatedRange(_ input: String, calendar cal: Calendar) -> SearchFilter? {
+        guard let sep = input.range(of: "..") else { return nil }
+        let leftStr = String(input[..<sep.lowerBound])
+        let rightStr = String(input[sep.upperBound...])
+        guard let lower = parseDateOnly(leftStr, calendar: cal),
+              let upper = parseDateOnly(rightStr, calendar: cal) else { return nil }
+        // Upper bound is exclusive: advance to start of next day
+        guard let nextDay = cal.date(byAdding: .day, value: 1, to: upper) else { return nil }
+        return .dateCreatedRange(lower..<nextDay)
     }
 
     private static func parseDateOnly(_ input: String, calendar cal: Calendar) -> Date? {

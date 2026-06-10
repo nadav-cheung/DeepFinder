@@ -290,9 +290,9 @@ struct DaemonCommandRunner: Sendable {
 
     /// Remove the Unix domain socket file if it exists.
     private func cleanupSocket() {
-        let resolved = Self.expandTilde(socketPath)
-        if FileManager.default.fileExists(atPath: resolved) {
-            try? FileManager.default.removeItem(atPath: resolved)
+        // socketPath is already tilde-expanded in init — no need to expand again
+        if FileManager.default.fileExists(atPath: socketPath) {
+            try? FileManager.default.removeItem(atPath: socketPath)
         }
     }
 

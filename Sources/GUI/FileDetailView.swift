@@ -19,6 +19,9 @@ struct FileDetailView: View {
     /// Tracks whether a value was just copied (for brief visual feedback).
     @State private var copiedField: String?
 
+    /// Controls the entrance animation.
+    @State private var appeared: Bool = false
+
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if !fileExists {
@@ -39,7 +42,13 @@ struct FileDetailView: View {
         .frame(minWidth: 280, idealWidth: 300, maxWidth: 320)
         .glassEffect()
         .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .onAppear { checkFileExists() }
+        .opacity(appeared ? 1 : 0)
+        .offset(x: appeared ? 0 : 20)
+        .animation(.spring(response: 0.35, dampingFraction: 0.85), value: appeared)
+        .onAppear {
+            checkFileExists()
+            appeared = true
+        }
     }
 
     // MARK: - Header
@@ -89,32 +98,22 @@ struct FileDetailView: View {
     // MARK: - Metadata Grid
 
     private var metadataGrid: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            metadataRow(label: "大小", value: FileSizeFormatter.format(result.record.size), field: "size")
+        let rows: [(String, String, String)] = [
+            ("大小", FileSizeFormatter.format(result.record.size), "size"),
+            ("类型", typeDescription, "type"),
+            ("创建", result.record.createdAt.formatted(date: .abbreviated, time: .shortened), "created"),
+            ("修改", result.record.modifiedAt.formatted(date: .abbreviated, time: .shortened), "modified"),
+            ("路径", PathShortener.shorten(result.record.parentPath), "parent")
+        ]
 
-            metadataRow(
-                label: "类型",
-                value: typeDescription,
-                field: "type"
-            )
+        return VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                metadataRow(label: row.0, value: row.1, field: row.2)
 
-            metadataRow(
-                label: "创建",
-                value: result.record.createdAt.formatted(date: .abbreviated, time: .shortened),
-                field: "created"
-            )
-
-            metadataRow(
-                label: "修改",
-                value: result.record.modifiedAt.formatted(date: .abbreviated, time: .shortened),
-                field: "modified"
-            )
-
-            metadataRow(
-                label: "路径",
-                value: PathShortener.shorten(result.record.parentPath),
-                field: "parent"
-            )
+                if index < rows.count - 1 {
+                    Divider().opacity(0.2).padding(.vertical, 5)
+                }
+            }
         }
     }
 
@@ -124,6 +123,7 @@ struct FileDetailView: View {
         HStack(spacing: 6) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.yellow)
+                .symbolEffect(.pulse, options: .repeating, isActive: !fileExists)
 
             Text("文件已移除")
                 .font(.system(size: 12, weight: .medium))
@@ -190,6 +190,7 @@ struct FileDetailView: View {
 
             copyButton(field: field, value: value)
         }
+        .padding(.vertical, 4)
     }
 
     private func copyButton(field: String, value: String) -> some View {
@@ -207,7 +208,18 @@ struct FileDetailView: View {
                 .font(.system(size: 10))
                 .foregroundStyle(copiedField == field ? .green : .secondary)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ScalePressButtonStyle())
         .accessibilityLabel("复制")
+    }
+}
+
+// MARK: - ScalePressButtonStyle
+
+/// A button style that scales down on press with a spring animation.
+private struct ScalePressButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.8 : 1.0)
+            .animation(.spring(response: 0.2, dampingFraction: 0.5), value: configuration.isPressed)
     }
 }

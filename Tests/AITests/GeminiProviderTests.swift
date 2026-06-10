@@ -138,6 +138,96 @@ struct GeminiProviderTests {
         }
     }
 
+    // MARK: - Retry behavior
+
+    @Test("retry on 429 succeeds on second attempt")
+    func retryOn429SucceedsOnSecondAttempt() async throws {
+        let counter = SendableCounter()
+        let response = """
+        data: {"candidates":[{"content":{"parts":[{"text":"retried"}]}}]}
+
+        """
+        let http = MockHTTPClient(handler: { _ in
+            let call = counter.increment()
+            if call == 1 {
+                return HTTPClientResponse(statusCode: 429, data: Data())
+            }
+            return HTTPClientResponse(statusCode: 200, data: Data(response.utf8))
+        })
+        let provider = GeminiProvider(apiKey: "test-key", model: "gemini-flash", httpClient: http)
+        var chunks: [String] = []
+        for try await chunk in provider.complete(prompt: "test", context: nil) {
+            chunks.append(chunk)
+        }
+        #expect(chunks == ["retried"])
+        #expect(counter.value == 2)
+    }
+
+    @Test("retry max 3 attempts then fails with rateLimited")
+    func retryMaxAttemptsThenRateLimited() async throws {
+        let counter = SendableCounter()
+        let http = MockHTTPClient(handler: { _ in
+            counter.increment()
+            return HTTPClientResponse(statusCode: 429, data: Data())
+        })
+        let provider = GeminiProvider(apiKey: "test-key", model: "gemini-flash", httpClient: http)
+        do {
+            for try await _ in provider.complete(prompt: "test", context: nil) {}
+            Issue.record("Expected rateLimited error, but no error was thrown")
+        } catch let error as AIError {
+            #expect(error == .rateLimited)
+        } catch {
+            Issue.record("Expected AIError.rateLimited, got \(error)")
+        }
+        #expect(counter.value == 3)
+    }
+
+    @Test("retry on transport error succeeds on second attempt")
+    func retryOnTransportErrorSucceedsOnSecondAttempt() async throws {
+        let counter = SendableCounter()
+        let response = """
+        data: {"candidates":[{"content":{"parts":[{"text":"recovered"}]}}]}
+
+        """
+        let http = MockHTTPClient(handler: { _ in
+            let call = counter.increment()
+            if call == 1 {
+                throw URLError(.notConnectedToInternet)
+            }
+            return HTTPClientResponse(statusCode: 200, data: Data(response.utf8))
+        })
+        let provider = GeminiProvider(apiKey: "test-key", model: "gemini-flash", httpClient: http)
+        var chunks: [String] = []
+        for try await chunk in provider.complete(prompt: "test", context: nil) {
+            chunks.append(chunk)
+        }
+        #expect(chunks == ["recovered"])
+        #expect(counter.value == 2)
+    }
+
+    @Test("non-retryable HTTP errors throw immediately without retry")
+    func nonRetryableHTTPErrorsThrowImmediately() async throws {
+        let counter = SendableCounter()
+        let http = MockHTTPClient(handler: { _ in
+            counter.increment()
+            return HTTPClientResponse(statusCode: 401, data: Data())
+        })
+        let provider = GeminiProvider(apiKey: "test-key", model: "gemini-flash", httpClient: http)
+        do {
+            for try await _ in provider.complete(prompt: "test", context: nil) {}
+            Issue.record("Expected networkError, but no error was thrown")
+        } catch let error as AIError {
+            if case .networkError = error {
+                // Correct
+            } else {
+                Issue.record("Expected networkError, got \(error)")
+            }
+        } catch {
+            Issue.record("Expected AIError, got \(error)")
+        }
+        #expect(counter.value == 1)
+    }
+
     // MARK: - endpoint URL
 
     @Test("endpoint URL includes model name")

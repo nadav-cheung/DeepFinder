@@ -395,6 +395,14 @@ public actor DaemonMain {
         let pidFD = try Self.acquirePIDFile(pidPath: resolvedPidPath)
         self.pidFileDescriptor = pidFD
 
+        // 2.5. Run index recovery (integrity check, WAL cleanup, stale lock detection)
+        let dbDirectory = (resolvedDbPath as NSString).deletingLastPathComponent
+        try IndexRecovery.runStartupRecovery(
+            dbPath: resolvedDbPath,
+            dbDirectory: dbDirectory,
+            pidPath: resolvedPidPath
+        )
+
         // 3. Load persistence layer
         let persistence = try IndexPersistence(dbPath: resolvedDbPath)
         self.persistence = persistence
@@ -514,6 +522,9 @@ public actor DaemonMain {
                     case .fileFound(let record):
                         await bgIndex.insert(record)
                         scannedCount += 1
+                    case .directoryFound(let record):
+                        await bgIndex.insert(record)
+                        scannedCount += 1
                     case .scanComplete:
                         let allRecords = await bgIndex.allRecords()
                         await bgPersistence.saveRecords(allRecords)
@@ -522,7 +533,7 @@ public actor DaemonMain {
                     case .scanError(let error):
                         let log = Logger(subsystem: Product.daemonSubsystem, category: "lifecycle")
                         log.warning("Background scan error at \(error.path, privacy: .public): \(error.reason, privacy: .public)")
-                    default:
+                    case .progress:
                         break
                     }
                 }

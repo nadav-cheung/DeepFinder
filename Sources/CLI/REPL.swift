@@ -16,6 +16,82 @@ private func _write_history(_ path: UnsafePointer<CChar>) -> CInt
 @_silgen_name("history_truncate_file")
 private func _history_truncate_file(_ path: UnsafePointer<CChar>, _ n: CInt) -> CInt
 
+// MARK: - libedit completion C interop
+
+/// Opaque pointer type for libedit's completion matches list.
+/// We only need to pass this to rl_completion_matches; the actual type is `char**`.
+typealias CompletionMatches = UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>
+
+/// libedit's rl_completion_matches function (analogous to GNU readline's).
+/// Takes a text prefix and a generator function, returns a malloc'd array of matches.
+@_silgen_name("rl_completion_matches")
+private func _rl_completion_matches(
+    _ text: UnsafePointer<CChar>,
+    _ generator: @convention(c) (UnsafePointer<CChar>, CInt) -> UnsafeMutablePointer<CChar>?
+) -> CompletionMatches?
+
+/// The C-callable completion entry generator function.
+///
+/// libedit calls this repeatedly with incrementing `state` (0 = first call,
+/// non-zero = subsequent) to iterate through matches. Returns NULL when done.
+/// This is a C function pointer — it cannot capture any Swift context.
+/// It reads from `CompletionContext` (static bridge) instead.
+
+// File-scope static state for the completion generator (safe: readline is single-threaded).
+nonisolated(unsafe) private var _completionMatches: [String] = []
+nonisolated(unsafe) private var _completionMatchIndex: Int = 0
+
+private func _completionEntryGenerator(_ text: UnsafePointer<CChar>, _ state: CInt) -> UnsafeMutablePointer<CChar>? {
+    if state == 0 {
+        // First call: compute all matches
+        let textStr = String(cString: text)
+        _completionMatches = CompletionContext.complete(textStr)
+        _completionMatchIndex = 0
+    }
+
+    guard _completionMatchIndex < _completionMatches.count else {
+        return nil
+    }
+
+    defer { _completionMatchIndex += 1 }
+    return strdup(_completionMatches[_completionMatchIndex])
+}
+
+/// The C-callable attempted completion function.
+///
+/// Called by libedit when the user presses Tab. Returns a malloc'd array
+/// of matches, or NULL to fall back to default filename completion.
+private func _attemptedCompletion(_ text: UnsafePointer<CChar>, _ start: CInt, _ end: CInt) -> CompletionMatches? {
+    let textStr = String(cString: text)
+
+    // Get completions from the engine
+    let completions = CompletionContext.complete(textStr)
+
+    guard !completions.isEmpty else {
+        return nil  // No matches — let libedit fall back to default (filename) completion
+    }
+
+    // Multiple matches — let libedit iterate via the entry generator
+    return _rl_completion_matches(text, _completionEntryGenerator)
+}
+
+/// Set libedit's rl_attempted_completion_function to our completion handler.
+///
+/// Accesses the C global via dlsym because Swift 6 strict concurrency
+/// does not allow mutable @_silgen_name global variables.
+private func _installReadlineCompletion() {
+    // rl_attempted_completion_function
+    if let sym = dlsym(dlopen(nil, RTLD_NOW), "rl_attempted_completion_function") {
+        let ptr = sym.assumingMemoryBound(to: (@convention(c) (UnsafePointer<CChar>, CInt, CInt) -> CompletionMatches?)?.self)
+        ptr.pointee = _attemptedCompletion
+    }
+    // rl_completion_append_character
+    if let sym = dlsym(dlopen(nil, RTLD_NOW), "rl_completion_append_character") {
+        let ptr = sym.assumingMemoryBound(to: CInt.self)
+        ptr.pointee = CInt(Character(" ").asciiValue!)
+    }
+}
+
 // MARK: - REPLInputSource
 
 /// Abstraction over the REPL input mechanism.
@@ -32,7 +108,20 @@ protocol REPLInputSource: Sendable {
 
 /// Production input source wrapping libedit's readline.
 struct StdinInputSource: REPLInputSource {
+
+    /// Whether tab-completion has been installed via rl_attempted_completion_function.
+    nonisolated(unsafe) private static var completionInstalled = false
+
+    /// Install tab-completion callback (once per process).
+    static func installCompletion() {
+        guard !completionInstalled else { return }
+        _installReadlineCompletion()
+        completionInstalled = true
+    }
+
     func readline(prompt: String) -> String? {
+        Self.installCompletion()
+
         guard let cString = _readline(prompt) else {
             return nil  // EOF (Ctrl+D)
         }
@@ -46,6 +135,137 @@ struct StdinInputSource: REPLInputSource {
         }
 
         return line
+    }
+}
+
+// MARK: - CompletionEngine
+
+/// Synchronous tab-completion engine for the REPL.
+///
+/// Provides completions for:
+/// - REPL commands (e.g. `:he` → `:help`)
+/// - Filter keywords (e.g. `ex` → `ext:`)
+/// - Result indices for `:open`/`:reveal`
+/// - Filenames from last search results
+///
+/// Designed to be synchronous because libedit's completion callback
+/// is a C function pointer that cannot call async code.
+struct CompletionEngine: Sendable {
+
+    /// REPL commands with leading colon, kept in sync with REPLCommand.allCases.
+    private static let commands: [String] = [
+        ":help", ":quit", ":stats", ":config", ":daemon",
+        ":open", ":reveal", ":explain", ":dataPreview", ":undo",
+    ]
+
+    /// Search filter keyword prefixes.
+    private static let filterKeywords: [String] = [
+        "ext:", "size:", "type:", "dm:", "dc:", "path:",
+        "file:", "folder:", "depth:", "case:", "regex:",
+        "len:", "width:", "height:", "duration:", "pages:",
+        "pagecount:", "fps:", "bitrate:", "artist:", "album:",
+        "title:", "genre:", "codec:", "audio:", "video:", "pic:", "doc:",
+    ]
+
+    /// Last search results for :open/:reveal index completion and filename completion.
+    let lastResults: [SearchResult]
+
+    /// Create a completion engine with the given last search results.
+    init(lastResults: [SearchResult]) {
+        self.lastResults = lastResults
+    }
+
+    /// Return completions for the given input text.
+    ///
+    /// - Parameter text: The current input line (what the user has typed so far).
+    /// - Returns: An array of completion strings that could replace the current token.
+    func complete(_ text: String) -> [String] {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+
+        // 1. Command completion: input starts with ":"
+        if trimmed.hasPrefix(":") {
+            // Check for :open or :reveal with a trailing space — complete with indices
+            let tokens = text.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
+            if let firstToken = tokens.first {
+                let cmdLower = firstToken.lowercased()
+                // Use original text (not trimmed) to detect trailing space
+                let hasSpace = text.hasSuffix(" ") || tokens.count > 1
+
+                if (cmdLower == ":open" || cmdLower == ":reveal") && hasSpace {
+                    return completeResultIndices()
+                }
+            }
+
+            return completeCommands(prefix: trimmed)
+        }
+
+        // 2. Filter keyword + filename completion for plain text
+        return completeFiltersAndFilenames(prefix: trimmed)
+    }
+
+    // MARK: - Private
+
+    /// Complete REPL commands matching the given prefix.
+    private func completeCommands(prefix: String) -> [String] {
+        let lowered = prefix.lowercased()
+        return Self.commands.filter { $0.lowercased().hasPrefix(lowered) }
+    }
+
+    /// Complete result indices (for :open/:reveal).
+    private func completeResultIndices() -> [String] {
+        guard !lastResults.isEmpty else { return [] }
+        return lastResults.enumerated().map { index, result in
+            "\(index + 1)  \(result.record.name)"
+        }
+    }
+
+    /// Complete filter keywords and filenames matching the given prefix.
+    private func completeFiltersAndFilenames(prefix: String) -> [String] {
+        var completions: [String] = []
+
+        // Filter keyword completions
+        let lowered = prefix.lowercased()
+        for keyword in Self.filterKeywords {
+            if keyword.hasPrefix(lowered) || keyword.lowercased().hasPrefix(lowered) {
+                completions.append(keyword)
+            }
+        }
+
+        // Filename completions from last results
+        if !lowered.isEmpty {
+            for result in lastResults {
+                if result.record.name.lowercased().hasPrefix(lowered) {
+                    if !completions.contains(result.record.name) {
+                        completions.append(result.record.name)
+                    }
+                }
+            }
+        }
+
+        return completions
+    }
+}
+
+// MARK: - CompletionContext (static bridge for C callback)
+
+/// Static bridge holding the current completion state.
+///
+/// libedit's completion callback is a C function pointer that cannot
+/// capture Swift context. This static class provides the bridge between
+/// the REPL actor and the C callback.
+enum CompletionContext: Sendable {
+
+    /// Current completion engine state (updated by REPL before readline).
+    nonisolated(unsafe) private static var _engine: CompletionEngine = CompletionEngine(lastResults: [])
+
+    /// Update the completion context with current REPL state.
+    static func update(lastResults: [SearchResult]) {
+        _engine = CompletionEngine(lastResults: lastResults)
+    }
+
+    /// Get completions for the current input via the stored engine.
+    static func complete(_ text: String) -> [String] {
+        _engine.complete(text)
     }
 }
 
@@ -130,6 +350,9 @@ actor REPL {
 
         // Main loop
         while true {
+            // Update completion context with current state before readline
+            CompletionContext.update(lastResults: lastResults)
+
             guard let rawLine = inputSource.readline(prompt: "> ") else {
                 // EOF (Ctrl+D)
                 break

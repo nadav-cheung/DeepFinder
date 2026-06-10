@@ -168,7 +168,7 @@ private func writeMP4Sync(
     let lock = NSLock()
     var frameIndex = 0
     let frameSemaphore = DispatchSemaphore(value: 0)
-    let writingQueue = DispatchQueue(label: "com.nadav.deepfinder.test.video-writer")
+    let writingQueue = DispatchQueue(label: "cn.com.nadav.deepfinder.test.video-writer")
 
     writer.startWriting()
     writer.startSession(atSourceTime: .zero)

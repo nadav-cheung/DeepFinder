@@ -35,6 +35,9 @@ final class SearchHistoryStore {
     /// All history entries, sorted newest first.
     private(set) var entries: [SearchHistoryEntry] = []
 
+    /// Pending save work item, debounced to avoid frequent disk writes.
+    private nonisolated var saveWorkItem: DispatchWorkItem?
+
     // MARK: - Persistence
 
     /// Expanded cache directory path (``Product/cacheDir`` with `~` resolved).
@@ -77,7 +80,7 @@ final class SearchHistoryStore {
             entries.removeSubrange(Self.maxEntries...)
         }
 
-        saveToDisk()
+        debounceSave()
     }
 
     /// Returns the most recent history entries, sorted by timestamp descending.
@@ -89,16 +92,26 @@ final class SearchHistoryStore {
     func removeEntry(at index: Int) {
         guard entries.indices.contains(index) else { return }
         entries.remove(at: index)
-        saveToDisk()
+        debounceSave()
     }
 
     /// Removes all history entries and deletes the backing file.
     func clearAll() {
         entries.removeAll()
-        saveToDisk()
+        debounceSave()
     }
 
     // MARK: - Private - Persistence
+
+    /// Debounces disk writes by cancelling any pending save and scheduling a new one after 2 seconds.
+    private func debounceSave() {
+        saveWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.saveToDisk()
+        }
+        saveWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: workItem)
+    }
 
     private func loadFromDisk() {
         let fm = FileManager.default

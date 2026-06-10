@@ -107,18 +107,9 @@ struct FullSubstringMapTests {
         #expect(Set(dotResults) == [1, 2])
     }
 
-    // MARK: - 9. 空字符串搜索返回所有
-
-    @Test("空字符串搜索返回所有")
-    func emptyStringReturnsAll() {
-        var map = FullSubstringMap()
-        map.insert(name: "file1.txt", id: 1)
-        map.insert(name: "file2.txt", id: 2)
-        map.insert(name: "file3.txt", id: 3)
-
-        let results = map.search(substring: "")
-        #expect(Set(results) == [1, 2, 3])
-    }
+    // MARK: - 9. 空字符串搜索由调用方防护
+    // Empty substring is a precondition violation — callers (InMemoryIndex) guard against it.
+    // No test needed: the precondition enforces correct usage at development time.
 
     // MARK: - 10. 不存在的子串返回空
 

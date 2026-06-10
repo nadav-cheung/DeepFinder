@@ -18,9 +18,10 @@ struct ToastItem: Identifiable, Equatable {
 /// Positions a toast at the top center of its parent, auto-dismissing after
 /// a fixed interval.
 ///
-/// The toast appears as a compact pill with a `.quaternary` background and
-/// `.caption`-size text. It transitions in from the top edge with a combined
-/// move + opacity animation and dismisses itself after 1.5 seconds.
+/// The toast appears as a compact pill with a `.regularMaterial` background
+/// and medium-weight 12pt text. It transitions in from the top edge with a
+/// spring animation (subtle scale + opacity) and dismisses itself after
+/// 1.5 seconds.
 struct ToastOverlay: ViewModifier {
 
     /// The current toast to display. Set to `nil` to dismiss.
@@ -41,25 +42,27 @@ struct ToastOverlay: ViewModifier {
             .overlay(alignment: .top) {
                 if let item {
                     toastView(for: item)
+                        .scaleEffect(1.0)
                         .transition(
-                            .move(edge: .top).combined(with: .opacity)
+                            .move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.95))
                         )
                         .onAppear { scheduleDismiss() }
                         .onDisappear { cancelDismiss() }
                 }
             }
-            .animation(.easeInOut(duration: 0.25), value: item?.id)
+            .animation(.spring(duration: 0.3, bounce: 0.15), value: item?.id)
     }
 
     // MARK: - Subviews
 
     private func toastView(for item: ToastItem) -> some View {
         Text(item.message)
-            .font(.caption)
+            .font(.system(size: 12, weight: .medium))
             .foregroundStyle(.primary)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 8)
-            .background(.quaternary, in: Capsule())
+            .padding(.horizontal, 16)
+            .padding(.vertical, 9)
+            .background(.regularMaterial, in: Capsule())
+            .shadow(color: .black.opacity(0.08), radius: 6, y: 2)
     }
 
     // MARK: - Auto-Dismiss

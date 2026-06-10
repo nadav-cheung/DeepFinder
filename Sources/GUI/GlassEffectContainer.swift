@@ -46,6 +46,12 @@ struct GlassEffectContainer<Content: View>: View {
     /// Whether the glow is in its active (focused) state.
     private let glowActive: Bool
 
+    /// Whether to add a subtle vignette texture overlay to break the flat glass look.
+    private let showTexture: Bool
+
+    /// Whether to add inner shadow depth effects (inner light edge + top highlight).
+    private let innerShadow: Bool
+
     @ViewBuilder private let content: () -> Content
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -58,24 +64,69 @@ struct GlassEffectContainer<Content: View>: View {
     ///   - cornerRadius: Corner radius of the glass shape. Defaults to `24`.
     ///   - borderWidth: Stroke width of the glow border. Pass `nil` to skip the glow entirely. Defaults to `2`.
     ///   - glowActive: Whether the glow is active (focused). Defaults to `true`.
+    ///   - showTexture: Whether to add a subtle vignette overlay. Defaults to `false`.
+    ///   - innerShadow: Whether to add inner shadow depth (light edge + top highlight). Defaults to `false`.
     ///   - content: The view content to wrap.
     init(
         intensity: GlassIntensity = .regular,
         cornerRadius: CGFloat = 24,
         borderWidth: CGFloat? = 2,
         glowActive: Bool = true,
+        showTexture: Bool = false,
+        innerShadow: Bool = false,
         @ViewBuilder content: @escaping () -> Content
     ) {
         self.intensity = intensity
         self.cornerRadius = cornerRadius
         self.borderWidth = borderWidth
         self.glowActive = glowActive
+        self.showTexture = showTexture
+        self.innerShadow = innerShadow
         self.content = content
     }
 
     var body: some View {
         content()
             .glassEffect(glassVariant, in: .rect(cornerRadius: cornerRadius))
+            .shadow(color: .black.opacity(0.04), radius: 8, y: 4)
+            .overlay {
+                if showTexture {
+                    // Subtle vignette at edges — barely perceptible, breaks the flat glass look.
+                    RadialGradient(
+                        colors: [.clear, .black.opacity(0.05)],
+                        center: .center,
+                        startRadius: cornerRadius,
+                        endRadius: 300
+                    )
+                    .clipShape(.rect(cornerRadius: cornerRadius))
+                    .allowsHitTesting(false)
+                    .blendMode(.multiply)
+                }
+            }
+            .overlay {
+                if innerShadow {
+                    // Inner light edge — gives the glass "thickness".
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .strokeBorder(Color.white.opacity(0.12), lineWidth: 0.5)
+                        .allowsHitTesting(false)
+                }
+            }
+            .overlay {
+                if innerShadow {
+                    // Top highlight — subtle "light from above" on the glass surface.
+                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                        .fill(
+                            LinearGradient(
+                                colors: [Color.white.opacity(0.10), .clear],
+                                startPoint: .top,
+                                endPoint: .center
+                            )
+                        )
+                        .frame(height: cornerRadius)
+                        .clipped()
+                        .allowsHitTesting(false)
+                }
+            }
             .overlay {
                 if let borderWidth {
                     let effectiveWidth = highContrastBoost(borderWidth)

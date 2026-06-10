@@ -73,6 +73,8 @@ struct ActionPanelView: View {
 
     @State private var searchText: String = ""
     @State private var selectedIndex: Int = 0
+    @State private var hoveredActionID: String?
+    @FocusState private var isSearchFocused: Bool
 
     // MARK: - Constants
 
@@ -125,6 +127,20 @@ struct ActionPanelView: View {
             .font(.system(size: 12))
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
+            .focused($isSearchFocused)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(Color.accentColor.opacity(isSearchFocused ? 0.08 : 0))
+                    .animation(.easeOut(duration: 0.2), value: isSearchFocused)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .strokeBorder(Color.accentColor.opacity(isSearchFocused ? 0.3 : 0), lineWidth: 1)
+                    .animation(.easeOut(duration: 0.2), value: isSearchFocused)
+                    .padding(.horizontal, 4)
+                    .padding(.vertical, 2)
+            )
+            .onAppear { isSearchFocused = true }
             .onChange(of: searchText) { _, _ in
                 selectedIndex = 0
             }
@@ -140,6 +156,10 @@ struct ActionPanelView: View {
                             selectedIndex = index
                             onAction(action)
                         }
+
+                    if index < filteredActions.count - 1 {
+                        Divider().opacity(0.2)
+                    }
                 }
             }
         }
@@ -147,9 +167,16 @@ struct ActionPanelView: View {
 
     private func actionRow(action: FileAction, isSelected: Bool) -> some View {
         HStack(spacing: 10) {
-            Image(systemName: action.icon)
-                .font(.system(size: 13))
-                .frame(width: 18)
+            ZStack {
+                Circle()
+                    .fill(Color.primary.opacity(hoveredActionID == action.id ? 0.08 : 0))
+                    .frame(width: 26, height: 26)
+                    .animation(.spring(response: 0.3, dampingFraction: 0.6), value: hoveredActionID)
+
+                Image(systemName: action.icon)
+                    .font(.system(size: 13))
+            }
+            .frame(width: 26)
 
             Text(action.title)
                 .font(.system(size: 13))
@@ -163,6 +190,10 @@ struct ActionPanelView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(isSelected ? Color.accentColor.opacity(0.15) : Color.clear)
+        .animation(.spring(response: 0.25, dampingFraction: 0.7), value: isSelected)
+        .onHover { hovering in
+            hoveredActionID = hovering ? action.id : nil
+        }
     }
 
     // MARK: - Keyboard Handlers

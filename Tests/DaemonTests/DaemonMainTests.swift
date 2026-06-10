@@ -344,4 +344,53 @@ struct DaemonMainTests {
             Issue.record("Unexpected error type: \(error)")
         }
     }
+
+    // MARK: - 10. Background scan indexes directories (not just files)
+
+    @Test("FileScanner directoryFound events are insertable into InMemoryIndex")
+    func testDirectoryRecordsInsertedIntoIndex() async throws {
+        // Create a temp directory with a known structure:
+        //   tmpdir/
+        //     subdir/
+        //       file.txt
+        let tmpDir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: tmpDir) }
+
+        let subDir = tmpDir.appendingPathComponent("subdir")
+        try FileManager.default.createDirectory(at: subDir, withIntermediateDirectories: true)
+        let file = subDir.appendingPathComponent("file.txt")
+        try "hello".write(to: file, atomically: true, encoding: .utf8)
+
+        // Run a FileScanner on the temp dir
+        let scanner = FileScanner()
+        let scanStream = await scanner.scan(
+            rootPaths: [tmpDir.path],
+            config: ScanConfiguration(maxDepth: 10)
+        )
+
+        let index = InMemoryIndex()
+        for await event in scanStream {
+            switch event {
+            case .fileFound(let record):
+                await index.insert(record)
+            case .directoryFound(let record):
+                await index.insert(record)
+            case .scanComplete, .scanError, .progress:
+                break
+            }
+        }
+
+        let allRecords = await index.allRecords()
+        let directories = allRecords.filter(\.isDirectory)
+        let files = allRecords.filter { !$0.isDirectory }
+
+        // Must have at least the "subdir" directory and "file.txt"
+        #expect(!directories.isEmpty, "Expected at least one directory record, got \(allRecords.count) total records")
+        #expect(!files.isEmpty, "Expected at least one file record, got \(allRecords.count) total records")
+
+        // Verify the directory record has correct metadata
+        let subDirRecord = directories.first { $0.name == "subdir" }
+        #expect(subDirRecord != nil, "Expected 'subdir' directory record")
+        #expect(subDirRecord?.isDirectory == true)
+    }
 }

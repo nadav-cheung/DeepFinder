@@ -180,6 +180,8 @@ struct SpeechOverlayView: View {
 
     @Bindable var viewModel: SpeechOverlayViewModel
 
+    @State private var isCancelHovered = false
+
     var body: some View {
         VStack(spacing: 12) {
             // Waveform indicator
@@ -188,6 +190,22 @@ struct SpeechOverlayView: View {
                     WaveformBar(phase: viewModel.waveformPhase, index: index)
                 }
             }
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(
+                        LinearGradient(
+                            colors: [
+                                GlowColors.teal.opacity(0.08),
+                                GlowColors.violet.opacity(0.08)
+                            ],
+                            startPoint: .leading,
+                            endPoint: .trailing
+                        )
+                    )
+                    .blur(radius: 6)
+                    .padding(.horizontal, -8)
+                    .padding(.vertical, -4)
+            )
             .frame(height: 24)
             .opacity(viewModel.isListening ? 1 : 0.3)
 
@@ -198,6 +216,7 @@ struct SpeechOverlayView: View {
                 .lineLimit(2)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: 260)
+                .animation(.spring(duration: 0.3, bounce: 0.2), value: viewModel.transcript)
 
             // Cancel button
             Button {
@@ -206,13 +225,19 @@ struct SpeechOverlayView: View {
                 Image(systemName: "xmark.circle.fill")
                     .foregroundStyle(.secondary)
                     .font(.system(size: 16))
+                    .scaleEffect(isCancelHovered ? 1.15 : 1.0)
             }
             .buttonStyle(.plain)
             .accessibilityLabel("取消语音输入")
+            .onHover { hovering in
+                withAnimation(.spring(duration: 0.25, bounce: 0.3)) {
+                    isCancelHovered = hovering
+                }
+            }
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
-        .glassEffect(.regular, in: .rect(cornerRadius: 16))
+        .background(.ultraThinMaterial, in: .rect(cornerRadius: 16))
         .frame(minWidth: 200, maxWidth: 300)
     }
 }
@@ -244,6 +269,6 @@ private struct WaveformBar: View {
                 )
             )
             .frame(width: 4, height: barHeight)
-            .animation(.easeInOut(duration: 0.08), value: phase)
+            .animation(.spring(duration: 0.12, bounce: 0.4), value: phase)
     }
 }

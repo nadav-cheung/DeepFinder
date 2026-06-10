@@ -1,4 +1,4 @@
-import Foundation
+import SwiftUI
 
 // MARK: - ResultCategory
 
@@ -87,6 +87,19 @@ enum ResultCategory: String, CaseIterable, Sendable {
         case .audio:      return 4
         case .archives:   return 5
         case .other:      return 6
+        }
+    }
+
+    /// Accent color for the category, used for section headers and indicators.
+    var color: Color {
+        switch self {
+        case .code:      return .blue
+        case .documents:  return .orange
+        case .images:     return .purple
+        case .video:      return .pink
+        case .audio:      return .green
+        case .archives:   return .yellow
+        case .other:      return .gray
         }
     }
 }

@@ -59,6 +59,8 @@ private struct FeatureCard: View {
     let description: String
     var accentColor: Color? = nil
 
+    @State private var isHovering = false
+
     var body: some View {
         HStack(spacing: 0) {
             if let accentColor {
@@ -74,7 +76,7 @@ private struct FeatureCard: View {
 
                 VStack(alignment: .leading, spacing: 4) {
                     Text(title)
-                        .font(.system(size: 14, weight: .semibold))
+                        .font(DeepFinderTypography.subheading(size: 14))
                     Text(description)
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
@@ -85,6 +87,11 @@ private struct FeatureCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .glassEffect(.regular, in: .rect(cornerRadius: 12))
+        .shadow(color: .black.opacity(isHovering ? 0.06 : 0), radius: 8, y: isHovering ? 2 : 0)
+        .animation(.easeOut(duration: 0.2), value: isHovering)
+        .onHover { hovering in
+            isHovering = hovering
+        }
     }
 }
 
@@ -96,6 +103,9 @@ struct OnboardingView: View {
 
     @ObservedObject var viewModel: OnboardingViewModel
     @State private var currentStep: OnboardingStep = .welcome
+    @State private var isWelcomeIconPulsing = false
+    @State private var isCompleteStepVisible = false
+    @State private var isNextButtonHovering = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -103,6 +113,8 @@ struct OnboardingView: View {
         GlassEffectContainer(cornerRadius: 24, glowActive: false) {
             VStack(spacing: 24) {
                 stepContent
+
+                stepIndicator
 
                 Spacer().frame(height: 4)
 
@@ -115,17 +127,29 @@ struct OnboardingView: View {
 
     // MARK: - Step Content
 
+    private var stepTransition: AnyTransition {
+        .opacity.combined(with: .scale(scale: 0.95))
+    }
+
+    private var stepAnimation: Animation? {
+        reduceMotion ? nil : .spring(duration: 0.35, bounce: 0.15)
+    }
+
     @ViewBuilder
     private var stepContent: some View {
         switch currentStep {
         case .welcome:
             welcomeStep
+                .transition(stepTransition)
         case .features:
             featuresStep
+                .transition(stepTransition)
         case .permissions:
             permissionsStep
+                .transition(stepTransition)
         case .complete:
             completeStep
+                .transition(stepTransition)
         }
     }
 
@@ -136,10 +160,33 @@ struct OnboardingView: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 40, weight: .light))
                 .foregroundStyle(GlowColors.teal)
+                .scaleEffect(isWelcomeIconPulsing ? 1.03 : 1.0)
+                .background(
+                    ZStack {
+                        RadialGradient(
+                            colors: [GlowColors.teal.opacity(0.08), .clear],
+                            center: .center,
+                            startRadius: 0,
+                            endRadius: 70
+                        )
+                        RadialGradient(
+                            colors: [GlowColors.teal.opacity(0.2), .clear],
+                            center: .center,
+                            startRadius: 0,
+                            endRadius: 50
+                        )
+                    }
+                    .frame(width: 100, height: 100)
+                )
+                .onAppear {
+                    guard !reduceMotion else { return }
+                    withAnimation(.spring(duration: 2, bounce: 0.2).repeatForever()) {
+                        isWelcomeIconPulsing = true
+                    }
+                }
 
             Text("欢迎使用 \(Product.name)")
-                .font(.title2)
-                .fontWeight(.bold)
+                .font(DeepFinderTypography.heading(size: 26))
 
             Text("macOS 快速文件搜索工具")
                 .font(.subheadline)
@@ -180,7 +227,7 @@ struct OnboardingView: View {
 
     private var permissionsStep: some View {
         PermissionGuideView {
-            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+            withAnimation(stepAnimation) {
                 currentStep = .complete
             }
         }
@@ -193,16 +240,37 @@ struct OnboardingView: View {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 40, weight: .light))
                 .foregroundStyle(.green)
+                .scaleEffect(isCompleteStepVisible ? 1.0 : 0.5)
+                .animation(.spring(duration: 0.5, bounce: 0.3), value: isCompleteStepVisible)
 
             Text("设置完成！")
-                .font(.title2)
-                .fontWeight(.bold)
+                .font(DeepFinderTypography.heading(size: 26))
 
             Text("按 Control+Command+K 开始搜索")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
         }
         .padding(.top, 8)
+        .onAppear {
+            guard !reduceMotion else {
+                isCompleteStepVisible = true
+                return
+            }
+            isCompleteStepVisible = true
+        }
+    }
+
+    // MARK: - Step Indicator
+
+    private var stepIndicator: some View {
+        HStack(spacing: 8) {
+            ForEach(OnboardingStep.allCases, id: \.self) { step in
+                Capsule()
+                    .fill(step == currentStep ? AnyShapeStyle(GlowColors.teal) : AnyShapeStyle(.quaternary))
+                    .frame(width: step == currentStep ? 8 : 7, height: 7)
+            }
+        }
+        .animation(.spring(duration: 0.35, bounce: 0.15), value: currentStep)
     }
 
     // MARK: - Navigation
@@ -221,11 +289,16 @@ struct OnboardingView: View {
                 Spacer()
 
                 Button("下一步") {
-                    withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                    withAnimation(stepAnimation) {
                         advanceStep()
                     }
                 }
                 .buttonStyle(.borderedProminent)
+                .brightness(isNextButtonHovering ? 0.08 : 0)
+                .animation(.easeOut(duration: 0.15), value: isNextButtonHovering)
+                .onHover { hovering in
+                    isNextButtonHovering = hovering
+                }
             }
         case .permissions:
             // PermissionGuideView handles its own navigation.

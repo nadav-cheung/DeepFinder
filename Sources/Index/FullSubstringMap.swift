@@ -57,17 +57,11 @@ struct FullSubstringMap {
     }
 
     /// Look up all FileRecord IDs whose filename contains `substring`.
-    /// Returns an empty array if no matches. Empty query returns all IDs.
+    /// Returns an empty array if no matches.
+    /// - Precondition: `substring` must not be empty (use `InMemoryIndex.allRecords()` instead).
     func search(substring: String) -> [UInt32] {
+        precondition(!substring.isEmpty, "FullSubstringMap.search requires a non-empty substring")
         let key = substring.precomposedStringWithCanonicalMapping.lowercased()
-        if key.isEmpty {
-            // Collect all unique IDs across all substrings
-            var all = Set<UInt32>()
-            for ids in index.values {
-                all.formUnion(ids)
-            }
-            return Array(all)
-        }
         guard let ids = index[key] else { return [] }
         return Array(ids)
     }

@@ -162,7 +162,7 @@ extension QueryParser {
     /// Must include every key that ``FilterPipeline/parse(from:)`` handles.
     private static let modifierKeys: Set<String> = [
         "case", "file", "folder", "ext", "path",
-        "size", "dm", "depth", "len", "width", "height",
+        "size", "dm", "dc", "depth", "len", "width", "height",
         "duration", "pages", "pagecount", "fps", "bitrate",
         "artist", "album", "title", "genre", "codec",
         "audio", "video", "pic", "doc"

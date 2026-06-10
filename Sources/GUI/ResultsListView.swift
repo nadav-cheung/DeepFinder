@@ -57,6 +57,13 @@ struct ResultsListView: View {
     /// Index of the row currently under the mouse cursor, if any.
     @State private var hoveredIndex: Int? = nil
 
+    /// Whether the "load more" button is being hovered.
+    @State private var loadMoreHovered: Bool = false
+
+    // MARK: - Accessibility
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     // MARK: - Constants
 
     private static let scrollCoalescingInterval: TimeInterval = 0.1
@@ -92,8 +99,8 @@ struct ResultsListView: View {
             }
         }
         .showToast($toastMessage)
-        .animation(.easeInOut(duration: 0.2), value: showDetailPanel)
-        .animation(.easeInOut(duration: 0.15), value: showActionPanel)
+        .animation(.spring(duration: 0.3, bounce: 0.1), value: showDetailPanel)
+        .animation(.spring(duration: 0.3, bounce: 0.1), value: showActionPanel)
     }
 
     // MARK: - Main Content (list or empty state)
@@ -202,6 +209,11 @@ struct ResultsListView: View {
     /// REQ-3.2-32: Category section header row. Not selectable — skipped in keyboard navigation.
     private func categoryHeader(category: ResultCategory, count: Int, startIndex: Int) -> some View {
         HStack(spacing: 6) {
+            // Left accent line — 2pt wide, tinted with category color
+            RoundedRectangle(cornerRadius: 1, style: .continuous)
+                .fill(category.color)
+                .frame(width: 2)
+
             Image(systemName: category.systemImage)
                 .foregroundStyle(.secondary)
                 .font(.system(size: 11))
@@ -241,16 +253,20 @@ struct ResultsListView: View {
         .onHover { hovering in
             hoveredIndex = hovering ? index : nil
         }
-        // REQ-3.2-18: staggered fade-in for first 5 rows, plain opacity for rest.
+        // REQ-3.2-18: staggered fade-in — only on initial appearance.
         .transition(
-            index < 5
-                ? .opacity.combined(with: .move(edge: .top))
-                : .opacity
+            reduceMotion
+                ? .identity
+                : index < 5
+                    ? .opacity.combined(with: .move(edge: .top))
+                    : .opacity
         )
         .animation(
-            index < 5
-                ? .easeInOut(duration: 0.2).delay(Double(index) * 0.03)
-                : .default,
+            reduceMotion
+                ? .none
+                : index < 5
+                    ? .spring(duration: 0.35, bounce: 0.15).delay(Double(index) * 0.025)
+                    : .default,
             value: state.allResults.count
         )
     }
@@ -271,9 +287,15 @@ struct ResultsListView: View {
                 } label: {
                     Text("还有 \(state.remainingCount) 个结果")
                         .font(.callout)
-                        .foregroundStyle(.tint)
+                        .foregroundStyle(loadMoreHovered ? Color.accentColor : .secondary)
                         .frame(maxWidth: .infinity)
                         .padding(.vertical, 8)
+                        .contentShape(Rectangle())
+                        .onHover { hovering in
+                            withAnimation(.easeOut(duration: 0.15)) {
+                                loadMoreHovered = hovering
+                            }
+                        }
                 }
                 .buttonStyle(.plain)
                 .accessibilityIdentifier("load_more")
@@ -310,23 +332,26 @@ struct ResultsListView: View {
             )
             .padding(.horizontal, 4)
             .animation(
-                .easeInOut(duration: isSelected ? Self.highlightAnimationDuration : 0.15),
+                .spring(duration: 0.25, bounce: 0.1),
                 value: isSelected
             )
-            .animation(.easeInOut(duration: 0.15), value: isHovered)
+            .animation(.spring(duration: 0.25, bounce: 0.1), value: isHovered)
     }
 
     // MARK: - Result Count Footer (REQ-3.2-13)
 
     private var resultCountFooter: some View {
-        HStack {
-            Spacer()
-            Text("\(state.formattedResultCount) 个结果")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-            Spacer()
+        VStack(spacing: 0) {
+            Divider()
+            HStack {
+                Spacer()
+                Text("\(state.formattedResultCount) 个结果")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            .padding(.vertical, 6)
         }
-        .padding(.vertical, 4)
         .accessibilityIdentifier("result_count_footer")
     }
 
@@ -334,7 +359,7 @@ struct ResultsListView: View {
 
     private var actionPanelOverlay: some View {
         ZStack {
-            Color.black.opacity(0.2)
+            Color.black.opacity(0.15)
                 .ignoresSafeArea()
                 .onTapGesture {
                     showActionPanel = false
@@ -360,7 +385,7 @@ struct ResultsListView: View {
         if interval < Self.scrollCoalescingInterval {
             proxy.scrollTo(index, anchor: .center)
         } else {
-            withAnimation(.easeOut(duration: Self.scrollAnimationDuration)) {
+            withAnimation(.spring(duration: 0.25, bounce: 0.1)) {
                 proxy.scrollTo(index, anchor: .center)
             }
         }

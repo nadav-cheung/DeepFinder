@@ -383,4 +383,106 @@ struct FilterPipelineTests {
         #expect(names.contains("notes.docx"))
         #expect(names.contains("readme.txt"))
     }
+
+    // MARK: - Date-Created Filter (dc:) Parsing Tests
+
+    @Test("Parse dc:today produces dateCreatedAfter filter")
+    func testParseDateCreatedToday() {
+        let pipeline = FilterPipeline.parse(from: [("dc", "today")])
+        #expect(pipeline.filters.count == 1)
+
+        let cal = Calendar(identifier: .gregorian)
+        let midnight = cal.startOfDay(for: Date())
+
+        if case .dateCreatedAfter(let date) = pipeline.filters[0] {
+            #expect(date == midnight)
+        } else {
+            Issue.record("Expected dateCreatedAfter, got \(pipeline.filters[0])")
+        }
+    }
+
+    @Test("Parse dc:>2024-01-01 produces dateCreatedAfter filter")
+    func testParseDateCreatedGreaterThan() {
+        let pipeline = FilterPipeline.parse(from: [("dc", ">2024-01-01")])
+        #expect(pipeline.filters.count == 1)
+
+        let cal = Calendar(identifier: .gregorian)
+        let expected = cal.date(from: DateComponents(year: 2024, month: 1, day: 1))!
+
+        if case .dateCreatedAfter(let date) = pipeline.filters[0] {
+            #expect(date == expected)
+        } else {
+            Issue.record("Expected dateCreatedAfter, got \(pipeline.filters[0])")
+        }
+    }
+
+    @Test("Parse dc:<2024-06-01 produces dateCreatedBefore filter")
+    func testParseDateCreatedLessThan() {
+        let pipeline = FilterPipeline.parse(from: [("dc", "<2024-06-01")])
+        #expect(pipeline.filters.count == 1)
+
+        let cal = Calendar(identifier: .gregorian)
+        let expected = cal.date(from: DateComponents(year: 2024, month: 6, day: 1))!
+
+        if case .dateCreatedBefore(let date) = pipeline.filters[0] {
+            #expect(date == expected)
+        } else {
+            Issue.record("Expected dateCreatedBefore, got \(pipeline.filters[0])")
+        }
+    }
+
+    @Test("Parse dc:2024-01-01..2024-03-31 produces dateCreatedRange filter")
+    func testParseDateCreatedRange() {
+        let pipeline = FilterPipeline.parse(from: [("dc", "2024-01-01..2024-03-31")])
+        #expect(pipeline.filters.count == 1)
+
+        let cal = Calendar(identifier: .gregorian)
+        let jan1 = cal.date(from: DateComponents(year: 2024, month: 1, day: 1))!
+        let apr1 = cal.date(from: DateComponents(year: 2024, month: 4, day: 1))!
+
+        if case .dateCreatedRange(let range) = pipeline.filters[0] {
+            #expect(range.lowerBound == jan1)
+            #expect(range.upperBound == apr1)
+        } else {
+            Issue.record("Expected dateCreatedRange, got \(pipeline.filters[0])")
+        }
+    }
+
+    @Test("Parse dc:today end-to-end filters by creation date")
+    func testParseDateCreatedTodayEndToEnd() {
+        let pipeline = FilterPipeline.parse(from: [("dc", "today")])
+
+        let cal = Calendar(identifier: .gregorian)
+        let now = Date()
+        let midnight = cal.startOfDay(for: now)
+
+        // Build records with distinct createdAt values
+        let recentRecord = FileRecord(
+            id: 1, name: "recent.txt", originalName: "recent.txt",
+            path: "/test/recent.txt", parentPath: "/test",
+            isDirectory: false, size: 100,
+            createdAt: now,
+            modifiedAt: Date(timeIntervalSince1970: 1_700_000_000),
+            extension: "txt"
+        )
+        let oldRecord = FileRecord(
+            id: 2, name: "old.txt", originalName: "old.txt",
+            path: "/test/old.txt", parentPath: "/test",
+            isDirectory: false, size: 100,
+            createdAt: Date(timeIntervalSince1970: 1_700_000_000),
+            modifiedAt: now,
+            extension: "txt"
+        )
+
+        let results = [
+            SearchResult(record: recentRecord, providerID: "test", score: 1.0, matchType: .substring),
+            SearchResult(record: oldRecord, providerID: "test", score: 1.0, matchType: .substring),
+        ]
+
+        let filtered = pipeline.apply(to: results)
+        // recent.txt: createdAt = now (after midnight) -> matches
+        // old.txt: createdAt = 1_700_000_000 (before midnight) -> filtered out
+        #expect(filtered.count == 1)
+        #expect(filtered[0].record.name == "recent.txt")
+    }
 }

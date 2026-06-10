@@ -198,6 +198,74 @@ struct SearchPanelTests {
         let hasSearched = await viewModel.hasSearched
         #expect(hasSearched == true)
     }
+
+    // MARK: - 9. Toast auto-dismiss is cancelled on new toast
+
+    @Test("showToast cancels previous dismiss task; last toast wins")
+    func testToastCancelsPreviousDismiss() async throws {
+        let mock = MockGUIIPCClient(response: .results([], queryID: "q1"))
+        let viewModel = await SearchViewModel(ipcClient: mock)
+
+        await MainActor.run {
+            viewModel.showToast("first")
+            // Immediately show a second toast — the first dismiss timer should be cancelled.
+            viewModel.showToast("second")
+        }
+
+        // Wait long enough for the first timer (if not cancelled) to have fired.
+        try await Task.sleep(for: .seconds(0.2))
+
+        let messageAfter = await viewModel.toastMessage
+        #expect(messageAfter == "second")
+    }
+
+    // MARK: - 10. cancelAllTasks cancels stored tasks
+
+    @Test("cancelAllTasks cancels history search and toast dismiss tasks")
+    func testCancelAllTasks() async throws {
+        let mock = MockGUIIPCClient(response: .results([], queryID: "q1"))
+        let viewModel = await SearchViewModel(ipcClient: mock)
+
+        await MainActor.run {
+            viewModel.showToast("hello")
+            viewModel.cancelAllTasks()
+        }
+
+        // Give the cancelled task a chance to (not) run.
+        try await Task.sleep(for: .seconds(0.2))
+
+        // Toast message should still be "hello" because the dismiss was cancelled.
+        let message = await viewModel.toastMessage
+        #expect(message == "hello")
+    }
+
+    // MARK: - 11. searchFromHistory sends correct query
+
+    @Test("searchFromHistory sets searchText and triggers search")
+    func testSearchFromHistory() async throws {
+        let r1 = makeRecord(id: 1, name: "report.pdf", path: "/tmp/report.pdf")
+        let s1 = SearchResult(record: r1, providerID: "test", score: 1.0, matchType: .exact)
+        let mock = MockGUIIPCClient(response: .results([s1], queryID: "q1"))
+
+        let viewModel = await SearchViewModel(ipcClient: mock)
+
+        await MainActor.run {
+            viewModel.searchFromHistory("report")
+        }
+
+        // Wait for the async search to complete.
+        try await Task.sleep(for: .seconds(0.2))
+
+        let results = await viewModel.results
+        #expect(results.count == 1)
+
+        let lastReq = await mock.lastRequest
+        if case .query(let query, _) = lastReq! {
+            #expect(query == "report")
+        } else {
+            Issue.record("Expected .query request, got \(lastReq!)")
+        }
+    }
 }
 
 // MARK: - Mock IPCClient for GUI tests

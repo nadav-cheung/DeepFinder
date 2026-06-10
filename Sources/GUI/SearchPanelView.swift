@@ -51,13 +51,30 @@ struct SearchPanelView: View {
     /// Whether the speech overlay is visible.
     @State private var showSpeech: Bool = false
 
+    /// Whether a newer version is available (bound from viewModel).
+    /// Kept as @State for the view's animation value, synced from viewModel.updateAvailable.
+    @State private var updateAvailable: Bool = false
+
+    /// Tracks which history row is currently hovered (for subtle highlight).
+    @State private var hoveredHistoryIndex: Int?
+
     /// View model for the speech overlay, lazily created on first use.
     @State private var speechViewModel: SpeechOverlayViewModel? = nil
+
+    /// Drives the scale-in animation for error state icons.
+    @State private var errorIconAppeared: Bool = false
 
     // MARK: - REQ-3.2-20: Focus State
 
     /// Tracks whether the search text field has keyboard focus.
     @FocusState private var isSearchFocused: Bool
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    // MARK: - Syntax Error Detection
+
+    /// Delegates syntax error detection to the view model.
+    private var syntaxError: String? { viewModel.syntaxError }
 
     // MARK: - Body
 
@@ -65,14 +82,34 @@ struct SearchPanelView: View {
         GlassEffectContainer(
             intensity: .regular,
             cornerRadius: 24,
-            glowActive: isSearchFocused
+            glowActive: isSearchFocused,
+            showTexture: true,
+            innerShadow: true
         ) {
             VStack(spacing: 0) {
                 searchBarArea
+                // syntaxError animation value
                 Rectangle()
                     .fill(.separator.opacity(0.3))
                     .frame(height: 0.5)
                     .padding(.horizontal, 8)
+                // Syntax error hint banner (non-blocking)
+                if let error = syntaxError {
+                    HStack(spacing: 6) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .foregroundStyle(GlowColors.amber)
+                            .font(.system(size: 12))
+                        Text(error)
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 6)
+                    .background(GlowColors.coral.opacity(0.10))
+                    .transition(.move(edge: .top).combined(with: .opacity))
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel("语法错误: \(error)")
+                }
                 // REQ-3.2-35: category filter bar
                 SearchFilterBar(activeFilters: $activeFilters)
                 Rectangle()
@@ -96,13 +133,14 @@ struct SearchPanelView: View {
                 contentArea
             }
             .frame(minWidth: 480, maxWidth: 800)
+            .animation(.easeInOut(duration: 0.2), value: syntaxError)
         }
         .showToast($viewModel.toastMessage)
         .overlay {
             // REQ-3.2-03: speech overlay centered over the panel
             if showSpeech, let speechViewModel {
                 ZStack {
-                    Color.black.opacity(0.3)
+                    Color.black.opacity(0.2)
                         .ignoresSafeArea()
                         .onTapGesture {
                             speechViewModel.cancel()
@@ -123,9 +161,11 @@ struct SearchPanelView: View {
         .onChange(of: viewModel.results) { _, newResults in
             resultsListState.setResults(newResults)
         }
+        .onChange(of: viewModel.updateAvailable) { _, newValue in
+            updateAvailable = newValue
+        }
         .onChange(of: viewModel.searchText) { _, newQuery in
             resultsListState.currentQuery = newQuery
-            // REQ-3.2-02: hide history dropdown when typing
             viewModel.showHistoryDropdown = false
         }
         .onChange(of: resultsListState.selectedIndex) { _, newIndex in
@@ -133,18 +173,7 @@ struct SearchPanelView: View {
         }
         // REQ-3.2-35: when active filters change, append filter syntax to search text.
         .onChange(of: activeFilters) { _, newFilters in
-            let baseQuery = viewModel.searchText.components(separatedBy: .whitespaces)
-                .filter { !$0.hasPrefix("ext:") && !$0.hasPrefix("type:") }
-                .joined(separator: " ")
-                .trimmingCharacters(in: .whitespaces)
-
-            let filterParts = newFilters.sorted(by: { $0.rawValue < $1.rawValue })
-                .map { $0.filterSyntax() }
-
-            let combined = ([baseQuery] + filterParts)
-                .filter { !$0.isEmpty }
-                .joined(separator: " ")
-
+            let combined = Self.buildFilterQuery(base: viewModel.searchText, filters: newFilters)
             viewModel.searchText = combined
         }
         // REQ-3.2-05: Esc clears text first; only dismisses panel when text is already empty.
@@ -188,20 +217,16 @@ struct SearchPanelView: View {
                 viewModel.toggleHistoryDropdown()
                 return .handled
             }
-            // REQ-3.2-29: Tab autocomplete from selected result.
-            .onKeyPress(.tab) {
-                guard let idx = resultsListState.selectedIndex,
-                      idx < viewModel.results.count else { return .ignored }
-                viewModel.searchText = viewModel.results[idx].record.path
-                return .handled
-            }
-            // REQ-3.2-29: Shift+Tab autocomplete parent directory.
+            // REQ-3.2-29: Tab autocomplete from selected result; Shift+Tab for parent directory.
             .onKeyPress(.tab, phases: .down) { press in
-                guard press.modifiers.contains(.shift) else { return .ignored }
                 guard let idx = resultsListState.selectedIndex,
                       idx < viewModel.results.count else { return .ignored }
-                let path = viewModel.results[idx].record.parentPath
-                viewModel.searchText = path + "/"
+                if press.modifiers.contains(.shift) {
+                    let path = viewModel.results[idx].record.parentPath
+                    viewModel.searchText = path + "/"
+                } else {
+                    viewModel.searchText = viewModel.results[idx].record.path
+                }
                 return .handled
             }
 
@@ -221,6 +246,25 @@ struct SearchPanelView: View {
             // REQ-3.2-03: mic button for voice input.
             micButton
 
+            // Update available badge — only when search is empty
+            if viewModel.searchText.isEmpty && updateAvailable {
+                Button {
+                    if let url = URL(string: "https://github.com/nadav-cheung/DeepFinder/releases") {
+                        NSWorkspace.shared.open(url)
+                    }
+                } label: {
+                    Text("新版本")
+                        .font(.system(size: 11))
+                        .foregroundStyle(GlowColors.amber)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(GlowColors.amber.opacity(0.12), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .transition(.opacity.combined(with: .scale(scale: 0.8)))
+                .accessibilityLabel("新版本可用，点击查看")
+            }
+
             // REQ-3.2-05: clear button with opacity transition.
             if !viewModel.searchText.isEmpty {
                 Button {
@@ -235,17 +279,18 @@ struct SearchPanelView: View {
                 .transition(.opacity)
             }
         }
-        .animation(.easeInOut(duration: 0.2), value: viewModel.searchText.isEmpty)
-        .animation(.easeInOut(duration: 0.2), value: viewModel.showSpinner)
-        .animation(.easeInOut(duration: 0.2), value: viewModel.searchTimedOut)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: viewModel.searchText.isEmpty)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: viewModel.showSpinner)
+        .animation(reduceMotion ? nil : .easeInOut(duration: 0.2), value: viewModel.searchTimedOut)
+        .animation(reduceMotion ? nil : .spring(duration: 0.3, bounce: 0.15), value: updateAvailable)
         .padding(.horizontal, 16)
-        .padding(.vertical, 12)
+        .padding(.vertical, 14)
         // REQ-3.2-20: focus glow border on search bar.
         .overlay(
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .strokeBorder(Color.accentColor, lineWidth: 1.5)
                 .opacity(isSearchFocused ? 0.5 : 0)
-                .animation(.easeInOut(duration: 0.2), value: isSearchFocused)
+                .animation(.spring(duration: 0.3, bounce: 0.15), value: isSearchFocused)
                 .padding(.horizontal, 4)
                 .padding(.vertical, 2)
                 .allowsHitTesting(false)
@@ -255,7 +300,7 @@ struct SearchPanelView: View {
             RoundedRectangle(cornerRadius: 8, style: .continuous)
                 .shadow(color: Color.accentColor.opacity(0.3), radius: 4)
                 .opacity(isSearchFocused ? 1 : 0)
-                .animation(.easeInOut(duration: 0.2), value: isSearchFocused)
+                .animation(.spring(duration: 0.3, bounce: 0.15), value: isSearchFocused)
                 .padding(.horizontal, 4)
                 .padding(.vertical, 2)
                 .allowsHitTesting(false)
@@ -270,11 +315,7 @@ struct SearchPanelView: View {
     private var micButton: some View {
         let micAuthorized = SFSpeechRecognizer.authorizationStatus() == .authorized
         Button {
-            if micAuthorized {
-                toggleSpeechOverlay()
-            } else {
-                toggleSpeechOverlay()
-            }
+            toggleSpeechOverlay()
         } label: {
             Image(systemName: showSpeech ? "mic.fill" : "mic")
                 .foregroundStyle(
@@ -311,7 +352,7 @@ struct SearchPanelView: View {
                     NSApp.keyWindow?.orderOut(nil)
                 }
             } onReveal: { _ in
-                viewModel.revealSelected()
+                _ = viewModel.revealSelected()
             }
             .frame(maxHeight: .infinity)
         } else {
@@ -341,7 +382,7 @@ struct SearchPanelView: View {
             Rectangle()
                 .fill(.separator.opacity(0.3))
                 .frame(height: 0.5)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, 8)
 
             // REQ-3.2-02: search history list.
             let entries = viewModel.searchHistory.recentEntries(limit: 10)
@@ -355,9 +396,9 @@ struct SearchPanelView: View {
 
     /// Placeholder when search history is empty.
     private var emptyHistoryPlaceholder: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 12) {
             Image(systemName: "clock")
-                .font(.system(size: 20))
+                .font(.system(size: 24))
                 .foregroundStyle(.tertiary)
             Text("暂无搜索历史")
                 .font(.system(size: 13))
@@ -425,7 +466,14 @@ struct SearchPanelView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 8)
+        .background(
+            RoundedRectangle(cornerRadius: 6, style: .continuous)
+                .fill(.primary.opacity(hoveredHistoryIndex == index ? 0.06 : 0))
+        )
         .contentShape(Rectangle())
+        .onHover { isHovered in
+            hoveredHistoryIndex = isHovered ? index : nil
+        }
         .onTapGesture {
             viewModel.searchFromHistory(entry.query)
         }
@@ -464,56 +512,46 @@ struct SearchPanelView: View {
     }
 
     private var daemonDisconnectedView: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "exclamationmark.triangle.fill")
-                .font(.system(size: 24))
-                .foregroundStyle(.orange)
-
-            VStack(spacing: 4) {
-                Text("搜索服务未连接")
-                    .font(.system(size: 14, weight: .semibold))
-                Text("搜索服务未运行，请从菜单栏启动或等待自动启动。")
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-
-            Button("重试") {
-                Task { await viewModel.search() }
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
-        }
-        .padding(20)
-        .frame(maxWidth: .infinity)
+        ErrorStateCard(
+            icon: "exclamationmark.triangle.fill",
+            iconColor: GlowColors.amber,
+            title: "搜索服务未连接",
+            subtitle: "搜索服务未运行，请从菜单栏启动或等待自动启动。",
+            iconAppeared: errorIconAppeared,
+            retryAction: { Task { await viewModel.search() } }
+        )
+        .onAppear { errorIconAppeared = true }
     }
 
     private func searchErrorView(message: String) -> some View {
-        VStack(spacing: 12) {
-            Image(systemName: "xmark.circle.fill")
-                .font(.system(size: 24))
-                .foregroundStyle(.red)
-
-            VStack(spacing: 4) {
-                Text("搜索出错")
-                    .font(.system(size: 14, weight: .semibold))
-                Text(message)
-                    .font(.system(size: 12))
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-            }
-
-            Button("重试") {
-                Task { await viewModel.search() }
-            }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.small)
-        }
-        .padding(20)
-        .frame(maxWidth: .infinity)
+        ErrorStateCard(
+            icon: "xmark.circle.fill",
+            iconColor: GlowColors.coral,
+            title: "搜索出错",
+            subtitle: message,
+            iconAppeared: errorIconAppeared,
+            retryAction: { Task { await viewModel.search() } }
+        )
+        .onAppear { errorIconAppeared = true }
     }
 
     // MARK: - Actions
+
+    /// Builds a combined query string from base text and active filters.
+    /// REQ-3.2-35: extracted to help the Swift type-checker.
+    private static func buildFilterQuery(base: String, filters: Set<FilterType>) -> String {
+        let baseQuery = base.components(separatedBy: .whitespaces)
+            .filter { !$0.hasPrefix("ext:") && !$0.hasPrefix("type:") }
+            .joined(separator: " ")
+            .trimmingCharacters(in: .whitespaces)
+
+        let filterParts = filters.sorted(by: { $0.rawValue < $1.rawValue })
+            .map { $0.filterSyntax() }
+
+        return ([baseQuery] + filterParts)
+            .filter { !$0.isEmpty }
+            .joined(separator: " ")
+    }
 
     /// Clears the search text, results, and selection state.
     /// REQ-3.2-05: search bar retains focus after clear.
@@ -541,6 +579,55 @@ struct SearchPanelView: View {
         speechViewModel = vm
         showSpeech = true
         vm.startListening()
+    }
+}
+
+// MARK: - ErrorStateCard
+
+/// Shared card view for error/warning states in the search panel.
+///
+/// Used by both `daemonDisconnectedView` and `searchErrorView` to avoid
+/// duplicating the layout, animation, and retry button structure.
+private struct ErrorStateCard: View {
+    let icon: String
+    let iconColor: Color
+    let title: String
+    let subtitle: String
+    let iconAppeared: Bool
+    let retryAction: (() -> Void)?
+
+    var body: some View {
+        VStack(spacing: 12) {
+            Image(systemName: icon)
+                .font(.system(size: 24))
+                .foregroundStyle(iconColor)
+                .background(
+                    Circle()
+                        .fill(iconColor.opacity(0.12))
+                        .frame(width: 48, height: 48)
+                )
+                .scaleEffect(iconAppeared ? 1 : 0.8)
+                .animation(.spring(duration: 0.4, bounce: 0.2), value: iconAppeared)
+
+            VStack(spacing: 4) {
+                Text(title)
+                    .font(DeepFinderTypography.subheading(size: 14))
+                Text(subtitle)
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+            }
+
+            if let retryAction {
+                Button("重试", action: retryAction)
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+            }
+        }
+        .padding(16)
+        .background(.ultraThinMaterial, in: .rect(cornerRadius: 12))
+        .padding(20)
+        .frame(maxWidth: .infinity)
     }
 }
 

@@ -118,3 +118,96 @@ class DeepFinderSearchCommand: NSScriptCommand {
         return result.paths
     }
 }
+
+// MARK: - FileInfoScriptResult
+
+/// The result of an AppleScript `get-file-info` command.
+///
+/// Contains a dictionary of file metadata, or an empty dictionary when the file is not found.
+struct FileInfoScriptResult: Sendable, Equatable {
+    let info: [String: String]
+}
+
+// MARK: - FileInfoScriptParser
+
+/// Pure helper for parsing AppleScript `get-file-info` command arguments.
+///
+/// Extracted from ``DeepFinderGetFileInfoCommand`` for testability without
+/// requiring a live `NSScriptCommand` instance.
+enum FileInfoScriptParser {
+    /// Extract the file path from an NSScriptCommand-style arguments dictionary.
+    ///
+    /// The key `"DirectParameter"` holds the direct parameter of the AppleScript command
+    /// (e.g. `get file info "/Users/test/report.pdf"` -- the string is the direct parameter).
+    ///
+    /// - Parameter arguments: The command arguments dictionary.
+    /// - Returns: The trimmed path string, or `nil` if absent, empty, or not a String.
+    static func extractPath(from arguments: [String: Any]) -> String? {
+        guard let raw = arguments["DirectParameter"] as? String else {
+            return nil
+        }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? nil : trimmed
+    }
+}
+
+// MARK: - DeepFinderGetFileInfoCommand
+
+/// NSScriptCommand subclass handling the AppleScript `get file info` command.
+///
+/// Usage from AppleScript:
+/// ```applescript
+/// tell application "DeepFinder" to get file info "/Users/test/report.pdf"
+/// ```
+///
+/// The sdef script dictionary maps the `get-file-info` command to this class.
+/// Returns file metadata (name, size, dates, type) for the given path.
+class DeepFinderGetFileInfoCommand: NSScriptCommand {
+
+    /// Perform the file info lookup synchronously and return results.
+    ///
+    /// Separated from `performDefaultImplementation()` for testability.
+    /// - Parameter path: The file path string, or `nil` if none was provided.
+    /// - Returns: A ``FileInfoScriptResult`` with file metadata.
+    static func performFileInfo(path: String?) -> FileInfoScriptResult {
+        guard let path, !path.isEmpty else {
+            return FileInfoScriptResult(info: [:])
+        }
+
+        let client = IPCClient(socketPath: Product.socketPath)
+        let request: IPCRequest = .query(path, limit: 1)
+
+        let box = LockedBox<FileInfoScriptResult>(FileInfoScriptResult(info: [:]))
+        let semaphore = DispatchSemaphore(value: 0)
+
+        Task {
+            do {
+                let response = try await client.send(request)
+                switch response {
+                case .results(let results, _) where !results.isEmpty:
+                    let record = results[0].record
+                    box.value = FileInfoScriptResult(info: GetFileInfoIntent.metadataDict(from: record))
+                default:
+                    break
+                }
+            } catch {
+                // Daemon unavailable — return empty results
+            }
+            semaphore.signal()
+        }
+
+        guard semaphore.wait(timeout: .now() + 5) == .success else {
+            return FileInfoScriptResult(info: [:])
+        }
+        return box.value
+    }
+
+    /// NSScriptCommand entry point. Called by the Apple Events framework.
+    override func performDefaultImplementation() -> Any? {
+        let path = FileInfoScriptParser.extractPath(from: directParameter != nil
+            ? ["DirectParameter": directParameter as Any]
+            : [:])
+        let result = Self.performFileInfo(path: path)
+        return result.info
+    }
+}

@@ -30,6 +30,9 @@ struct PermissionGuideView: View {
     @State private var step: PermissionStep = .welcome
     @State private var fdaGranted: Bool = false
     @State private var axGranted: Bool = false
+    @State private var fdaBadgeScale: CGFloat = 1
+    @State private var axBadgeScale: CGFloat = 1
+    @State private var fdaSettingsHovering: Bool = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -81,16 +84,36 @@ struct PermissionGuideView: View {
 
     @ViewBuilder
     private var stepContent: some View {
+        // Step progress indicator
+        stepProgressIndicator
+
         switch step {
         case .welcome:
             welcomeStep
+                .transition(.opacity)
         case .fda:
             fdaStep
+                .transition(.opacity)
         case .accessibility:
             axStep
+                .transition(.opacity)
         case .complete:
             completeStep
+                .transition(.opacity)
         }
+    }
+
+    /// Horizontal dots showing which step the user is on.
+    private var stepProgressIndicator: some View {
+        HStack(spacing: 8) {
+            ForEach(Array(PermissionStep.allCases.enumerated()), id: \.offset) { index, stepCase in
+                Circle()
+                    .fill(step == stepCase ? GlowColors.teal : GlowColors.teal.opacity(0.25))
+                    .frame(width: 6, height: 6)
+                    .animation(DeepFinderMotion.springSnappy, value: step)
+            }
+        }
+        .padding(.bottom, 4)
     }
 
     // MARK: - Welcome Step
@@ -100,10 +123,14 @@ struct PermissionGuideView: View {
             Image(systemName: "shield.checkered")
                 .font(.system(size: Design.iconSize, weight: .medium))
                 .foregroundStyle(GlowColors.teal)
+                .background(
+                    Circle()
+                        .fill(GlowColors.teal.opacity(0.15))
+                        .frame(width: 60, height: 60)
+                )
 
             Text("权限配置")
-                .font(.title2)
-                .fontWeight(.bold)
+                .font(DeepFinderTypography.heading(size: 22))
 
             Text("DeepFinder 在本地建立搜索索引，不上传任何数据。\n以下权限帮助 DeepFinder 更好地为你服务。")
                 .font(.body)
@@ -119,15 +146,29 @@ struct PermissionGuideView: View {
             Image(systemName: "externaldrive.badge.checkmark")
                 .font(.system(size: Design.iconSize, weight: .medium))
                 .foregroundStyle(GlowColors.teal)
+                .background(
+                    Circle()
+                        .fill(GlowColors.teal.opacity(0.15))
+                        .frame(width: 60, height: 60)
+                )
 
             Text("完全磁盘访问")
-                .font(.title3)
-                .fontWeight(.bold)
+                .font(DeepFinderTypography.heading(size: 20))
 
             Text("完全磁盘访问让 DeepFinder 搜索所有文件和文件夹。所有索引数据完全保留在本机，不上传云端。")
                 .font(.callout)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
+
+            HStack(spacing: 4) {
+                Image(systemName: "info.circle")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+                Text("你随时可以在「系统设置 > 隐私与安全 > 完全磁盘访问」中撤销此权限。")
+                    .font(.system(size: 13))
+                    .foregroundStyle(.tertiary)
+            }
+            .padding(.horizontal, 4)
 
             statusBadge(granted: fdaGranted, label: fdaGranted ? "已授权" : "未授权")
 
@@ -140,6 +181,17 @@ struct PermissionGuideView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
+                .overlay {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(GlowColors.teal.opacity(0.15))
+                        .allowsHitTesting(false)
+                        .shadow(color: GlowColors.teal.opacity(0.3), radius: 8)
+                        .opacity(fdaSettingsHovering ? 1 : 0)
+                        .animation(DeepFinderMotion.springSnappy, value: fdaSettingsHovering)
+                }
+                .onHover { hovering in
+                    fdaSettingsHovering = hovering
+                }
             }
         }
     }
@@ -151,10 +203,14 @@ struct PermissionGuideView: View {
             Image(systemName: "keyboard")
                 .font(.system(size: Design.iconSize, weight: .medium))
                 .foregroundStyle(GlowColors.violet)
+                .background(
+                    Circle()
+                        .fill(GlowColors.violet.opacity(0.15))
+                        .frame(width: 60, height: 60)
+                )
 
             Text("辅助功能权限")
-                .font(.title3)
-                .fontWeight(.bold)
+                .font(DeepFinderTypography.heading(size: 20))
 
             Text("辅助功能权限用于注册全局快捷键（Control+Command+K），让你从任何应用快速唤起搜索。此权限为可选。")
                 .font(.callout)
@@ -183,10 +239,14 @@ struct PermissionGuideView: View {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: Design.iconSize, weight: .medium))
                 .foregroundStyle(.green)
+                .background(
+                    Circle()
+                        .fill(Color.green.opacity(0.12))
+                        .frame(width: 60, height: 60)
+                )
 
             Text("设置完成！")
-                .font(.title3)
-                .fontWeight(.bold)
+                .font(DeepFinderTypography.heading(size: 20))
 
             Text("按 Control+Command+K 开始搜索")
                 .font(.callout)
@@ -219,14 +279,14 @@ struct PermissionGuideView: View {
 
                 if step == .fda && !fdaGranted {
                     Button("下一步") {
-                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                        withAnimation(reduceMotion ? nil : DeepFinderMotion.springSnappy) {
                             advanceStep()
                         }
                     }
                     .buttonStyle(.bordered)
                 } else {
                     Button("下一步") {
-                        withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) {
+                        withAnimation(reduceMotion ? nil : DeepFinderMotion.springSnappy) {
                             advanceStep()
                         }
                     }
@@ -245,20 +305,45 @@ struct PermissionGuideView: View {
     }
 
     private func statusBadge(granted: Bool, label: String) -> some View {
-        HStack(spacing: 4) {
+        let currentScale: CGFloat = step == .fda ? fdaBadgeScale : axBadgeScale
+
+        return HStack(spacing: 4) {
             Image(systemName: granted ? "checkmark.circle.fill" : "xmark.circle.fill")
-                .foregroundStyle(granted ? .green : .red)
+                .foregroundStyle(granted ? GlowColors.teal : .red)
+                .scaleEffect(currentScale)
             Text(label)
                 .font(.callout)
                 .fontWeight(.medium)
-                .foregroundStyle(granted ? .green : .secondary)
+                .foregroundStyle(granted ? GlowColors.teal : .secondary)
         }
         .padding(.horizontal, Design.statusBadgePadding * 2)
         .padding(.vertical, Design.statusBadgePadding)
         .background(
-            granted ? Color.green.opacity(0.12) : Color.red.opacity(0.08),
+            granted ? GlowColors.teal.opacity(0.12) : Color.red.opacity(0.08),
             in: Capsule()
         )
+        .onChange(of: fdaGranted) { _, _ in
+            if step == .fda { animateBadgeScale(isFDA: true) }
+        }
+        .onChange(of: axGranted) { _, _ in
+            if step == .accessibility { animateBadgeScale(isFDA: false) }
+        }
+    }
+
+    private func animateBadgeScale(isFDA: Bool) {
+        let bounceScale: CGFloat = 1.25
+        if isFDA {
+            fdaBadgeScale = bounceScale
+        } else {
+            axBadgeScale = bounceScale
+        }
+        withAnimation(DeepFinderMotion.springSnappy) {
+            if isFDA {
+                fdaBadgeScale = 1.0
+            } else {
+                axBadgeScale = 1.0
+            }
+        }
     }
 
     // MARK: - Permission Polling

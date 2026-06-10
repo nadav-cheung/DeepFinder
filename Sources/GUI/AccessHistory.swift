@@ -50,6 +50,9 @@ final class AccessHistoryStore {
     /// All records as an array, derived from ``recordsByPath``.
     private(set) var allRecords: [AccessRecord] = []
 
+    /// Pending save work item, debounced to avoid frequent disk writes.
+    private nonisolated var saveWorkItem: DispatchWorkItem?
+
     // MARK: - Persistence
 
     /// Expanded cache directory path (``Product/cacheDir`` with `~` resolved).
@@ -88,7 +91,13 @@ final class AccessHistoryStore {
 
         evictIfNeeded()
         rebuildAllRecords()
-        saveToDisk()
+
+        saveWorkItem?.cancel()
+        let workItem = DispatchWorkItem { [weak self] in
+            self?.saveToDisk()
+        }
+        saveWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2, execute: workItem)
     }
 
     /// Returns file paths ranked by the weighted formula:
@@ -129,10 +138,6 @@ final class AccessHistoryStore {
         newestDate: Date,
         dateRange: TimeInterval
     ) -> Double {
-        let countScore = maxOpenCount > 0
-            ? Double(record.openCount) / Double(maxOpenCount)
-            : 0.0
-
         let recencyScore: Double
         if dateRange > 0 {
             recencyScore = record.lastOpened.timeIntervalSince(newestDate) / dateRange + 1.0

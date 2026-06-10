@@ -236,6 +236,7 @@ final class QuickLookPreviewController: NSObject, QuickLookPreviewProtocol {
         state.close()
         acceptsPanel = false
 
+        guard canUseQLPanel else { return }
         let panel = QLPreviewPanel.shared()
         if let panel, panel.isVisible {
             panel.orderOut(nil)
@@ -302,6 +303,10 @@ extension QuickLookPreviewController {
 
     /// Refresh the shared QLPreviewPanel to reflect the current preview index.
     private func refreshPanel() {
+        // Guard: QLPreviewPanel crashes (SEGV in QLFadeWindowEffect) when used
+        // outside a real AppKit window-server context (e.g. swift-testing runner).
+        guard canUseQLPanel else { return }
+
         let panel = QLPreviewPanel.shared()
         guard let panel else { return }
 
@@ -311,6 +316,17 @@ extension QuickLookPreviewController {
         } else {
             panel.reloadData()
         }
+    }
+
+    /// Whether QLPreviewPanel can safely be used in the current process.
+    ///
+    /// Returns `false` in test runners and other headless contexts where
+    /// `QLPreviewPanel.shared()` would create a panel that crashes on
+    /// deallocation (SEGV in `QLFadeWindowEffect done`).
+    private var canUseQLPanel: Bool {
+        // NSApplication may not exist in test runners; checking screens
+        // confirms a window server is available.
+        NSApp != nil && !NSScreen.screens.isEmpty
     }
 }
 

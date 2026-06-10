@@ -31,5 +31,20 @@
     <false/>
     <key>NSSupportsAutomaticGraphicsSwitching</key>
     <true/>
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>cn.com.nadav.deepfinder</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>deepfinder</string>
+            </array>
+        </dict>
+    </array>
+    <key>NSAppleScriptEnabled</key>
+    <true/>
+    <key>OSAScriptingDefinition</key>
+    <string>DeepFinder.sdef</string>
 </dict>
 </plist>

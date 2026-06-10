@@ -116,16 +116,20 @@ struct EmptyStateView: View {
     // MARK: - Body
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 20) {
             icon
 
             Text("未找到「\(query)」的匹配文件")
-                .font(.system(size: 14))
+                .font(DeepFinderTypography.heading(size: 16))
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
 
             suggestionsList
         }
+        .padding(24)
+        .background(.ultraThinMaterial, in: .rect(cornerRadius: 16))
+        .padding(16)
+        .shadow(color: GlowColors.teal.opacity(0.12), radius: 12)
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onAppear { startAnimationIfNeeded() }
     }
@@ -133,10 +137,43 @@ struct EmptyStateView: View {
     // MARK: - Subviews
 
     private var icon: some View {
-        Image(systemName: "magnifyingglass")
-            .font(.system(size: 32))
-            .foregroundStyle(.tertiary)
-            .scaleEffect(iconScale)
+        ZStack {
+            // Outer gradient ring for layered depth
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [GlowColors.violet.opacity(0.08), Color.clear],
+                        center: .center,
+                        startRadius: 0,
+                        endRadius: 44
+                    )
+                )
+                .frame(width: 88, height: 88)
+
+            // Inner radial gradient for depth
+            Circle()
+                .fill(
+                    RadialGradient(
+                        colors: [GlowColors.teal.opacity(0.15), Color.clear],
+                        center: .center,
+                        startRadius: 0,
+                        endRadius: 40
+                    )
+                )
+                .frame(width: 80, height: 80)
+
+            Image(systemName: "magnifyingglass")
+                .font(.system(size: 52, weight: .medium))
+                .foregroundStyle(
+                    LinearGradient(
+                        colors: [GlowColors.teal, GlowColors.violet],
+                        startPoint: .top,
+                        endPoint: .bottom
+                    )
+                )
+                .shadow(color: GlowColors.teal.opacity(0.2), radius: 8)
+                .scaleEffect(iconScale)
+        }
     }
 
     private var suggestionsList: some View {
@@ -159,32 +196,23 @@ struct EmptyStateView: View {
             HStack(spacing: 4) {
                 if let icon = suggestion.icon {
                     Image(systemName: icon)
-                        .font(.system(size: Design.iconSize))
+                        .font(DeepFinderTypography.badge(size: Design.iconSize))
                 }
                 Text(suggestion.text)
-                    .font(.system(size: 12))
+                    .font(DeepFinderTypography.badge(size: 12))
             }
             .foregroundStyle(GlowColors.teal)
             .padding(.horizontal, Design.pillHPadding)
             .padding(.vertical, Design.pillVPadding)
             .background(GlowColors.teal.opacity(0.15), in: Capsule())
+            .shadow(color: GlowColors.teal.opacity(0.15), radius: 2, y: 1)
         }
         .buttonStyle(.plain)
     }
 
-    /// Informational pill with default quaternary style.
+    /// Informational pill with subtle left border accent.
     private func informationalPill(_ suggestion: DiagnosticSuggestion) -> some View {
-        Button {
-            onSuggestionTap(suggestion.text)
-        } label: {
-            Text(suggestion.text)
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, Design.pillHPadding)
-                .padding(.vertical, Design.pillVPadding)
-                .background(.quaternary, in: Capsule())
-        }
-        .buttonStyle(.plain)
+        InformationalPillView(suggestion: suggestion, onTap: onSuggestionTap)
     }
 
     // MARK: - Dispatch
@@ -205,10 +233,51 @@ struct EmptyStateView: View {
     private func startAnimationIfNeeded() {
         guard !reduceMotion else { return }
         withAnimation(
-            .easeInOut(duration: Self.animationDuration)
+            .spring(duration: 1.5, bounce: 0.3)
                 .repeatForever(autoreverses: true)
         ) {
             iconScale = Self.scaleTarget
+        }
+    }
+}
+
+// MARK: - InformationalPillView
+
+/// Informational pill with hover scale effect, extracted to support @State.
+private struct InformationalPillView: View {
+    let suggestion: DiagnosticSuggestion
+    let onTap: (String) -> Void
+
+    @State private var isHovered = false
+
+    private enum Design {
+        static let pillHPadding: CGFloat = 12
+        static let pillVPadding: CGFloat = 6
+    }
+
+    var body: some View {
+        Button {
+            onTap(suggestion.text)
+        } label: {
+            HStack(spacing: 0) {
+                RoundedRectangle(cornerRadius: 1.5)
+                    .fill(GlowColors.teal.opacity(0.3))
+                    .frame(width: 3, height: 14)
+
+                Text(suggestion.text)
+                    .font(DeepFinderTypography.badge(size: 12))
+                    .foregroundStyle(.secondary)
+                    .padding(.leading, 6)
+            }
+            .padding(.horizontal, Design.pillHPadding)
+            .padding(.vertical, Design.pillVPadding)
+            .background(.quaternary, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .scaleEffect(isHovered ? 1.02 : 1.0)
+        .animation(.spring(duration: 0.3, bounce: 0.2), value: isHovered)
+        .onHover { hovering in
+            isHovered = hovering
         }
     }
 }

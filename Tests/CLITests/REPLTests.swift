@@ -496,6 +496,137 @@ struct REPLTests {
         #expect(allOutput.contains("Recent searches:"))
         #expect(allOutput.contains("hello.txt"))
     }
+
+    // MARK: - CompletionEngine tests
+
+    @Test("CompletionEngine completes :h to :help")
+    func testCommandCompletionHelp() {
+        let engine = CompletionEngine(lastResults: [])
+        let completions = engine.complete(":h")
+        #expect(completions.contains(":help"))
+    }
+
+    @Test("CompletionEngine completes :st to :stats")
+    func testCommandCompletionStats() {
+        let engine = CompletionEngine(lastResults: [])
+        let completions = engine.complete(":st")
+        #expect(completions.contains(":stats"))
+    }
+
+    @Test("CompletionEngine completes partial :qu to :quit")
+    func testCommandCompletionQuit() {
+        let engine = CompletionEngine(lastResults: [])
+        let completions = engine.complete(":qu")
+        #expect(completions.contains(":quit"))
+    }
+
+    @Test("CompletionEngine lists all commands on bare colon")
+    func testCommandCompletionAllCommands() {
+        let engine = CompletionEngine(lastResults: [])
+        let completions = engine.complete(":")
+        #expect(completions.contains(":help"))
+        #expect(completions.contains(":quit"))
+        #expect(completions.contains(":stats"))
+        #expect(completions.contains(":config"))
+        #expect(completions.contains(":open"))
+        #expect(completions.contains(":reveal"))
+        #expect(completions.contains(":daemon"))
+        #expect(completions.contains(":explain"))
+        #expect(completions.contains(":dataPreview"))
+        #expect(completions.contains(":undo"))
+    }
+
+    @Test("CompletionEngine returns empty for unknown command prefix")
+    func testCommandCompletionUnknown() {
+        let engine = CompletionEngine(lastResults: [])
+        let completions = engine.complete(":xyz")
+        #expect(completions.isEmpty)
+    }
+
+    @Test("CompletionEngine completes filter keyword ext:")
+    func testFilterKeywordCompletionExt() {
+        let engine = CompletionEngine(lastResults: [])
+        let completions = engine.complete("ex")
+        #expect(completions.contains("ext:"))
+    }
+
+    @Test("CompletionEngine completes filter keyword size:")
+    func testFilterKeywordCompletionSize() {
+        let engine = CompletionEngine(lastResults: [])
+        let completions = engine.complete("si")
+        #expect(completions.contains("size:"))
+    }
+
+    @Test("CompletionEngine completes filter keyword type:")
+    func testFilterKeywordCompletionType() {
+        let engine = CompletionEngine(lastResults: [])
+        let completions = engine.complete("ty")
+        #expect(completions.contains("type:"))
+    }
+
+    @Test("CompletionEngine lists all filter keywords on empty input")
+    func testFilterKeywordCompletionAll() {
+        let engine = CompletionEngine(lastResults: [])
+        let completions = engine.complete("")
+        // Filter keywords should appear alongside command prefixes
+        #expect(completions.contains("ext:"))
+        #expect(completions.contains("size:"))
+        #expect(completions.contains("type:"))
+        #expect(completions.contains("dm:"))
+        #expect(completions.contains("path:"))
+    }
+
+    @Test("CompletionEngine completes :open with result index")
+    func testOpenCompletionWithResults() {
+        let r1 = makeRecord(id: 1, name: "a.txt", path: "/tmp/a.txt")
+        let r2 = makeRecord(id: 2, name: "b.txt", path: "/tmp/b.txt")
+        let s1 = SearchResult(record: r1, providerID: "test", score: 1.0, matchType: .exact)
+        let s2 = SearchResult(record: r2, providerID: "test", score: 0.8, matchType: .substring)
+        let engine = CompletionEngine(lastResults: [s1, s2])
+        let completions = engine.complete(":open ")
+        // Completions are "1  a.txt" and "2  b.txt" (index + filename for readability)
+        #expect(completions.count == 2)
+        #expect(completions[0].hasPrefix("1"))
+        #expect(completions[0].contains("a.txt"))
+        #expect(completions[1].hasPrefix("2"))
+        #expect(completions[1].contains("b.txt"))
+    }
+
+    @Test("CompletionEngine completes :reveal with result index")
+    func testRevealCompletionWithResults() {
+        let r1 = makeRecord(id: 1, name: "a.txt", path: "/tmp/a.txt")
+        let s1 = SearchResult(record: r1, providerID: "test", score: 1.0, matchType: .exact)
+        let engine = CompletionEngine(lastResults: [s1])
+        let completions = engine.complete(":reveal ")
+        #expect(completions.count == 1)
+        #expect(completions[0].hasPrefix("1"))
+        #expect(completions[0].contains("a.txt"))
+    }
+
+    @Test("CompletionEngine returns empty :open/:reveal without results")
+    func testOpenCompletionNoResults() {
+        let engine = CompletionEngine(lastResults: [])
+        let completions = engine.complete(":open ")
+        #expect(completions.isEmpty)
+    }
+
+    @Test("CompletionEngine completes filenames from last results")
+    func testFilenameCompletionFromResults() {
+        let r1 = makeRecord(id: 1, name: "report.pdf", path: "/tmp/report.pdf")
+        let r2 = makeRecord(id: 2, name: "readme.md", path: "/tmp/readme.md")
+        let s1 = SearchResult(record: r1, providerID: "test", score: 1.0, matchType: .exact)
+        let s2 = SearchResult(record: r2, providerID: "test", score: 0.8, matchType: .substring)
+        let engine = CompletionEngine(lastResults: [s1, s2])
+        let completions = engine.complete("rep")
+        #expect(completions.contains("report.pdf"))
+    }
+
+    @Test("CompletionEngine is case insensitive for commands")
+    func testCommandCompletionCaseInsensitive() {
+        let engine = CompletionEngine(lastResults: [])
+        let completions = engine.complete(":HE")
+        #expect(completions.contains(":help"))
+    }
 }
 
 // MARK: - MockInputSource

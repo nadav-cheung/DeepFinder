@@ -43,7 +43,7 @@ struct ResultRowView: View, Equatable {
         static let hPadding: CGFloat = 14
         static let vPadding: CGFloat = 8
         static let selectionRadius: CGFloat = 8
-        static let selectionInset: CGFloat = 3
+        static let selectionInset: CGFloat = 4
     }
 
     var body: some View {
@@ -52,23 +52,26 @@ struct ResultRowView: View, Equatable {
             ? FileIconCache.icon(forExtension: nil, isDirectory: true)
             : FileIconCache.icon(forExtension: ext, isDirectory: false)
 
-        return HStack(spacing: Design.hSpacing) {
-            // ── File icon
-            iconView(icon)
+        return VStack(spacing: 0) {
+            HStack(spacing: Design.hSpacing) {
+                // ── File icon
+                iconView(icon)
 
-            // ── Filename + path stack
-            VStack(alignment: .leading, spacing: Design.vSpacing) {
-                filenameView
-                pathView
+                // ── Filename + path stack
+                VStack(alignment: .leading, spacing: Design.vSpacing) {
+                    filenameView
+                    pathView
+                }
+
+                Spacer(minLength: 8)
+
+                // ── Match type badge (subtle, right-aligned)
+                badgeView
+
+                // ── Metadata (size + date, aligned right)
+                metadataView
             }
-
-            Spacer(minLength: 8)
-
-            // ── Match type badge (subtle, right-aligned)
-            badgeView
-
-            // ── Metadata (size + date, aligned right)
-            metadataView
+            Divider().opacity(0.2)
         }
         .padding(.horizontal, Design.hPadding)
         .padding(.vertical, Design.vPadding)
@@ -81,7 +84,7 @@ struct ResultRowView: View, Equatable {
         .contentShape(.rect)
         .help(result.record.parentPath)
         .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.15)) {
+            withAnimation(.spring(duration: 0.25, bounce: 0.15)) {
                 isHovered = hovering
             }
         }
@@ -118,7 +121,7 @@ struct ResultRowView: View, Equatable {
             }
             // Subtle luminance boost when selected
             .brightness(isSelected ? 0.08 : 0)
-            .animation(.easeInOut(duration: 0.15), value: isSelected)
+            .animation(.spring(duration: 0.25, bounce: 0.1), value: isSelected)
     }
 
     private var filenameView: some View {
@@ -143,16 +146,34 @@ struct ResultRowView: View, Equatable {
             .lineLimit(1)
     }
 
+    @ViewBuilder
     private var badgeView: some View {
-        Text(result.matchType.badgeLabel)
+        let badge = Text(result.matchType.badgeLabel)
             .font(.system(size: Design.badgeSize, weight: .medium))
-            .foregroundStyle(.secondary)
             .padding(.horizontal, 7)
             .padding(.vertical, 2)
-            .background(
-                .fill.tertiary.opacity(0.6),
-                in: Capsule(style: .continuous)
-            )
+
+        switch result.matchType {
+        case .exact:
+            badge
+                .foregroundStyle(GlowColors.teal)
+                .background(GlowColors.teal.opacity(0.12), in: Capsule(style: .continuous))
+                .shadow(color: GlowColors.teal.opacity(0.15), radius: 2, y: 1)
+        case .prefix:
+            badge
+                .foregroundStyle(GlowColors.violet)
+                .background(GlowColors.violet.opacity(0.12), in: Capsule(style: .continuous))
+                .shadow(color: GlowColors.violet.opacity(0.15), radius: 2, y: 1)
+        case .pinyin:
+            badge
+                .foregroundStyle(GlowColors.amber)
+                .background(GlowColors.amber.opacity(0.12), in: Capsule(style: .continuous))
+                .shadow(color: GlowColors.amber.opacity(0.15), radius: 2, y: 1)
+        case .substring:
+            badge
+                .foregroundStyle(.secondary)
+                .background(.fill.tertiary.opacity(0.6), in: Capsule(style: .continuous))
+        }
     }
 
     private var metadataView: some View {
@@ -162,7 +183,7 @@ struct ResultRowView: View, Equatable {
                 .foregroundStyle(.secondary)
 
             Text(result.record.modifiedAt, style: .date)
-                .font(.system(size: Design.metaSize))
+                .font(.system(size: Design.metaSize, design: .monospaced))
                 .foregroundStyle(.tertiary)
         }
     }
@@ -174,14 +195,14 @@ struct ResultRowView: View, Equatable {
         RoundedRectangle(cornerRadius: Design.selectionRadius, style: .continuous)
             .fill(
                 isSelected
-                    ? AnyShapeStyle(.tint.opacity(0.12))
+                    ? AnyShapeStyle(GlowColors.teal.opacity(0.12))
                     : isHovered
-                        ? AnyShapeStyle(.fill.quaternary.opacity(0.5))
+                        ? AnyShapeStyle(GlowColors.teal.opacity(0.06))
                         : AnyShapeStyle(.clear)
             )
             .padding(.horizontal, Design.selectionInset)
-            .animation(.easeInOut(duration: 0.12), value: isSelected)
-            .animation(.easeInOut(duration: 0.15), value: isHovered)
+            .animation(.spring(duration: 0.2, bounce: 0.1), value: isSelected)
+            .animation(.spring(duration: 0.25, bounce: 0.15), value: isHovered)
     }
 }
 
