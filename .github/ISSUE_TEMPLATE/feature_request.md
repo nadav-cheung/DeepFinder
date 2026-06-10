@@ -1,22 +1,19 @@
 ---
-name: Feature Request
-about: Suggest an idea for DeepFinder
+name: Feature request
+about: Suggest a new feature or enhancement
 title: "[Feature] "
 labels: enhancement
-assignees: nadav
+assignees: ''
 ---
 
-**Is your feature request related to a problem? Please describe.**
-A clear and concise description of what the problem is. Ex. I am always frustrated when [...]
+## Problem
+What problem does this feature solve? What's the use case?
 
-**Describe the solution you would like**
-A clear and concise description of what you want to happen.
+## Proposed Solution
+Describe your proposed solution or approach.
 
-**Describe alternatives you have considered**
-A clear and concise description of any alternative solutions or workarounds you have considered.
+## Alternatives Considered
+Any alternative solutions or features you've considered.
 
-**Which version does this apply to?**
-Is this relevant to the CLI (v1.x), GUI (v2.x), or AI semantic search (v3.x)?
-
-**Additional context**
-Add any other context, screenshots, or references to similar features in other tools (e.g. Windows Everything, Spotlight, Alfred) here.
+## Additional Context
+Any other context, screenshots, or references.

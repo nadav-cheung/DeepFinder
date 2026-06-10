@@ -1,31 +1,29 @@
 ---
-name: Bug Report
-about: Report a bug to help improve DeepFinder
+name: Bug report
+about: Report a bug or unexpected behavior
 title: "[Bug] "
 labels: bug
-assignees: nadav
+assignees: ''
 ---
 
-**Describe the bug**
-A clear and concise description of what the bug is.
+## Description
+A clear description of what the bug is.
 
-**To Reproduce**
-Steps to reproduce the behavior:
-1. Run `...`
-2. Query `...`
-3. See error
+## Steps to Reproduce
+1. Start daemon with `deepfinder daemon:start`
+2. Run query `...`
+3. Observe `...`
 
-**Expected behavior**
-A clear and concise description of what you expected to happen.
+## Expected Behavior
+What you expected to happen.
 
-**Actual behavior**
-What actually happened. Include error messages, stack traces, or unexpected output.
+## Actual Behavior
+What actually happened.
 
-**Environment:**
-- macOS version: [e.g. 26.0]
-- DeepFinder version: [e.g. 0.1.0, or commit hash]
-- Installation method: [e.g. Homebrew, source build]
-- Architecture: [Apple Silicon / Intel]
+## Environment
+- **DeepFinder version**: (run `deepfinder --version`)
+- **macOS version**: 
+- **Hardware**: (e.g., MacBook Pro M4)
 
-**Additional context**
-Add any other context about the problem here. Screenshots, logs, or steps to reproduce with a specific file/directory structure are especially helpful.
+## Additional Context
+Logs, screenshots, or any other context.

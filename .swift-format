@@ -1,0 +1,17 @@
+{
+  "version": 0,
+  "indentation": {
+    "spaces": 4
+  },
+  "lineLength": 120,
+  "maximumBlankLines": 1,
+  "respectsExistingLineBreaks": true,
+  "spaceBeforeParens": {
+    "functionDeclarations": false,
+    "functionCalls": false,
+    "conditionals": false
+  },
+  "indentCaseLabels": false,
+  "trailingCommas": "always",
+  "indentConditionalCompilationBlocks": true
+}
