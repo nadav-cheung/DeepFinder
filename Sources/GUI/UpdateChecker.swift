@@ -1,5 +1,11 @@
 import AppKit
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - UpdateChecker
 
@@ -30,7 +36,7 @@ final class UpdateChecker {
     private(set) var lastCheckDate: Date?
 
     /// The current installed version.
-    let currentVersion: String
+    public let currentVersion: String
 
     // MARK: - Constants
 
@@ -40,7 +46,7 @@ final class UpdateChecker {
 
     // MARK: - Init
 
-    init(currentVersion: String = Product.version) {
+    public init(currentVersion: String = Product.version) {
         self.currentVersion = currentVersion
         self.lastCheckDate = UserDefaults.standard.object(forKey: Self.lastCheckKey) as? Date
     }
@@ -50,7 +56,7 @@ final class UpdateChecker {
     /// Checks for updates. Throttled to once per 24 hours unless `force` is true.
     ///
     /// - Parameter force: If true, bypasses the 24-hour throttle.
-    func checkForUpdates(force: Bool = false) async {
+    public func checkForUpdates(force: Bool = false) async {
         // Throttle check.
         if !force, let lastCheck = lastCheckDate,
            Date().timeIntervalSince(lastCheck) < Self.throttleInterval {
@@ -75,7 +81,7 @@ final class UpdateChecker {
     }
 
     /// Opens the GitHub Releases page in the default browser.
-    func openReleasePage() {
+    public func openReleasePage() {
         let url = URL(string: "https://github.com/nadav-cheung/DeepFinder/releases")!
         NSWorkspace.shared.open(url)
     }
@@ -140,9 +146,9 @@ final class UpdateChecker {
 
 /// Minimal model for GitHub Releases API `latest` response.
 private struct GitHubRelease: Decodable {
-    let tagName: String
+    public let tagName: String
 
-    enum CodingKeys: String, CodingKey {
+    public enum CodingKeys: String, CodingKey {
         case tagName = "tag_name"
     }
 }
@@ -153,7 +159,7 @@ private struct GitHubRelease: Decodable {
 private enum UpdateError: LocalizedError {
     case httpError(Int)
 
-    var errorDescription: String? {
+    public var errorDescription: String? {
         switch self {
         case .httpError(let code):
             return "HTTP 错误：\(code)"

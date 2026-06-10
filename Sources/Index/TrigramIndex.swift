@@ -12,7 +12,7 @@
 ///
 /// Thread safety: This is a value type (struct). When used inside an actor
 /// (e.g. `InMemoryIndex`), no internal synchronization is needed.
-struct TrigramIndex {
+public struct TrigramIndex {
 
     /// Maps a 3-Unicode-scalar trigram (as String) to the set of FileRecord IDs
     /// whose names contain that trigram.
@@ -25,9 +25,9 @@ struct TrigramIndex {
     /// Number of unique filename entries currently stored.
     private var _count: Int = 0
 
-    var count: Int { _count }
+    public var count: Int { _count }
 
-    var isEmpty: Bool { _count == 0 }
+    public var isEmpty: Bool { _count == 0 }
 
     // MARK: - Insert
 
@@ -79,7 +79,7 @@ struct TrigramIndex {
     /// For queries >= 3 Unicode scalars: extracts trigrams, intersects posting lists,
     /// then verifies each candidate contains the substring exactly.
     /// For queries < 3 Unicode scalars: linear scan of all stored names.
-    func search(substring: String) -> [UInt32] {
+    public func search(substring: String) -> [UInt32] {
         let normalized = substring.precomposedStringWithCanonicalMapping.lowercased()
         if normalized.isEmpty {
             return Array(names.keys)

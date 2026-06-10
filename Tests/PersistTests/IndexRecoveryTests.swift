@@ -1,7 +1,8 @@
 import Testing
 import Foundation
 import SQLite3
-@testable import DeepFinder
+import DeepFinderIndex
+@testable import DeepFinderPersist
 
 struct IndexRecoveryTests {
 

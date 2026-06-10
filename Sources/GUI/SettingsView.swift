@@ -1,19 +1,25 @@
 import SwiftUI
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - SettingsView
 
 /// Settings window content with four tabs: General, Index, AI, About.
-struct SettingsView: View {
+public struct SettingsView: View {
 
     private enum Design {
-        static let privacyBadgeFontSize: CGFloat = 10
-        static let privacyBadgeHPadding: CGFloat = 6
-        static let privacyBadgeVPadding: CGFloat = 2
+        public static let privacyBadgeFontSize: CGFloat = 10
+        public static let privacyBadgeHPadding: CGFloat = 6
+        public static let privacyBadgeVPadding: CGFloat = 2
     }
 
-    let viewModel: SettingsViewModel
+    public let viewModel: SettingsViewModel
 
-    var body: some View {
+    public var body: some View {
         TabView(selection: Binding(
             get: { viewModel.selectedTab },
             set: { viewModel.selectedTab = $0 }
@@ -590,12 +596,12 @@ struct SettingsView: View {
 
 /// A single excluded path row with hover background.
 private struct ExcludedPathRow: View {
-    let path: String
-    let onRemove: () -> Void
+    public let path: String
+    public let onRemove: () -> Void
 
     @State private var isHovered = false
 
-    var body: some View {
+    public var body: some View {
         HStack(spacing: 8) {
             Image(systemName: "folder.badge.minus")
                 .foregroundStyle(.secondary)
@@ -629,12 +635,12 @@ private struct ExcludedPathRow: View {
 
 /// A styled link with underline on hover for the About tab.
 private struct SettingsLinkRow: View {
-    let title: String
-    let url: String
+    public let title: String
+    public let url: String
 
     @State private var isHovered = false
 
-    var body: some View {
+    public var body: some View {
         Link(title, destination: URL(string: url)!)
             .font(DeepFinderTypography.badge(size: 12))
             .foregroundStyle(.secondary)

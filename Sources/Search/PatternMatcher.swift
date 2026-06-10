@@ -1,8 +1,9 @@
 import Foundation
+import DeepFinderIndex
 
 /// Performs wildcard and regex pattern matching against file names.
 /// Both matchers are case-insensitive and operate on the filename (not the full path).
-struct PatternMatcher: Sendable {
+public struct PatternMatcher: Sendable {
 
     /// Prevent instantiation — all API is static.
     private init() {}
@@ -15,7 +16,7 @@ struct PatternMatcher: Sendable {
     ///
     /// Uses a two-pointer backtracking algorithm with O(m*n) worst case
     /// where m = pattern length, n = input length.
-    static func matchWildcard(pattern: String, input: String) -> Bool {
+    public static func matchWildcard(pattern: String, input: String) -> Bool {
         let loweredPattern = pattern.precomposedStringWithCanonicalMapping.lowercased()
         let loweredInput = input.precomposedStringWithCanonicalMapping.lowercased()
 
@@ -65,7 +66,7 @@ struct PatternMatcher: Sendable {
     /// Uses `NSRegularExpression` with `.caseInsensitive` and `.anchorsMatchLines`
     /// options. The pattern is applied to the full input string.
     /// Returns `false` (never throws/crashes) for invalid regex patterns.
-    static func matchRegex(pattern: String, input: String) -> Bool {
+    public static func matchRegex(pattern: String, input: String) -> Bool {
         // Prevent ReDoS: reject excessively long patterns before compiling.
         guard pattern.count <= Constants.Search.maxRegexLength else { return false }
 

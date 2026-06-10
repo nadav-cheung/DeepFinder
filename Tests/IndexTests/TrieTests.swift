@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import DeepFinder
+@testable import DeepFinderIndex
 
 @Suite("Trie")
 struct TrieTests {

@@ -24,9 +24,10 @@
 /// deepfinder "artist:Beatles"       # Audio files by artist
 /// ```
 import Foundation
+import DeepFinderIndex
 
 /// Protocol for media metadata extractors.
-protocol MetadataExtractor: Sendable {
+public protocol MetadataExtractor: Sendable {
     /// File extensions this extractor handles (lowercase, without dot).
     var supportedExtensions: Set<String> { get }
 
@@ -36,10 +37,10 @@ protocol MetadataExtractor: Sendable {
 }
 
 /// Registry that manages all metadata extractors and dispatches by file extension.
-struct MetadataExtractorRegistry: Sendable {
+public struct MetadataExtractorRegistry: Sendable {
     private let extensionMap: [String: MetadataExtractor]
 
-    init(extractors: [MetadataExtractor]) {
+    public init(extractors: [MetadataExtractor]) {
         var map: [String: MetadataExtractor] = [:]
         for extractor in extractors {
             for fileExt in extractor.supportedExtensions {
@@ -50,18 +51,18 @@ struct MetadataExtractorRegistry: Sendable {
     }
 
     /// Find the extractor for a given file extension.
-    func extractor(for fileExtension: String) -> MetadataExtractor? {
+    public func extractor(for fileExtension: String) -> MetadataExtractor? {
         extensionMap[fileExtension.lowercased()]
     }
 
     /// Extract metadata from a file using the appropriate extractor.
-    func extract(url: URL, extension fileExtension: String) async -> ExtractedMetadata? {
+    public func extract(url: URL, extension fileExtension: String) async -> ExtractedMetadata? {
         guard let extractor = extractor(for: fileExtension) else { return nil }
         return await extractor.extract(url: url)
     }
 
     /// All supported extensions across all extractors.
-    var allSupportedExtensions: Set<String> {
+    public var allSupportedExtensions: Set<String> {
         Set(extensionMap.keys)
     }
 }

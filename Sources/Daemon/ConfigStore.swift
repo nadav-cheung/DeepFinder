@@ -4,6 +4,10 @@
 /// becomes corrupted by a partial write. Holds indexing exclusions, batch sizes,
 /// and result limits that the daemon reads at startup and the CLI can modify at runtime.
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderFS
+import DeepFinderPersist
 
 // MARK: - DaemonConfig
 
@@ -11,27 +15,27 @@ import Foundation
 ///
 /// Stored as JSON at `~/.deep-finder/settings.json` with file permissions 600.
 /// When the file is missing or corrupted, defaults are used.
-struct DaemonConfig: Codable, Sendable, Equatable {
+public struct DaemonConfig: Codable, Sendable, Equatable {
 
     /// Paths excluded from indexing.
-    var excludedPaths: [String]
+    public var excludedPaths: [String]
 
     /// Volume mount paths excluded from indexing (e.g. "/Volumes/Time Machine").
     /// Local volumes are always indexed. External and network volumes are indexed
     /// by default unless listed here.
-    var excludedVolumes: [String]
+    public var excludedVolumes: [String]
 
     /// Number of records to batch-write to SQLite at once.
-    var indexBatchSize: Int
+    public var indexBatchSize: Int
 
     /// Maximum number of results returned per query.
-    var maxResults: Int
+    public var maxResults: Int
 
     /// Schema version for forward-compatible migrations.
-    var configVersion: Int
+    public var configVersion: Int
 
     /// Default configuration values used when the config file is missing or corrupted.
-    static let defaults = DaemonConfig(
+    public static let defaults = DaemonConfig(
         excludedPaths: Constants.Scan.alwaysExcludedPrefixes,
         excludedVolumes: [],
         indexBatchSize: Constants.Daemon.indexBatchSize,
@@ -43,10 +47,10 @@ struct DaemonConfig: Codable, Sendable, Equatable {
 // MARK: - ConfigStoreError
 
 /// Errors thrown by ``ConfigStore`` during validation.
-enum ConfigStoreError: Error, CustomStringConvertible {
+public enum ConfigStoreError: Error, CustomStringConvertible {
     case invalidValue(key: String, reason: String)
 
-    var description: String {
+    public var description: String {
         switch self {
         case .invalidValue(let key, let reason):
             return "Invalid value for '\(key)': \(reason)"
@@ -60,7 +64,7 @@ enum ConfigStoreError: Error, CustomStringConvertible {
 ///
 /// All access is serialized through actor isolation. Writes use a temp-file +
 /// rename strategy to prevent partial writes from corrupting the config file.
-actor ConfigStore {
+public actor ConfigStore {
 
     /// Path to the JSON config file on disk.
     private let configPath: String
@@ -74,7 +78,7 @@ actor ConfigStore {
     ///
     /// If the file exists and is valid JSON, its values are loaded.
     /// If the file is missing or corrupted, defaults are used.
-    init(configPath: String) {
+    public init(configPath: String) {
         self.configPath = configPath
         self.config = Self.loadFromDisk(path: configPath) ?? .defaults
     }
@@ -82,13 +86,13 @@ actor ConfigStore {
     // MARK: - Public API
 
     /// Return the full current configuration.
-    func get() -> DaemonConfig {
+    public func get() -> DaemonConfig {
         config
     }
 
     /// Return a single config value by key name, as a String.
     /// Returns nil for unknown keys.
-    func get(key: String) -> String? {
+    public func get(key: String) -> String? {
         switch key {
         case "excludedPaths":
             return (try? JSONEncoder().encode(config.excludedPaths)).flatMap { String(data: $0, encoding: .utf8) }
@@ -109,7 +113,7 @@ actor ConfigStore {
     ///
     /// - Throws: `ConfigStoreError.invalidValue` if the value cannot be parsed
     ///   into the expected type for the given key.
-    func set(key: String, value: String) throws {
+    public func set(key: String, value: String) throws {
         switch key {
         case "excludedPaths":
             guard let data = value.data(using: .utf8),
@@ -148,7 +152,7 @@ actor ConfigStore {
     ///
     /// The closure receives the current config and must return the new config.
     /// The result is validated and persisted atomically.
-    func update(_ transform: (DaemonConfig) -> DaemonConfig) throws {
+    public func update(_ transform: (DaemonConfig) -> DaemonConfig) throws {
         let updated = transform(config)
         // Basic validation
         guard updated.indexBatchSize > 0 else {

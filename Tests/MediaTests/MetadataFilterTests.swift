@@ -1,7 +1,9 @@
 // Tests/MediaTests/MetadataFilterTests.swift
 import Testing
 import Foundation
-@testable import DeepFinder
+import DeepFinderIndex
+import DeepFinderSearch
+@testable import DeepFinderMedia
 
 @Suite("Metadata Filters")
 struct MetadataFilterTests {

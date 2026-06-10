@@ -1,14 +1,15 @@
 // Sources/Media/ImageMetadataExtractor.swift
 import Foundation
 import ImageIO
+import DeepFinderIndex
 
 /// Extracts metadata from image files using ImageIO/CGImageSource.
-struct ImageMetadataExtractor: MetadataExtractor, Sendable {
-    let supportedExtensions: Set<String> = [
+public struct ImageMetadataExtractor: MetadataExtractor, Sendable {
+    public let supportedExtensions: Set<String> = [
         "jpg", "jpeg", "png", "heic", "gif", "tiff", "tif", "bmp", "webp"
     ]
 
-    func extract(url: URL) async -> ExtractedMetadata? {
+    public func extract(url: URL) async -> ExtractedMetadata? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else {
             return nil
         }

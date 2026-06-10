@@ -4,17 +4,21 @@
 /// types into length-prefixed Data, while `IPCFramingIO` performs the actual socket reads
 /// and writes. This separation lets the protocol logic be tested without real sockets.
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderFS
+import DeepFinderPersist
 
 // MARK: - IPCFramingIOError
 
 /// Errors thrown by ``IPCFramingIO`` during low-level socket operations.
-enum IPCFramingIOError: Error, LocalizedError {
+public enum IPCFramingIOError: Error, LocalizedError {
     case writeFailed(String)
     case connectionClosed
     case readTimeout(Int)
     case messageTooLarge(Int)
 
-    var errorDescription: String? {
+    public var errorDescription: String? {
         switch self {
         case .writeFailed(let msg):
             return "Write failed: \(msg)"
@@ -37,10 +41,10 @@ enum IPCFramingIOError: Error, LocalizedError {
 ///
 /// These are pure functions that operate on a raw file descriptor — they have
 /// no actor state and can be called from any isolation context.
-enum IPCFramingIO {
+public enum IPCFramingIO {
 
     /// Default maximum framed message payload size (16 MB).
-    static let defaultMaxMessageSize = Constants.IPC.maxMessageSize
+    public static let defaultMaxMessageSize = Constants.IPC.maxMessageSize
 
     // MARK: - Write
 
@@ -54,7 +58,7 @@ enum IPCFramingIO {
     ///   - data: The complete data to write.
     /// - Throws: `IPCFramingIOError` if the write syscall fails or the
     ///   connection closes before all data is written.
-    static func writeAll(to fd: Int32, data: Data) throws {
+    public static func writeAll(to fd: Int32, data: Data) throws {
         var offset = 0
         while offset < data.count {
             let written = data.withUnsafeBytes { ptr in
@@ -87,7 +91,7 @@ enum IPCFramingIO {
     /// - Throws: `IPCFramingIOError.connectionClosed` if the connection drops
     ///   mid-message, `.readTimeout` if a `read()` timed out (SO_RCVTIMEO
     ///   expiry), or `.messageTooLarge` if the declared length is excessive.
-    static func readFramedMessage(
+    public static func readFramedMessage(
         from fd: Int32,
         maxMessageSize: Int = defaultMaxMessageSize,
         timeoutSeconds: Int = Constants.IPC.receiveTimeoutSeconds

@@ -1,4 +1,6 @@
 import AppIntents
+import DeepFinderIndex
+import DeepFinderDaemon
 
 /// AppIntent for searching files via Apple Shortcuts.
 ///
@@ -8,19 +10,20 @@ import AppIntents
 /// - Parameter query: The search query string (required).
 /// - Parameter limit: Maximum number of results to return (optional, default 20).
 /// - Returns: An array of file paths matching the query.
-struct SearchFilesIntent: AppIntent {
-    static let title: LocalizedStringResource = "Search Files"
-    static let description: IntentDescription? = IntentDescription(
+public struct SearchFilesIntent: AppIntent {
+    public init() {}
+    public static let title: LocalizedStringResource = "Search Files"
+    public static let description: IntentDescription? = IntentDescription(
         "Search for files by name using \(Product.name) and return matching file paths."
     )
 
     @Parameter(title: "Query")
-    var query: String
+    public var query: String
 
     @Parameter(title: "Limit")
-    var limit: Int?
+    public var limit: Int?
 
-    func perform() async throws -> some IntentResult & ReturnsValue<[String]> {
+    public func perform() async throws -> some IntentResult & ReturnsValue<[String]> {
         let client = IPCClient(socketPath: Product.socketPath)
         let request: IPCRequest = .query(query, limit: limit ?? 20)
         let response: IPCResponse
@@ -48,16 +51,17 @@ struct SearchFilesIntent: AppIntent {
 ///
 /// - Parameter path: The absolute file path (required).
 /// - Returns: A JSON string of file metadata, or an empty string if not found.
-struct GetFileInfoIntent: AppIntent {
-    static let title: LocalizedStringResource = "Get File Info"
-    static let description: IntentDescription? = IntentDescription(
+public struct GetFileInfoIntent: AppIntent {
+    public init() {}
+    public static let title: LocalizedStringResource = "Get File Info"
+    public static let description: IntentDescription? = IntentDescription(
         "Get metadata for a file by its path using \(Product.name). Returns a JSON string with name, size, dates, and type."
     )
 
     @Parameter(title: "File Path")
-    var path: String
+    public var path: String
 
-    func perform() async throws -> some IntentResult & ReturnsValue<String> {
+    public func perform() async throws -> some IntentResult & ReturnsValue<String> {
         let client = IPCClient(socketPath: Product.socketPath)
         let request: IPCRequest = .query(path, limit: 1)
         let response: IPCResponse
@@ -77,7 +81,7 @@ struct GetFileInfoIntent: AppIntent {
     }
 
     /// Convert a FileRecord to a JSON string for Shortcuts consumption.
-    static func metadataJSON(from record: FileRecord) -> String {
+    public static func metadataJSON(from record: FileRecord) -> String {
         let dict = metadataDict(from: record)
         guard let data = try? JSONSerialization.data(withJSONObject: dict, options: [.sortedKeys]) else {
             return ""
@@ -86,7 +90,7 @@ struct GetFileInfoIntent: AppIntent {
     }
 
     /// Convert a FileRecord to a flat string dictionary.
-    static func metadataDict(from record: FileRecord) -> [String: String] {
+    public static func metadataDict(from record: FileRecord) -> [String: String] {
         var info: [String: String] = [
             "name": record.originalName,
             "path": record.path,

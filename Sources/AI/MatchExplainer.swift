@@ -3,17 +3,20 @@
 /// Purely heuristic (no AI required): inspects MatchType, file name, query text, and
 /// active filters to produce a human-readable reason string. O(1) per result.
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderPersist
 
 // MARK: - MatchExplanation
 
 /// A human-readable explanation of why a search result matched.
-struct MatchExplanation: Sendable, Equatable {
+public struct MatchExplanation: Sendable, Equatable {
     /// Human-readable reason string (e.g. "Exact match: filename equals 'report.pdf'").
-    let reason: String
+    public let reason: String
     /// The match type as a string label: "exact", "prefix", "substring", "pinyin".
-    let matchType: String
+    public let matchType: String
     /// The character offset where the query first appears in the file name, or nil if not applicable.
-    let position: String?
+    public let position: String?
 }
 
 // MARK: - MatchExplainer
@@ -27,7 +30,7 @@ struct MatchExplanation: Sendable, Equatable {
 /// This is intentionally a stateless enum with only static methods, not a struct
 /// with a provider, because match explanation is a local heuristic that doesn't
 /// benefit from AI.
-enum MatchExplainer: Sendable {
+public enum MatchExplainer: Sendable {
 
     /// Produce a human-readable explanation for a search result.
     ///
@@ -36,7 +39,7 @@ enum MatchExplainer: Sendable {
     ///   - query: The original (raw) user query string.
     ///   - filters: Any active metadata filters (empty array if none).
     /// - Returns: A `MatchExplanation` describing why this result matched.
-    static func explain(result: SearchResult, query: String, filters: [SearchFilter]) -> MatchExplanation {
+    public static func explain(result: SearchResult, query: String, filters: [SearchFilter]) -> MatchExplanation {
         let fileName = result.record.originalName
         let matchTypeLabel = label(for: result.matchType)
         let reason = buildReason(

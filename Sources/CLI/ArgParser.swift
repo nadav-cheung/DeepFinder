@@ -1,35 +1,40 @@
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderServices
 
 // MARK: - CLIOptions
 
 /// Parsed CLI options from command-line arguments.
-struct CLIOptions: Sendable, Equatable {
+public struct CLIOptions: Sendable, Equatable {
     /// Search query. `nil` means no query was provided (triggers REPL in v0.6).
-    var query: String?
+    public var query: String?
     /// Output results as JSON (--json).
-    var jsonOutput: Bool = false
+    public var jsonOutput: Bool = false
     /// Output results separated by null bytes (--0).
-    var nullOutput: Bool = false
+    public var nullOutput: Bool = false
     /// Sort results by the given criterion.
-    var sort: SortOption?
+    public var sort: SortOption?
     /// Maximum number of results to return.
-    var limit: Int?
+    public var limit: Int?
     /// Number of results to skip.
-    var offset: Int?
+    public var offset: Int?
     /// Reverse sort order.
-    var reverse: Bool = false
+    public var reverse: Bool = false
     /// Verbose output.
-    var verbose: Bool = false
+    public var verbose: Bool = false
     /// Show help text and exit.
-    var showHelp: Bool = false
+    public var showHelp: Bool = false
     /// Show version and exit.
-    var showVersion: Bool = false
+    public var showVersion: Bool = false
     /// Enable HTTP serve mode (--serve).
-    var serveMode: Bool = false
+    public var serveMode: Bool = false
     /// Port for HTTP serve mode (--port). Default 7654.
-    var port: Int = Product.defaultHTTPPort
+    public var port: Int = Product.defaultHTTPPort
     /// Subcommand for v0.7+ (e.g. "daemon", "config").
-    var subcommand: String?
+    public var subcommand: String?
 }
 
 // MARK: - SortOption
@@ -38,7 +43,7 @@ struct CLIOptions: Sendable, Equatable {
 ///
 /// Used by `--sort name|size|date` and mapped to `SortCriterion`
 /// in the search layer.
-enum SortOption: String, Sendable, Equatable, CaseIterable {
+public enum SortOption: String, Sendable, Equatable, CaseIterable {
     case name
     case size
     case date
@@ -47,7 +52,7 @@ enum SortOption: String, Sendable, Equatable, CaseIterable {
 // MARK: - CLIError
 
 /// Errors produced during argument parsing.
-enum CLIError: Error, Sendable, Equatable, CustomStringConvertible {
+public enum CLIError: Error, Sendable, Equatable, CustomStringConvertible {
     /// An unrecognized flag was provided (e.g. `--bogus`).
     case unknownFlag(String)
     /// A flag that requires a value was given without one (e.g. `--limit` at end of args).
@@ -55,7 +60,7 @@ enum CLIError: Error, Sendable, Equatable, CustomStringConvertible {
     /// A flag received an invalid value (e.g. `--limit abc` or `--sort color`).
     case invalidValue(flag: String, value: String)
 
-    var description: String {
+    public var description: String {
         switch self {
         case .unknownFlag(let flag):
             return "unknown option: \(flag)"
@@ -76,9 +81,9 @@ enum CLIError: Error, Sendable, Equatable, CustomStringConvertible {
 /// - `--json`, `--0`, `--reverse`, `--verbose`, `--help`, `--version` (boolean flags)
 /// - `--sort name|size|date`, `--limit N`, `--offset M` (value flags)
 /// - Subcommand routing: first non-flag argument when no query is set becomes subcommand
-struct ArgParser {
+public struct ArgParser {
     /// Parse an argument list (excluding the program name) into `CLIOptions`.
-    static func parse(_ args: [String]) throws -> CLIOptions {
+    public static func parse(_ args: [String]) throws -> CLIOptions {
         var opts = CLIOptions()
         var i = 0
 

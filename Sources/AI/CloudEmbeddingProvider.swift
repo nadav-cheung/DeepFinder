@@ -3,6 +3,9 @@
 /// Sends filenames (not full paths) to remote endpoints and returns float vectors
 /// for semantic similarity search. Supports any OpenAI-compatible /embeddings endpoint.
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderPersist
 
 /// Cloud-based embedding provider for OpenAI-compatible embedding APIs.
 ///
@@ -11,16 +14,16 @@ import Foundation
 ///
 /// **Privacy**: Sends filenames (not full paths) to the cloud API.
 /// The caller MUST sanitize input before passing to this provider.
-struct CloudEmbeddingProvider: EmbeddingProvider, Sendable {
-    let name: String
-    let dimensions: Int
+public struct CloudEmbeddingProvider: EmbeddingProvider, Sendable {
+    public let name: String
+    public let dimensions: Int
 
     private let endpoint: URL
     private let apiKey: String
     private let model: String
     private let httpClient: any HTTPClient
 
-    init(name: String, endpoint: URL, apiKey: String, model: String, dimensions: Int,
+    public init(name: String, endpoint: URL, apiKey: String, model: String, dimensions: Int,
          httpClient: any HTTPClient = URLSessionHTTPClient()) {
         self.name = name
         self.endpoint = endpoint
@@ -30,13 +33,13 @@ struct CloudEmbeddingProvider: EmbeddingProvider, Sendable {
         self.httpClient = httpClient
     }
 
-    func embed(text: String) async throws -> [Float] {
+    public func embed(text: String) async throws -> [Float] {
         let results = try await embedBatch(texts: [text])
         guard let first = results.first else { throw AIError.invalidResponse }
         return first
     }
 
-    func embedBatch(texts: [String]) async throws -> [[Float]] {
+    public func embedBatch(texts: [String]) async throws -> [[Float]] {
         let body: [String: Any] = ["model": model, "input": texts, "encoding_format": "float"]
         let bodyData = try JSONSerialization.data(withJSONObject: body)
 

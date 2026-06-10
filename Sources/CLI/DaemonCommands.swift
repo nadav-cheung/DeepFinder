@@ -1,14 +1,19 @@
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderServices
 
 // MARK: - Abstraction Protocols
 
 /// Abstraction for spawning a daemon process. Testable via MockProcessSpawner.
-protocol ProcessSpawner: Sendable {
+public protocol ProcessSpawner: Sendable {
     func spawnDaemon(binaryPath: String, arguments: [String]) -> Result<Void, Error>
 }
 
 /// Abstraction for sending signals to processes and checking liveness.
-protocol ProcessSignaler: Sendable {
+public protocol ProcessSignaler: Sendable {
     /// Send SIGTERM to the given PID. Returns true if the signal was sent successfully.
     func sendSIGTERM(to pid: Int32) -> Bool
     /// Check whether the process with the given PID is still alive.
@@ -16,14 +21,14 @@ protocol ProcessSignaler: Sendable {
 }
 
 /// Abstraction for waiting until the daemon's IPC socket is available.
-protocol SocketWaiter: Sendable {
+public protocol SocketWaiter: Sendable {
     /// Poll until the socket file exists and is connectable, or timeout elapses.
     /// Returns true if the socket became available within the timeout.
     func waitForSocket(at path: String, timeout: TimeInterval) -> Bool
 }
 
 /// Abstraction for reading PID files and removing them.
-protocol PIDReader: Sendable {
+public protocol PIDReader: Sendable {
     /// Read the PID from the file at the given path. Returns nil if the file
     /// does not exist or is corrupted.
     func readPID(from path: String) -> Int32?
@@ -36,7 +41,7 @@ protocol PIDReader: Sendable {
 /// Subcommands for managing the DeepFinder daemon.
 ///
 /// Usage: `deepfinder daemon start|stop|restart|status`
-enum DaemonSubcommand: String, Sendable, Equatable {
+public enum DaemonSubcommand: String, Sendable, Equatable {
     case start
     case stop
     case restart
@@ -51,7 +56,7 @@ private enum DaemonCommandRunnerError: Error, CustomStringConvertible {
     case daemonNotRunning
     case stopTimedOut
 
-    var description: String {
+    public var description: String {
         switch self {
         case .spawnFailed(let reason):
             return "Failed to start daemon: \(reason)"
@@ -72,32 +77,32 @@ private enum DaemonCommandRunnerError: Error, CustomStringConvertible {
 /// Designed for testability: process spawning, signal sending, socket waiting,
 /// PID file access, and output are all injected via protocols. Production uses
 /// the default concrete implementations; tests inject mocks.
-struct DaemonCommandRunner: Sendable {
+public struct DaemonCommandRunner: Sendable {
 
     /// Paths and binary location.
-    let pidPath: String
-    let socketPath: String
-    let daemonBinaryPath: String
+    public let pidPath: String
+    public let socketPath: String
+    public let daemonBinaryPath: String
 
     /// Injectable dependencies.
-    let processSpawner: any ProcessSpawner
-    let processSignaler: any ProcessSignaler
-    let socketWaiter: any SocketWaiter
-    let pidReader: any PIDReader
-    let output: any CLIOutputWriter
+    public let processSpawner: any ProcessSpawner
+    public let processSignaler: any ProcessSignaler
+    public let socketWaiter: any SocketWaiter
+    public let pidReader: any PIDReader
+    public let output: any CLIOutputWriter
 
     /// How long to wait for the daemon socket to become available after spawn.
-    let startupTimeout: TimeInterval
+    public let startupTimeout: TimeInterval
 
     /// How long to wait for the daemon to exit after SIGTERM.
-    let shutdownTimeout: TimeInterval
+    public let shutdownTimeout: TimeInterval
 
     /// Poll interval for checking process liveness during stop.
-    let shutdownPollInterval: TimeInterval
+    public let shutdownPollInterval: TimeInterval
 
     // MARK: - Init
 
-    init(
+    public init(
         pidPath: String = Product.pidPath,
         socketPath: String = Product.socketPath,
         daemonBinaryPath: String = Product.daemonCommand,
@@ -131,7 +136,7 @@ struct DaemonCommandRunner: Sendable {
     ///   - subcommand: The daemon operation to perform.
     ///   - client: IPC client for communicating with the daemon (used by status).
     /// - Returns: Exit code (0 = success, 1 = error).
-    func run(_ subcommand: DaemonSubcommand, client: any IPCClientProtocol) async -> Int32 {
+    public func run(_ subcommand: DaemonSubcommand, client: any IPCClientProtocol) async -> Int32 {
         switch subcommand {
         case .start:
             return await doStart(client: client)
@@ -321,8 +326,9 @@ struct DaemonCommandRunner: Sendable {
 
 /// Production implementation: delegates to `IPCClient.spawnDaemon` for
 /// shared secure path resolution, environment hardening, and stdio setup.
-struct SystemProcessSpawner: ProcessSpawner, Sendable {
-    func spawnDaemon(binaryPath: String, arguments: [String]) -> Result<Void, Error> {
+public struct SystemProcessSpawner: ProcessSpawner, Sendable {
+    public init() {}
+    public func spawnDaemon(binaryPath: String, arguments: [String]) -> Result<Void, Error> {
         let result = IPCClient.spawnDaemon(binaryPath: binaryPath)
         switch result {
         case .success:
@@ -334,19 +340,21 @@ struct SystemProcessSpawner: ProcessSpawner, Sendable {
 }
 
 /// Production implementation: uses `kill(pid, 0)` for liveness and `kill(pid, SIGTERM)`.
-struct SystemProcessSignaler: ProcessSignaler, Sendable {
-    func sendSIGTERM(to pid: Int32) -> Bool {
+public struct SystemProcessSignaler: ProcessSignaler, Sendable {
+    public init() {}
+    public func sendSIGTERM(to pid: Int32) -> Bool {
         kill(pid, SIGTERM) == 0
     }
 
-    func isProcessAlive(_ pid: Int32) -> Bool {
+    public func isProcessAlive(_ pid: Int32) -> Bool {
         kill(pid, 0) == 0
     }
 }
 
 /// Production implementation: polls the socket file and attempts connection.
-struct SystemSocketWaiter: SocketWaiter, Sendable {
-    func waitForSocket(at path: String, timeout: TimeInterval) -> Bool {
+public struct SystemSocketWaiter: SocketWaiter, Sendable {
+    public init() {}
+    public func waitForSocket(at path: String, timeout: TimeInterval) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
         let pollInterval: UInt64 = Constants.IPC.socketPollIntervalNs
 
@@ -380,8 +388,9 @@ struct SystemSocketWaiter: SocketWaiter, Sendable {
 }
 
 /// Production implementation: reads/removes PID files from disk.
-struct SystemPIDReader: PIDReader, Sendable {
-    func readPID(from path: String) -> Int32? {
+public struct SystemPIDReader: PIDReader, Sendable {
+    public init() {}
+    public func readPID(from path: String) -> Int32? {
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)),
               let str = String(data: data, encoding: .utf8)?
                 .trimmingCharacters(in: .whitespacesAndNewlines),
@@ -397,7 +406,7 @@ struct SystemPIDReader: PIDReader, Sendable {
         return pid
     }
 
-    func removePIDFile(at path: String) {
+    public func removePIDFile(at path: String) {
         try? FileManager.default.removeItem(atPath: path)
     }
 }

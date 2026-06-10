@@ -1,5 +1,7 @@
 import Foundation
 import OSLog
+import DeepFinderIndex
+import DeepFinderPersist
 
 /// Index state machine for the file watcher.
 ///
@@ -9,7 +11,7 @@ import OSLog
 /// live -> (stream failure, retrying) -> error
 /// error -> (max retries exceeded) -> polling
 /// ```
-enum IndexState: String, Sendable {
+public enum IndexState: String, Sendable {
     /// Index loaded from disk but potentially stale.
     case stale
     /// Verifying index against current filesystem.
@@ -25,7 +27,7 @@ enum IndexState: String, Sendable {
 // MARK: - Watcher Errors
 
 /// Errors produced by ``FSEventWatcher`` during stream lifecycle management.
-enum FSEventWatcherError: Error, Sendable {
+public enum FSEventWatcherError: Error, Sendable {
     /// The FSEventStream failed to start.
     case streamStartFailed(reason: String)
     /// Maximum retries exceeded; degraded to polling.
@@ -37,7 +39,7 @@ enum FSEventWatcherError: Error, Sendable {
 /// Wrapper for a batch of raw events, used to pipe events from the
 /// synchronous FSEventStream handler into the async processing loop.
 private struct EventBatch: Sendable {
-    let events: [(path: String, flags: FSEventStreamEventFlags)]
+    public let events: [(path: String, flags: FSEventStreamEventFlags)]
 }
 
 // MARK: - FSEventWatcher
@@ -66,7 +68,7 @@ private struct EventBatch: Sendable {
 /// `await` calls to InMemoryIndex. We bridge this gap with an internal `AsyncStream`
 /// event pipe. The synchronous handler enqueues event batches; a background processing
 /// loop drains them with proper async/await support.
-actor FSEventWatcher {
+public actor FSEventWatcher {
 
     // MARK: - Logging
 
@@ -75,25 +77,25 @@ actor FSEventWatcher {
     // MARK: - Configuration
 
     /// Maximum number of retry attempts before degrading to polling.
-    static let maxRetryAttempts = Constants.Watcher.maxRetryAttempts
+    public static let maxRetryAttempts = Constants.Watcher.maxRetryAttempts
 
     /// Initial retry delay in seconds.
-    static let initialRetryDelay: TimeInterval = Constants.Watcher.initialRetryDelay
+    public static let initialRetryDelay: TimeInterval = Constants.Watcher.initialRetryDelay
 
     /// Maximum retry delay in seconds.
-    static let maxRetryDelay: TimeInterval = Constants.Watcher.maxRetryDelay
+    public static let maxRetryDelay: TimeInterval = Constants.Watcher.maxRetryDelay
 
     /// Jitter factor (+/-20%).
-    static let jitterFactor: Double = Constants.Watcher.jitterFactor
+    public static let jitterFactor: Double = Constants.Watcher.jitterFactor
 
     /// Polling interval in seconds when degraded.
-    static let pollingInterval: TimeInterval = Constants.Watcher.pollingInterval
+    public static let pollingInterval: TimeInterval = Constants.Watcher.pollingInterval
 
     /// Maximum stream restarts within the restart window before degrading to polling.
-    static let maxRestartsInWindow = Constants.Watcher.maxRestartsInWindow
+    public static let maxRestartsInWindow = Constants.Watcher.maxRestartsInWindow
 
     /// Time window (seconds) for counting restarts.
-    static let restartWindow: TimeInterval = Constants.Watcher.restartWindow
+    public static let restartWindow: TimeInterval = Constants.Watcher.restartWindow
 
     // MARK: - Dependencies
 
@@ -141,12 +143,12 @@ actor FSEventWatcher {
     // MARK: - Public API
 
     /// Current index state.
-    var indexState: IndexState {
+    public var indexState: IndexState {
         _indexState
     }
 
     /// Create a new watcher.
-    init(
+    public init(
         eventStream: FileSystemEventStream,
         index: InMemoryIndex,
         persistence: IndexPersistence
@@ -163,7 +165,7 @@ actor FSEventWatcher {
     ///   - sinceEventID: The last FSEvent ID to resume from. Pass `0` to start from now.
     /// - Throws: `FSEventWatcherError.streamStartFailed` if the event stream cannot be created.
     ///   Note: most start failures are handled internally via retry with backoff rather than thrown.
-    func startWatching(paths: [String], sinceEventID: UInt64) async throws {
+    public func startWatching(paths: [String], sinceEventID: UInt64) async throws {
         watchedPaths = paths
         currentEventID = sinceEventID
         isStopped = false
@@ -178,7 +180,7 @@ actor FSEventWatcher {
     }
 
     /// Stop watching. Saves cursor to persistence layer.
-    func stopWatching() async {
+    public func stopWatching() async {
         isStopped = true
 
         // Cancel retry/polling tasks
@@ -281,7 +283,7 @@ actor FSEventWatcher {
     ///
     /// - Parameter attempt: 1-based retry attempt number.
     /// - Returns: Delay in seconds before the next retry.
-    static func retryDelay(forAttempt attempt: Int) -> TimeInterval {
+    public static func retryDelay(forAttempt attempt: Int) -> TimeInterval {
         let baseDelay = min(
             initialRetryDelay * pow(2.0, Double(attempt - 1)),
             maxRetryDelay
@@ -433,7 +435,7 @@ actor FSEventWatcher {
     /// Scans all watched paths on disk, diffs against the in-memory index,
     /// and applies updates for created, modified, and deleted files.
     /// This is only invoked when FSEvents has failed repeatedly.
-    func performPollingScan() async {
+    public func performPollingScan() async {
         guard !watchedPaths.isEmpty else { return }
 
         // Snapshot current index state: path -> (id, modifiedAt)

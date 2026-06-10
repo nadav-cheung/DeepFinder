@@ -1,6 +1,9 @@
 import Testing
 import Foundation
-@testable import DeepFinder
+import DeepFinderIndex
+import DeepFinderDaemon
+import DeepFinderSearch
+@testable import DeepFinderCLILib
 
 @Suite("CLIMain")
 struct CLIMainTests {

@@ -1,9 +1,13 @@
 import Testing
 import AppKit
 import UniformTypeIdentifiers
-@testable import DeepFinder
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+@testable import DeepFinderGUILib
 
 @Suite("ResultDragView")
+@MainActor
 struct ResultDragViewTests {
 
     // MARK: - Mock DragItemProvider

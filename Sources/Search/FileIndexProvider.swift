@@ -1,4 +1,5 @@
 import Foundation
+import DeepFinderIndex
 
 // MARK: - FileIndexProvider
 
@@ -7,11 +8,11 @@ import Foundation
 /// Searches are delegated to the index actor; results are classified by
 /// `MatchType` (exact / prefix / substring) and assigned a fixed score.
 /// All results are yielded at once — no streaming.
-actor FileIndexProvider: SearchProvider {
+public actor FileIndexProvider: SearchProvider {
 
     // MARK: - Properties
 
-    let providerID = "file-index"
+    public let providerID = "file-index"
 
     private let index: InMemoryIndex
 
@@ -20,22 +21,22 @@ actor FileIndexProvider: SearchProvider {
     /// Create a file-index provider wrapping the given in-memory index.
     ///
     /// - Parameter index: The index actor to delegate searches to.
-    init(index: InMemoryIndex) {
+    public init(index: InMemoryIndex) {
         self.index = index
     }
 
     // MARK: - SearchProvider
 
-    func search(query: SearchQuery) async -> SearchResultSequence {
+    public func search(query: SearchQuery) async -> SearchResultSequence {
         let results = await performSearch(query: query)
         return SearchResultSequence(results)
     }
 
-    func cancel(queryID: String) async {
+    public func cancel(queryID: String) async {
         // MVP: synchronous search completes instantly, nothing to cancel.
     }
 
-    func prepare() async {
+    public func prepare() async {
         // In-memory index is always ready. No-op.
     }
 

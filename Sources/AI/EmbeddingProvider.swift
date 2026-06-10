@@ -23,6 +23,9 @@
 /// 1. Create a new file implementing ``EmbeddingProvider``
 /// 2. Register in ``AIConfig`` -- no changes to existing provider code needed
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderPersist
 
 // MARK: - EmbeddingProvider
 
@@ -48,7 +51,7 @@ import Foundation
 /// `withThrowingTaskGroup` for concurrent processing with index-preserving
 /// ordering. Providers may override for batch API calls (cloud) or SIMD
 /// batching (on-device).
-protocol EmbeddingProvider: Sendable {
+public protocol EmbeddingProvider: Sendable {
     /// Human-readable provider name (e.g., "nlcontextual", "qwen", "openai").
     var name: String { get }
 
@@ -86,7 +89,7 @@ extension EmbeddingProvider {
     /// Uses `withThrowingTaskGroup` with index tracking to preserve input
     /// order in the result. Providers that support true batching (e.g.,
     /// cloud embeddings API) should override this for better throughput.
-    func embedBatch(texts: [String]) async throws -> [[Float]] {
+    public func embedBatch(texts: [String]) async throws -> [[Float]] {
         try await withThrowingTaskGroup(of: (Int, [Float]).self) { group in
             for (index, text) in texts.enumerated() {
                 group.addTask { (index, try await self.embed(text: text)) }

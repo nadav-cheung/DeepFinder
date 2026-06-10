@@ -1,21 +1,22 @@
 import Foundation
+import DeepFinderIndex
 
 // MARK: - SearchBookmark
 
 /// A saved search query that a user can recall later.
 ///
 /// Equality is based on `id` (UUID), allowing multiple bookmarks with the same name.
-struct SearchBookmark: Codable, Sendable, Equatable {
+public struct SearchBookmark: Codable, Sendable, Equatable {
     /// Unique identifier for this bookmark.
-    let id: UUID
+    public let id: UUID
     /// User-visible display name.
-    let name: String
+    public let name: String
     /// The saved search query string.
-    let query: String
+    public let query: String
     /// When this bookmark was created.
-    let createdAt: Date
+    public let createdAt: Date
 
-    init(
+    public init(
         id: UUID = UUID(),
         name: String,
         query: String,
@@ -31,7 +32,7 @@ struct SearchBookmark: Codable, Sendable, Equatable {
 // MARK: - BookmarkError
 
 /// Errors thrown by `BookmarkStore` operations.
-enum BookmarkError: Error, Equatable {
+public enum BookmarkError: Error, Equatable {
     /// The bookmark store has reached its maximum capacity (100).
     case limitExceeded
     /// The requested bookmark ID was not found in the store.
@@ -43,7 +44,7 @@ enum BookmarkError: Error, Equatable {
 /// Thread-safe storage for search bookmarks.
 /// When `filePath` is nil, operates in-memory only (useful for testing).
 /// When `filePath` is provided, bookmarks are persisted as JSON with atomic writes.
-actor BookmarkStore {
+public actor BookmarkStore {
 
     private static let maxBookmarks = Constants.Search.maxBookmarks
 
@@ -58,7 +59,7 @@ actor BookmarkStore {
     /// - Parameter filePath: Path to persist bookmarks as JSON. Pass `nil` for
     ///   in-memory-only operation (useful for testing). When a path is provided,
     ///   existing bookmarks are loaded from disk on init.
-    init(filePath: String? = nil) {
+    public init(filePath: String? = nil) {
         self.filePath = filePath
         if let filePath {
             bookmarks = Self.loadStatic(from: filePath)
@@ -66,7 +67,7 @@ actor BookmarkStore {
     }
 
     /// Add a bookmark. Throws `BookmarkError.limitExceeded` if the store is full.
-    func add(_ bookmark: SearchBookmark) throws {
+    public func add(_ bookmark: SearchBookmark) throws {
         guard bookmarks.count < Self.maxBookmarks else {
             throw BookmarkError.limitExceeded
         }
@@ -75,7 +76,7 @@ actor BookmarkStore {
     }
 
     /// Remove a bookmark by ID. Throws `BookmarkError.notFound` if the ID does not exist.
-    func remove(id: UUID) throws {
+    public func remove(id: UUID) throws {
         let before = bookmarks.count
         bookmarks.removeAll { $0.id == id }
         guard bookmarks.count < before else {
@@ -85,12 +86,12 @@ actor BookmarkStore {
     }
 
     /// Return all bookmarks in insertion order.
-    func getAll() -> [SearchBookmark] {
+    public func getAll() -> [SearchBookmark] {
         bookmarks
     }
 
     /// Return bookmarks whose name starts with the given prefix.
-    func find(name prefix: String) -> [SearchBookmark] {
+    public func find(name prefix: String) -> [SearchBookmark] {
         bookmarks.filter { $0.name.hasPrefix(prefix) }
     }
 

@@ -4,7 +4,7 @@ import Foundation
 import AVFoundation
 import CoreMedia
 import CoreVideo
-@testable import DeepFinder
+@testable import DeepFinderMedia
 
 @Suite("VideoMetadataExtractor")
 struct VideoMetadataExtractorTests {

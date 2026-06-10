@@ -1,5 +1,11 @@
 import Foundation
 import AppKit
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - WorkspaceProtocol
 
@@ -10,7 +16,7 @@ import AppKit
 ///
 /// `@MainActor` because NSWorkspace operations must run on the main thread.
 @MainActor
-protocol WorkspaceProtocol: Sendable {
+public protocol WorkspaceProtocol: Sendable {
     func open(_ path: String) -> Bool
     func selectFile(_ path: String) -> Bool
 }
@@ -18,11 +24,11 @@ protocol WorkspaceProtocol: Sendable {
 // MARK: - NSWorkspace + WorkspaceProtocol
 
 extension NSWorkspace: WorkspaceProtocol {
-    nonisolated func open(_ path: String) -> Bool {
+    public nonisolated func open(_ path: String) -> Bool {
         open(URL(fileURLWithPath: path))
     }
 
-    nonisolated func selectFile(_ path: String) -> Bool {
+    public nonisolated func selectFile(_ path: String) -> Bool {
         selectFile(path, inFileViewerRootedAtPath: "")
     }
 }

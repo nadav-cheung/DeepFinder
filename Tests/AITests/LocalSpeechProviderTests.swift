@@ -2,7 +2,7 @@
 import Testing
 import Foundation
 import Speech
-@testable import DeepFinder
+@testable import DeepFinderAI
 
 @Suite("LocalSpeechProvider")
 struct LocalSpeechProviderTests {

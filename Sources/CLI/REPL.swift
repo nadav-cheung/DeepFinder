@@ -1,4 +1,9 @@
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderServices
 
 // MARK: - C readline/libedit function declarations
 //
@@ -20,7 +25,7 @@ private func _history_truncate_file(_ path: UnsafePointer<CChar>, _ n: CInt) -> 
 
 /// Opaque pointer type for libedit's completion matches list.
 /// We only need to pass this to rl_completion_matches; the actual type is `char**`.
-typealias CompletionMatches = UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>
+public typealias CompletionMatches = UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>
 
 /// libedit's rl_completion_matches function (analogous to GNU readline's).
 /// Takes a text prefix and a generator function, returns a malloc'd array of matches.
@@ -98,7 +103,7 @@ private func _installReadlineCompletion() {
 ///
 /// Production uses `StdinInputSource` (wraps libedit readline).
 /// Tests inject mock implementations for deterministic behavior.
-protocol REPLInputSource: Sendable {
+public protocol REPLInputSource: Sendable {
     /// Read one line of input. Return `nil` to signal EOF (Ctrl+D).
     func readline(prompt: String) -> String?
 }
@@ -107,19 +112,20 @@ protocol REPLInputSource: Sendable {
 // MARK: - StdinInputSource
 
 /// Production input source wrapping libedit's readline.
-struct StdinInputSource: REPLInputSource {
+public struct StdinInputSource: REPLInputSource {
+    public init() {}
 
     /// Whether tab-completion has been installed via rl_attempted_completion_function.
     nonisolated(unsafe) private static var completionInstalled = false
 
     /// Install tab-completion callback (once per process).
-    static func installCompletion() {
+    public static func installCompletion() {
         guard !completionInstalled else { return }
         _installReadlineCompletion()
         completionInstalled = true
     }
 
-    func readline(prompt: String) -> String? {
+    public func readline(prompt: String) -> String? {
         Self.installCompletion()
 
         guard let cString = _readline(prompt) else {
@@ -150,7 +156,7 @@ struct StdinInputSource: REPLInputSource {
 ///
 /// Designed to be synchronous because libedit's completion callback
 /// is a C function pointer that cannot call async code.
-struct CompletionEngine: Sendable {
+public struct CompletionEngine: Sendable {
 
     /// REPL commands with leading colon, kept in sync with REPLCommand.allCases.
     private static let commands: [String] = [
@@ -168,10 +174,10 @@ struct CompletionEngine: Sendable {
     ]
 
     /// Last search results for :open/:reveal index completion and filename completion.
-    let lastResults: [SearchResult]
+    public let lastResults: [SearchResult]
 
     /// Create a completion engine with the given last search results.
-    init(lastResults: [SearchResult]) {
+    public init(lastResults: [SearchResult]) {
         self.lastResults = lastResults
     }
 
@@ -179,7 +185,7 @@ struct CompletionEngine: Sendable {
     ///
     /// - Parameter text: The current input line (what the user has typed so far).
     /// - Returns: An array of completion strings that could replace the current token.
-    func complete(_ text: String) -> [String] {
+    public func complete(_ text: String) -> [String] {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
 
         // 1. Command completion: input starts with ":"
@@ -253,18 +259,18 @@ struct CompletionEngine: Sendable {
 /// libedit's completion callback is a C function pointer that cannot
 /// capture Swift context. This static class provides the bridge between
 /// the REPL actor and the C callback.
-enum CompletionContext: Sendable {
+public enum CompletionContext: Sendable {
 
     /// Current completion engine state (updated by REPL before readline).
     nonisolated(unsafe) private static var _engine: CompletionEngine = CompletionEngine(lastResults: [])
 
     /// Update the completion context with current REPL state.
-    static func update(lastResults: [SearchResult]) {
+    public static func update(lastResults: [SearchResult]) {
         _engine = CompletionEngine(lastResults: lastResults)
     }
 
     /// Get completions for the current input via the stored engine.
-    static func complete(_ text: String) -> [String] {
+    public static func complete(_ text: String) -> [String] {
         _engine.complete(text)
     }
 }
@@ -278,7 +284,7 @@ enum CompletionContext: Sendable {
 ///
 /// Designed for testability: inject `MockInputSource` and a capturing output
 /// in tests; production uses `StdinInputSource` and `StdoutWriter`.
-actor REPL {
+public actor REPL {
 
     // MARK: - Properties
 
@@ -290,13 +296,13 @@ actor REPL {
     /// Last search results, stored for `:open N` / `:reveal N` / `:explain N`.
     ///
     /// Updated on each query. 1-based indexing: result 1 corresponds to `lastResults[0]`.
-    var lastResults: [SearchResult] = []
+    public var lastResults: [SearchResult] = []
 
     /// Last search query string, stored for `:explain N`.
-    var lastQuery: String = ""
+    public var lastQuery: String = ""
 
     /// Operation history for `:undo` support.
-    let operationHistory: NLOperationHistory = NLOperationHistory()
+    public let operationHistory: NLOperationHistory = NLOperationHistory()
 
     // MARK: - Init
 
@@ -307,7 +313,7 @@ actor REPL {
     ///   - inputSource: Source of user input (readline abstraction).
     ///   - output: Output destination for results and messages.
     ///   - historyPath: Path for readline history persistence. `nil` disables persistence.
-    init(
+    public init(
         client: any IPCClientProtocol,
         inputSource: any REPLInputSource = StdinInputSource(),
         output: any CLIOutputWriter = StdoutWriter(),
@@ -322,7 +328,7 @@ actor REPL {
     // MARK: - Main Loop
 
     /// Run the REPL loop. Blocks until `:quit` or EOF.
-    func run() async {
+    public func run() async {
         // Print welcome banner
         output.write("\(Product.name) \(Product.version) — type :help for commands\n")
 

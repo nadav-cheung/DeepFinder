@@ -4,6 +4,9 @@
 /// preview for UI display, and never auto-searches or records history.
 // Sources/AI/ClipboardSearch.swift
 import AppKit
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderPersist
 
 // MARK: - ClipboardContent
 
@@ -12,12 +15,12 @@ import AppKit
 /// REQ-3.0-16: Detects clipboard text (ignores images/files), provides a
 /// truncated preview for UI display, and requires explicit user action
 /// to trigger the search (no auto-search, no history recording).
-struct ClipboardContent: Sendable, Equatable {
+public struct ClipboardContent: Sendable, Equatable {
     /// The full text content from the pasteboard.
-    let text: String
+    public let text: String
     /// A truncated preview: first `maxLength` characters with "..." appended
     /// if the text exceeds the limit.
-    let preview: String
+    public let preview: String
 }
 
 // MARK: - ClipboardSearch
@@ -32,7 +35,7 @@ struct ClipboardContent: Sendable, Equatable {
 /// **User control**: REQ-3.0-16 requires explicit user action to trigger
 /// the search (no auto-search, no history recording). The truncated preview
 /// is for UI display only.
-enum ClipboardSearch: Sendable {
+public enum ClipboardSearch: Sendable {
 
     /// Reads the current text content from the given pasteboard.
     ///
@@ -41,7 +44,7 @@ enum ClipboardSearch: Sendable {
     /// - Returns: A `ClipboardContent` with the full text and truncated preview,
     ///   or `nil` if the pasteboard contains no text, only non-text content,
     ///   or an empty string.
-    static func detectClipboardText(pasteboard: NSPasteboard = .general) -> ClipboardContent? {
+    public static func detectClipboardText(pasteboard: NSPasteboard = .general) -> ClipboardContent? {
         guard let text = pasteboard.string(forType: .string) else {
             return nil
         }
@@ -61,7 +64,7 @@ enum ClipboardSearch: Sendable {
     ///   - text: The text to potentially truncate.
     ///   - maxLength: Maximum number of characters to keep (default 100).
     /// - Returns: The original text if it fits, or `text.prefix(maxLength) + "..."`.
-    static func truncateToPreview(_ text: String, maxLength: Int = 100) -> String {
+    public static func truncateToPreview(_ text: String, maxLength: Int = 100) -> String {
         if text.count <= maxLength {
             return text
         }

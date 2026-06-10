@@ -1,5 +1,11 @@
 import SwiftUI
 import AppKit
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - DragItemProvider
 
@@ -8,7 +14,7 @@ import AppKit
 /// Production uses `NSItemProvider` with file URLs. Tests inject
 /// `MockDragItemProvider` to verify drag payload logic without
 /// touching the pasteboard.
-protocol DragItemProvider: Sendable {
+public protocol DragItemProvider: Sendable {
     /// Create a drag item provider for the file at the given path.
     func itemProvider(forFileAt path: String) -> NSItemProvider
 }
@@ -20,9 +26,10 @@ protocol DragItemProvider: Sendable {
 /// The resulting drag payload can be dropped into Finder (to copy/move), Terminal
 /// (to paste the path), or any app that accepts file URLs.
 @MainActor
-final class DefaultDragItemProvider: DragItemProvider, @unchecked Sendable {
+final public class DefaultDragItemProvider: DragItemProvider, @unchecked Sendable {
+    public init() {}
 
-    nonisolated func itemProvider(forFileAt path: String) -> NSItemProvider {
+    public nonisolated func itemProvider(forFileAt path: String) -> NSItemProvider {
         let url = URL(fileURLWithPath: path)
         let provider = NSItemProvider(object: url as NSURL)
         provider.suggestedName = url.lastPathComponent
@@ -37,12 +44,12 @@ final class DefaultDragItemProvider: DragItemProvider, @unchecked Sendable {
 /// REQ-2.0-13: Drag support via `.onDrag` modifier on result rows. Provides
 /// the file URL via `NSItemProvider` so results can be dragged to Finder,
 /// Terminal, or any app accepting file URLs.
-struct ResultDragViewModifier: ViewModifier {
+public struct ResultDragViewModifier: ViewModifier {
 
-    let path: String
-    let dragProvider: any DragItemProvider
+    public let path: String
+    public let dragProvider: any DragItemProvider
 
-    func body(content: Content) -> some View {
+    public func body(content: Content) -> some View {
         content.onDrag {
             self.dragProvider.itemProvider(forFileAt: self.path)
         }
@@ -59,7 +66,7 @@ extension View {
     /// default provider creates an `NSItemProvider` from a file URL. In tests
     /// a mock provider can be injected to verify the path being dragged.
     @MainActor
-    func resultDrag(path: String, provider: any DragItemProvider = DefaultDragItemProvider()) -> some View {
+    public func resultDrag(path: String, provider: any DragItemProvider = DefaultDragItemProvider()) -> some View {
         modifier(ResultDragViewModifier(path: path, dragProvider: provider))
     }
 }

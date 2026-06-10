@@ -4,7 +4,7 @@ import Foundation
 import AVFoundation
 import CoreMedia
 import AudioToolbox
-@testable import DeepFinder
+@testable import DeepFinderMedia
 
 @Suite("AudioMetadataExtractor")
 struct AudioMetadataExtractorTests {

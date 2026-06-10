@@ -1,4 +1,6 @@
 import Foundation
+import DeepFinderIndex
+import DeepFinderDaemon
 
 // MARK: - LockedBox
 
@@ -8,11 +10,11 @@ final class LockedBox<T>: @unchecked Sendable {
     private var _value: T
     private let lock = NSLock()
 
-    init(_ value: T) {
+    public init(_ value: T) {
         _value = value
     }
 
-    var value: T {
+    public var value: T {
         get { lock.withLock { _value } }
         set { lock.withLock { _value = newValue } }
     }
@@ -21,7 +23,7 @@ final class LockedBox<T>: @unchecked Sendable {
 // MARK: - SearchScriptError
 
 /// Errors thrown during AppleScript search command execution.
-enum SearchScriptError: Error {
+public enum SearchScriptError: Error {
     case ipcTimeout
 }
 
@@ -31,8 +33,8 @@ enum SearchScriptError: Error {
 ///
 /// Contains an array of file paths matching the query.
 /// When the daemon is unavailable, `paths` is empty.
-struct SearchScriptResult: Sendable, Equatable {
-    let paths: [String]
+public struct SearchScriptResult: Sendable, Equatable {
+    public let paths: [String]
 }
 
 // MARK: - SearchScriptParser
@@ -41,7 +43,7 @@ struct SearchScriptResult: Sendable, Equatable {
 ///
 /// Extracted from ``DeepFinderSearchCommand`` for testability without
 /// requiring a live `NSScriptCommand` instance.
-enum SearchScriptParser {
+public enum SearchScriptParser {
     /// Extract the search query from an NSScriptCommand-style arguments dictionary.
     ///
     /// The key `"DirectParameter"` holds the direct parameter of the AppleScript command
@@ -49,7 +51,7 @@ enum SearchScriptParser {
     ///
     /// - Parameter arguments: The command arguments dictionary.
     /// - Returns: The trimmed query string, or `nil` if absent, empty, or not a String.
-    static func extractQuery(from arguments: [String: Any]) -> String? {
+    public static func extractQuery(from arguments: [String: Any]) -> String? {
         guard let raw = arguments["DirectParameter"] as? String else {
             return nil
         }
@@ -70,14 +72,14 @@ enum SearchScriptParser {
 /// The sdef script dictionary maps the `search` command to this class.
 /// Placeholder implementation returns empty results; actual daemon IPC
 /// will be connected once the integration layer is finalized.
-class DeepFinderSearchCommand: NSScriptCommand {
+public class DeepFinderSearchCommand: NSScriptCommand {
 
     /// Perform the search synchronously and return results.
     ///
     /// Separated from `performDefaultImplementation()` for testability.
     /// - Parameter query: The search query string, or `nil` if none was provided.
     /// - Returns: A ``SearchScriptResult`` with matching file paths.
-    static func performSearch(query: String?) -> SearchScriptResult {
+    public static func performSearch(query: String?) -> SearchScriptResult {
         guard let query, !query.isEmpty else {
             return SearchScriptResult(paths: [])
         }
@@ -110,7 +112,7 @@ class DeepFinderSearchCommand: NSScriptCommand {
     }
 
     /// NSScriptCommand entry point. Called by the Apple Events framework.
-    override func performDefaultImplementation() -> Any? {
+    public override func performDefaultImplementation() -> Any? {
         let query = SearchScriptParser.extractQuery(from: directParameter != nil
             ? ["DirectParameter": directParameter as Any]
             : [:])
@@ -124,8 +126,8 @@ class DeepFinderSearchCommand: NSScriptCommand {
 /// The result of an AppleScript `get-file-info` command.
 ///
 /// Contains a dictionary of file metadata, or an empty dictionary when the file is not found.
-struct FileInfoScriptResult: Sendable, Equatable {
-    let info: [String: String]
+public struct FileInfoScriptResult: Sendable, Equatable {
+    public let info: [String: String]
 }
 
 // MARK: - FileInfoScriptParser
@@ -134,7 +136,7 @@ struct FileInfoScriptResult: Sendable, Equatable {
 ///
 /// Extracted from ``DeepFinderGetFileInfoCommand`` for testability without
 /// requiring a live `NSScriptCommand` instance.
-enum FileInfoScriptParser {
+public enum FileInfoScriptParser {
     /// Extract the file path from an NSScriptCommand-style arguments dictionary.
     ///
     /// The key `"DirectParameter"` holds the direct parameter of the AppleScript command
@@ -142,7 +144,7 @@ enum FileInfoScriptParser {
     ///
     /// - Parameter arguments: The command arguments dictionary.
     /// - Returns: The trimmed path string, or `nil` if absent, empty, or not a String.
-    static func extractPath(from arguments: [String: Any]) -> String? {
+    public static func extractPath(from arguments: [String: Any]) -> String? {
         guard let raw = arguments["DirectParameter"] as? String else {
             return nil
         }
@@ -162,14 +164,14 @@ enum FileInfoScriptParser {
 ///
 /// The sdef script dictionary maps the `get-file-info` command to this class.
 /// Returns file metadata (name, size, dates, type) for the given path.
-class DeepFinderGetFileInfoCommand: NSScriptCommand {
+public class DeepFinderGetFileInfoCommand: NSScriptCommand {
 
     /// Perform the file info lookup synchronously and return results.
     ///
     /// Separated from `performDefaultImplementation()` for testability.
     /// - Parameter path: The file path string, or `nil` if none was provided.
     /// - Returns: A ``FileInfoScriptResult`` with file metadata.
-    static func performFileInfo(path: String?) -> FileInfoScriptResult {
+    public static func performFileInfo(path: String?) -> FileInfoScriptResult {
         guard let path, !path.isEmpty else {
             return FileInfoScriptResult(info: [:])
         }
@@ -203,7 +205,7 @@ class DeepFinderGetFileInfoCommand: NSScriptCommand {
     }
 
     /// NSScriptCommand entry point. Called by the Apple Events framework.
-    override func performDefaultImplementation() -> Any? {
+    public override func performDefaultImplementation() -> Any? {
         let path = FileInfoScriptParser.extractPath(from: directParameter != nil
             ? ["DirectParameter": directParameter as Any]
             : [:])

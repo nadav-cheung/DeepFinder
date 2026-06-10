@@ -1,6 +1,10 @@
 import Testing
 import Foundation
-@testable import DeepFinder
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderFS
+import DeepFinderPersist
+@testable import DeepFinderDaemon
 
 @Suite("Daemon lifecycle management (REQ-0.4-04)")
 struct LifecycleTests {

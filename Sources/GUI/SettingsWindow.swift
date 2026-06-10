@@ -1,4 +1,10 @@
 import SwiftUI
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - SettingsWindow
 
@@ -6,14 +12,14 @@ import SwiftUI
 ///
 /// Provides a standard macOS settings window with toolbar-style tabs.
 /// Keyboard shortcut: Cmd+, opens the settings window.
-struct SettingsWindow {
+public struct SettingsWindow {
 
     /// Create the settings NSWindow.
     ///
     /// - Parameter configProvider: The config provider (IPC in production, mock in tests).
     /// - Returns: A configured NSWindow ready to be displayed.
     @MainActor
-    static func createWindow(configProvider: some SettingsConfigProvider) -> NSWindow {
+    public static func createWindow(configProvider: some SettingsConfigProvider) -> NSWindow {
         let viewModel = SettingsViewModel(configProvider: configProvider)
         let view = SettingsView(viewModel: viewModel)
 
@@ -42,11 +48,11 @@ struct SettingsWindow {
 ///
 /// Uses a hidden Button with `.keyboardShortcut(",", modifiers: .command)` so the
 /// shortcut is registered in SwiftUI's responder chain.
-struct SettingsShortcutOverlay: View {
+public struct SettingsShortcutOverlay: View {
 
     @Binding var isPresented: Bool
 
-    var body: some View {
+    public var body: some View {
         // Hidden button captures Cmd+, and toggles the settings window.
         Button {
             isPresented.toggle()

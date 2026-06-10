@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import DeepFinder
+@testable import DeepFinderFS
 
 /// Box to allow mutation from @Sendable closures in tests.
 /// MockEventStream calls the handler synchronously on the injecting thread,

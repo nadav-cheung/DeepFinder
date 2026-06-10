@@ -4,10 +4,14 @@
 /// framed `IPCResponse` replies. Also handles daemon lifecycle: auto-spawning the daemon
 /// binary, checking its PID file, and cleaning up stale sockets.
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderFS
+import DeepFinderPersist
 
 // MARK: - IPCClientError
 
-enum IPCClientError: Error, CustomStringConvertible, Equatable {
+public enum IPCClientError: Error, CustomStringConvertible, Equatable {
     case notConnected
     case connectionFailed(String)
     case sendFailed(String)
@@ -15,7 +19,7 @@ enum IPCClientError: Error, CustomStringConvertible, Equatable {
     case daemonSpawnFailed(String)
     case daemonStartupTimedOut
 
-    var description: String {
+    public var description: String {
         switch self {
         case .notConnected:
             return "IPCClient is not connected"
@@ -36,9 +40,9 @@ enum IPCClientError: Error, CustomStringConvertible, Equatable {
 // MARK: - SpawnError
 
 /// Error wrapper for daemon spawn failures.
-struct SpawnError: Error, CustomStringConvertible {
-    let message: String
-    var description: String { message }
+public struct SpawnError: Error, CustomStringConvertible {
+    public let message: String
+    public var description: String { message }
 }
 
 // MARK: - IPCClient
@@ -50,7 +54,7 @@ struct SpawnError: Error, CustomStringConvertible {
 /// for daemon lifecycle management (auto-spawn, PID checks, stale cleanup).
 ///
 /// Thread-safe via actor isolation.
-actor IPCClient {
+public actor IPCClient {
 
     // MARK: - Properties
 
@@ -61,7 +65,7 @@ actor IPCClient {
     private var fd: Int32 = -1
 
     /// Whether the client currently has an active connection.
-    var isConnected: Bool {
+    public var isConnected: Bool {
         fd >= 0
     }
 
@@ -72,7 +76,7 @@ actor IPCClient {
     /// Does not connect automatically — call `connect()` to establish the connection.
     ///
     /// - Parameter socketPath: Path to the Unix domain socket. Supports `~` expansion.
-    init(socketPath: String) {
+    public init(socketPath: String) {
         self.socketPath = Self.expandTilde(socketPath)
     }
 
@@ -87,7 +91,7 @@ actor IPCClient {
     /// Connect to the daemon's Unix domain socket.
     ///
     /// - Throws: `IPCClientError.connectionFailed` if the socket cannot be reached.
-    func connect() throws {
+    public func connect() throws {
         guard fd < 0 else { return } // Already connected
 
         let newFD = socket(AF_UNIX, SOCK_STREAM, 0)
@@ -125,7 +129,7 @@ actor IPCClient {
     }
 
     /// Disconnect from the daemon. Safe to call when already disconnected.
-    func disconnect() {
+    public func disconnect() {
         guard fd >= 0 else { return }
         Darwin.close(fd)
         fd = -1
@@ -140,7 +144,7 @@ actor IPCClient {
     /// - Parameter request: The request to send.
     /// - Returns: The daemon's response.
     /// - Throws: `IPCClientError` on communication failures.
-    func send(_ request: IPCRequest) async throws -> IPCResponse {
+    public func send(_ request: IPCRequest) async throws -> IPCResponse {
         do {
             return try sendAttempt(request)
         } catch {
@@ -205,7 +209,7 @@ actor IPCClient {
     ///   - pollInterval: Time between socket availability checks (seconds). Default 0.5.
     ///   - maxRetries: Maximum number of spawn attempts. Default 3.
     /// - Throws: `IPCClientError.daemonSpawnFailed` or `IPCClientError.daemonStartupTimedOut`.
-    func ensureDaemonRunning(
+    public func ensureDaemonRunning(
         pidPath: String = Product.pidPath,
         daemonBinaryPath: String = Product.daemonCommand,
         timeout: TimeInterval = Constants.IPC.daemonReadyTimeout,
@@ -297,7 +301,7 @@ actor IPCClient {
     ///
     /// - Parameter pidPath: Absolute path to the PID file.
     /// - Returns: `true` if a live daemon process is detected.
-    static func isDaemonRunning(pidPath: String) -> Bool {
+    public static func isDaemonRunning(pidPath: String) -> Bool {
         DaemonMain.checkExistingDaemon(pidPath: pidPath)
     }
 
@@ -307,7 +311,7 @@ actor IPCClient {
     /// If the PID belongs to a live process, the file is left intact.
     ///
     /// - Parameter pidPath: Absolute path to the PID file.
-    static func cleanupStalePID(pidPath: String) {
+    public static func cleanupStalePID(pidPath: String) {
         let resolved = expandTilde(pidPath)
         let fm = FileManager.default
         guard fm.fileExists(atPath: resolved) else { return }
@@ -341,7 +345,7 @@ actor IPCClient {
     /// Resolves the daemon binary from fixed, absolute locations only. Never uses
     /// PATH lookup or CWD-relative resolution, which would allow an attacker to
     /// substitute a malicious binary.
-    static func spawnDaemon(binaryPath: String) -> Result<Void, SpawnError> {
+    public static func spawnDaemon(binaryPath: String) -> Result<Void, SpawnError> {
         // Resolve the daemon binary path from absolute locations only.
         // Each candidate must be an absolute path (starts with "/") to prevent
         // CWD-relative attacks where a malicious binary could shadow the real one.

@@ -1,6 +1,12 @@
 import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - ResultRowView
 
@@ -12,18 +18,18 @@ import UniformTypeIdentifiers
 /// - Generous horizontal rhythm (12pt inner, 16pt outer padding)
 /// - Selection: accent-tinted background with cornerRadius 8, subtle elevation shadow
 /// - Hover: featherlight .quaternary wash, 0.15s ease
-struct ResultRowView: View, Equatable {
+public struct ResultRowView: View, Equatable {
 
-    let result: SearchResult
-    let isSelected: Bool
-    var query: String = ""
-    var workspace: (any WorkspaceProtocol)? = nil
+    public let result: SearchResult
+    public let isSelected: Bool
+    public var query: String = ""
+    public var workspace: (any WorkspaceProtocol)? = nil
 
     @State private var isHovered = false
 
     // MARK: - Equatable (REQ-3.2-14)
 
-    nonisolated static func == (lhs: ResultRowView, rhs: ResultRowView) -> Bool {
+    public nonisolated static func == (lhs: ResultRowView, rhs: ResultRowView) -> Bool {
         lhs.result.record.id == rhs.result.record.id
             && lhs.isSelected == rhs.isSelected
             && lhs.query == rhs.query
@@ -32,21 +38,21 @@ struct ResultRowView: View, Equatable {
     // MARK: - Design Tokens
 
     private enum Design {
-        static let iconSize: CGFloat = 20
-        static let filenameSize: CGFloat = 13
-        static let filenameWeight: Font.Weight = .semibold
-        static let pathSize: CGFloat = 11
-        static let metaSize: CGFloat = 11
-        static let badgeSize: CGFloat = 10
-        static let hSpacing: CGFloat = 12
-        static let vSpacing: CGFloat = 2
-        static let hPadding: CGFloat = 14
-        static let vPadding: CGFloat = 8
-        static let selectionRadius: CGFloat = 8
-        static let selectionInset: CGFloat = 4
+        public static let iconSize: CGFloat = 20
+        public static let filenameSize: CGFloat = 13
+        public static let filenameWeight: Font.Weight = .semibold
+        public static let pathSize: CGFloat = 11
+        public static let metaSize: CGFloat = 11
+        public static let badgeSize: CGFloat = 10
+        public static let hSpacing: CGFloat = 12
+        public static let vSpacing: CGFloat = 2
+        public static let hPadding: CGFloat = 14
+        public static let vPadding: CGFloat = 8
+        public static let selectionRadius: CGFloat = 8
+        public static let selectionInset: CGFloat = 4
     }
 
-    var body: some View {
+    public var body: some View {
         let ext = result.record.extension
         let icon = result.record.isDirectory
             ? FileIconCache.icon(forExtension: nil, isDirectory: true)
@@ -212,7 +218,7 @@ struct ResultRowView: View, Equatable {
 ///
 /// Icons are rendered at 22×22 for confident visual presence in result rows.
 /// NSCache handles automatic eviction under memory pressure.
-enum FileIconCache {
+public enum FileIconCache {
 
     private nonisolated(unsafe) static let cache: NSCache<NSString, NSImage> = {
         let c = NSCache<NSString, NSImage>()
@@ -224,7 +230,7 @@ enum FileIconCache {
     /// - Parameters:
     ///   - ext: File extension without dot, or nil for no extension.
     ///   - isDirectory: Whether the item is a directory.
-    static func icon(forExtension ext: String?, isDirectory: Bool = false) -> NSImage {
+    public static func icon(forExtension ext: String?, isDirectory: Bool = false) -> NSImage {
         let key: NSString
         if isDirectory {
             key = "__directory__" as NSString
@@ -268,9 +274,9 @@ enum FileIconCache {
 /// Uses accent color with a subtle bold weight for highlighted ranges,
 /// creating clear visual distinction without harsh contrast.
 /// Case-insensitive. Unicode-compatible. Finds ALL occurrences.
-enum MatchHighlighter {
+public enum MatchHighlighter {
 
-    static func highlight(filename: String, query: String) -> AttributedString {
+    public static func highlight(filename: String, query: String) -> AttributedString {
         guard !query.isEmpty else {
             return AttributedString(filename)
         }
@@ -305,13 +311,13 @@ enum MatchHighlighter {
 /// Two-stage shortening:
 /// 1. Home directory -> `~`
 /// 2. If result > 60 chars: keep first 25 + "..." + last 30
-enum PathShortener {
+public enum PathShortener {
 
-    private static let maxDisplayLength = 60
+    public static let maxDisplayLength = 60
     private static let headLength = 25
     private static let tailLength = 30
 
-    static func shorten(_ path: String) -> String {
+    public static func shorten(_ path: String) -> String {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let shortened: String
         if path.hasPrefix(home) {
@@ -325,7 +331,7 @@ enum PathShortener {
 
     /// Truncates a path in the middle if it exceeds `maxLength`.
     /// Keeps the first 25 chars + "..." + last 30 chars.
-    static func truncateMiddle(_ path: String, maxLength: Int = maxDisplayLength) -> String {
+    public static func truncateMiddle(_ path: String, maxLength: Int = maxDisplayLength) -> String {
         guard path.count > maxLength else { return path }
         let head = path.prefix(headLength)
         let tail = path.suffix(tailLength)
@@ -336,9 +342,9 @@ enum PathShortener {
 // MARK: - FileSizeFormatter
 
 /// Formats byte counts into human-readable strings (B, KB, MB, GB).
-enum FileSizeFormatter {
+public enum FileSizeFormatter {
 
-    static func format(_ bytes: Int64) -> String {
+    public static func format(_ bytes: Int64) -> String {
         if bytes < 1024 {
             return "\(bytes) B"
         } else if bytes < 1_048_576 {
@@ -367,7 +373,7 @@ enum FileSizeFormatter {
 extension MatchType {
 
     /// Badge label for display in ResultRowView.
-    var badgeLabel: String {
+    public var badgeLabel: String {
         switch self {
         case .exact: "精确"
         case .prefix: "前缀"

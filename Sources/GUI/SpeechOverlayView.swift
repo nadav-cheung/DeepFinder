@@ -1,4 +1,10 @@
 import SwiftUI
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - SpeechOverlayActions
 
@@ -6,7 +12,7 @@ import SwiftUI
 ///
 /// Extracted for testability: production passes a real view model,
 /// tests pass a mock that records calls.
-protocol SpeechOverlayActions: AnyObject, Sendable {
+public protocol SpeechOverlayActions: AnyObject, Sendable {
     /// Called when the user's speech has been finalized and a search should execute.
     func triggerSearch(_ query: String) async
     /// Called when the overlay is dismissed (cancel or completion).
@@ -61,7 +67,7 @@ final class SpeechOverlayViewModel {
     /// - Parameters:
     ///   - speechProvider: Provides the stream of speech recognition results.
     ///   - actions: Handles search triggers and overlay dismissal.
-    init(
+    public init(
         speechProvider: any SpeechRecognizerProtocol,
         actions: any SpeechOverlayActions
     ) {
@@ -72,7 +78,7 @@ final class SpeechOverlayViewModel {
     // MARK: - Lifecycle
 
     /// Shows the overlay and starts listening for speech input.
-    func startListening() {
+    public func startListening() {
         guard !isListening else { return }
 
         isVisible = true
@@ -108,7 +114,7 @@ final class SpeechOverlayViewModel {
     }
 
     /// Cancels speech input and dismisses the overlay.
-    func cancel() {
+    public func cancel() {
         listeningTask?.cancel()
         listeningTask = nil
 
@@ -176,13 +182,13 @@ final class SpeechOverlayViewModel {
 /// (after ~1.5 s of silence, per LocalSpeechProvider.speechAutoTriggerInterval).
 ///
 /// REQ-3.0-12: Speech overlay GUI component.
-struct SpeechOverlayView: View {
+public struct SpeechOverlayView: View {
 
     @Bindable var viewModel: SpeechOverlayViewModel
 
     @State private var isCancelHovered = false
 
-    var body: some View {
+    public var body: some View {
         VStack(spacing: 12) {
             // Waveform indicator
             HStack(spacing: 4) {
@@ -249,8 +255,8 @@ struct SpeechOverlayView: View {
 /// Each bar oscillates in height based on the animation phase and its
 /// position index, creating a staggered wave effect.
 private struct WaveformBar: View {
-    let phase: Double
-    let index: Int
+    public let phase: Double
+    public let index: Int
 
     /// Computes a pseudo-random height based on phase and index.
     private var barHeight: CGFloat {
@@ -259,7 +265,7 @@ private struct WaveformBar: View {
         return 6 + abs(wave) * 18
     }
 
-    var body: some View {
+    public var body: some View {
         RoundedRectangle(cornerRadius: 2)
             .fill(
                 LinearGradient(

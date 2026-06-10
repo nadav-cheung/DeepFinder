@@ -1,4 +1,5 @@
 import Foundation
+import DeepFinderIndex
 
 // MARK: - AutocompleteProvider
 
@@ -7,7 +8,7 @@ import Foundation
 /// Uses the InMemoryIndex's Trie (via prefix search) to find matching filenames,
 /// then deduplicates by name and sorts by frequency (how many distinct paths
 /// share that filename).
-actor AutocompleteProvider {
+public actor AutocompleteProvider {
 
     /// The index used for filename lookups.
     private let index: InMemoryIndex
@@ -22,7 +23,7 @@ actor AutocompleteProvider {
     /// Create an autocomplete provider backed by the given index.
     ///
     /// - Parameter index: The in-memory index to query for filename suggestions.
-    init(index: InMemoryIndex) {
+    public init(index: InMemoryIndex) {
         self.index = index
     }
 
@@ -35,7 +36,7 @@ actor AutocompleteProvider {
     ///   - limit: Maximum number of suggestions to return.
     /// - Returns: Unique filenames sorted by descending frequency (count of
     ///   distinct paths sharing that name). Each filename appears at most once.
-    func suggest(prefix: String, limit: Int = 10) async -> [String] {
+    public func suggest(prefix: String, limit: Int = 10) async -> [String] {
         let normalized = prefix
             .precomposedStringWithCanonicalMapping
             .lowercased()

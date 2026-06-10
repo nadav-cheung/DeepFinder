@@ -1,4 +1,10 @@
 import SwiftUI
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - FeatureTip
 
@@ -6,17 +12,17 @@ import SwiftUI
 ///
 /// Each tip highlights an advanced capability the user may not know about.
 /// Tips rotate on each panel open and are individually dismissible.
-enum FeatureTip: String, CaseIterable, Identifiable, Sendable {
+public enum FeatureTip: String, CaseIterable, Identifiable, Sendable {
     case nlSearch
     case voiceInput
     case filterBar
     case quickLook
     case contentSearch
 
-    var id: String { rawValue }
+    public var id: String { rawValue }
 
     /// SF Symbol icon for the tip.
-    var icon: String {
+    public var icon: String {
         switch self {
         case .nlSearch:       return "text.bubble.fill"
         case .voiceInput:     return "mic.fill"
@@ -27,7 +33,7 @@ enum FeatureTip: String, CaseIterable, Identifiable, Sendable {
     }
 
     /// Chinese description text.
-    var text: String {
+    public var text: String {
         switch self {
         case .nlSearch:       return "试试自然语言搜索：「上个月修改的 PDF」"
         case .voiceInput:     return "点击麦克风按钮使用语音搜索"
@@ -38,7 +44,7 @@ enum FeatureTip: String, CaseIterable, Identifiable, Sendable {
     }
 
     /// Brand color for the tip icon.
-    var color: Color {
+    public var color: Color {
         switch self {
         case .nlSearch:       return GlowColors.coral
         case .voiceInput:     return GlowColors.violet
@@ -49,22 +55,22 @@ enum FeatureTip: String, CaseIterable, Identifiable, Sendable {
     }
 
     /// UserDefaults key for tracking dismissal.
-    var dismissedKey: String {
+    public var dismissedKey: String {
         "\(Product.identifier).dismissedTip.\(rawValue)"
     }
 
     /// Whether this tip has been dismissed by the user.
-    var isDismissed: Bool {
+    public var isDismissed: Bool {
         UserDefaults.standard.bool(forKey: dismissedKey)
     }
 
     /// Mark this tip as dismissed.
-    func dismiss() {
+    public func dismiss() {
         UserDefaults.standard.set(true, forKey: dismissedKey)
     }
 
     /// All tips that haven't been dismissed yet.
-    static var undismissed: [FeatureTip] {
+    public static var undismissed: [FeatureTip] {
         allCases.filter { !$0.isDismissed }
     }
 }
@@ -75,26 +81,26 @@ enum FeatureTip: String, CaseIterable, Identifiable, Sendable {
 ///
 /// Displays a single `FeatureTip` with an icon, text, and dismiss button.
 /// Rotates tips on each panel open. Once all tips are dismissed, no card is shown.
-struct FeatureDiscoveryTipCard: View {
+public struct FeatureDiscoveryTipCard: View {
 
     /// The tip to display.
-    let tip: FeatureTip
+    public let tip: FeatureTip
 
     /// Called when the user dismisses the tip.
-    var onDismiss: () -> Void = {}
+    public var onDismiss: () -> Void = {}
 
     // MARK: - Design Tokens
 
     private enum Design {
-        static let cornerRadius: CGFloat = 8
-        static let hPadding: CGFloat = 12
-        static let vPadding: CGFloat = 8
-        static let iconSize: CGFloat = 14
+        public static let cornerRadius: CGFloat = 8
+        public static let hPadding: CGFloat = 12
+        public static let vPadding: CGFloat = 8
+        public static let iconSize: CGFloat = 14
     }
 
     // MARK: - Body
 
-    var body: some View {
+    public var body: some View {
         HStack(spacing: 8) {
             Image(systemName: tip.icon)
                 .font(.system(size: Design.iconSize))

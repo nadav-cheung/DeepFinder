@@ -1,4 +1,9 @@
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderServices
 
 // MARK: - ServeMode
 
@@ -7,7 +12,7 @@ import Foundation
 /// Ensures the daemon is running, then starts an `HTTPSearchService`
 /// on the specified port. In production, the caller blocks on the
 /// returned signal until Ctrl+C.
-struct ServeMode {
+public struct ServeMode {
 
     // MARK: - Run
 
@@ -17,7 +22,7 @@ struct ServeMode {
     ///   - options: Parsed CLI options (must have `serveMode == true`).
     ///   - clientProvider: Optional IPC client for testing.
     /// - Returns: Tuple of (collected output, exit code).
-    static func run(
+    public static func run(
         options: CLIOptions,
         clientProvider: (any IPCClientProtocol)? = nil
     ) async -> (output: CLIOutput, exitCode: CLIExitCode) {

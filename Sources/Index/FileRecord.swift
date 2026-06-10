@@ -7,41 +7,41 @@ import Foundation
 /// preserves the raw filesystem name for display.
 ///
 /// Conforms to `Codable` for SQLite persistence and `Sendable` for safe cross-actor transfer.
-struct FileRecord: Codable, Sendable {
+public struct FileRecord: Codable, Sendable {
     /// Unique numeric identifier within this index instance.
-    let id: UInt32
+    public let id: UInt32
 
     /// NFC-normalized filename used for search matching (lowercased during indexing).
-    let name: String
+    public let name: String
 
     /// Original filename as it appears on disk, preserved for display.
-    let originalName: String
+    public let originalName: String
 
     /// Absolute path to this file or directory (e.g. "/Users/nadav/Documents/report.pdf").
-    let path: String
+    public let path: String
 
     /// Absolute path to the parent directory.
-    let parentPath: String
+    public let parentPath: String
 
     /// `true` for directories, `false` for regular files.
-    let isDirectory: Bool
+    public let isDirectory: Bool
 
     /// File size in bytes. Zero for directories.
-    let size: Int64
+    public let size: Int64
 
     /// File creation date from filesystem metadata.
-    let createdAt: Date
+    public let createdAt: Date
 
     /// Last modification date from filesystem metadata.
-    let modifiedAt: Date
+    public let modifiedAt: Date
 
     /// File extension without the leading dot (e.g. "pdf", "swift"). `nil` for directories.
-    let `extension`: String?
+    public let `extension`: String?
 
     /// Optional media metadata extracted from the file (image dimensions, audio tags, etc.).
-    let metadata: ExtractedMetadata?
+    public let metadata: ExtractedMetadata?
 
-    init(
+    public init(
         id: UInt32,
         name: String,
         originalName: String,

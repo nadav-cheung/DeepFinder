@@ -1,6 +1,12 @@
 import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - FileDetailView
 
@@ -9,9 +15,9 @@ import UniformTypeIdentifiers
 /// REQ-3.2-28: Displays file icon, path with copy button, and a metadata grid
 /// (size, type, created, modified, parent directory). Uses Liquid Glass material.
 /// Detects deleted files and shows a warning banner.
-struct FileDetailView: View {
+public struct FileDetailView: View {
 
-    let result: SearchResult
+    public let result: SearchResult
 
     /// Whether the file still exists on disk (checked on appear).
     @State private var fileExists: Bool = true
@@ -22,7 +28,7 @@ struct FileDetailView: View {
     /// Controls the entrance animation.
     @State private var appeared: Bool = false
 
-    var body: some View {
+    public var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if !fileExists {
                 fileMissingBanner
@@ -217,7 +223,7 @@ struct FileDetailView: View {
 
 /// A button style that scales down on press with a spring animation.
 private struct ScalePressButtonStyle: ButtonStyle {
-    func makeBody(configuration: Configuration) -> some View {
+    public func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed ? 0.8 : 1.0)
             .animation(.spring(response: 0.2, dampingFraction: 0.5), value: configuration.isPressed)

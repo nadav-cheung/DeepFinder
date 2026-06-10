@@ -2,14 +2,15 @@
 import Foundation
 import AVFoundation
 import CoreMedia
+import DeepFinderIndex
 
 /// Extracts metadata from video files using AVFoundation.
-struct VideoMetadataExtractor: MetadataExtractor, Sendable {
-    let supportedExtensions: Set<String> = [
+public struct VideoMetadataExtractor: MetadataExtractor, Sendable {
+    public let supportedExtensions: Set<String> = [
         "mp4", "mov", "mkv", "avi", "wmv", "m4v", "flv", "webm"
     ]
 
-    func extract(url: URL) async -> ExtractedMetadata? {
+    public func extract(url: URL) async -> ExtractedMetadata? {
         let asset = AVURLAsset(url: url)
 
         let duration: CMTime

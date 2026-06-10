@@ -33,6 +33,7 @@
 /// - Modifiers: `ext:pdf`, `size:>10mb`, `dm:today`, `file:`, `folder:`
 /// - Path qualifier: `Projects\ report` (backslash-space)
 import Foundation
+import DeepFinderIndex
 
 // MARK: - SearchCoordinator
 
@@ -43,7 +44,7 @@ import Foundation
 ///
 /// Thread-safe via actor isolation. NOT `@MainActor` — works in both daemon
 /// and future GUI contexts.
-actor SearchCoordinator {
+public actor SearchCoordinator {
 
     // MARK: - Properties
 
@@ -59,7 +60,7 @@ actor SearchCoordinator {
     /// - Parameters:
     ///   - providers: Search backends to dispatch queries to.
     ///   - resultLimit: Maximum number of results returned per query. Default 1000.
-    init(providers: [any SearchProvider], resultLimit: Int = Constants.Daemon.maxResults) {
+    public init(providers: [any SearchProvider], resultLimit: Int = Constants.Daemon.maxResults) {
         self.providers = providers
         self.resultLimit = resultLimit
     }
@@ -75,7 +76,7 @@ actor SearchCoordinator {
     /// - Applies `FilterPipeline` to remove non-matching results.
     /// - Sorts by relevance.
     /// - Returns results capped at `resultLimit`.
-    func search(query rawQuery: String, filters: [SearchFilter] = []) async -> [SearchResult] {
+    public func search(query rawQuery: String, filters: [SearchFilter] = []) async -> [SearchResult] {
         // Empty query shortcut
         guard !rawQuery.isEmpty else { return [] }
         guard !providers.isEmpty else { return [] }
@@ -133,12 +134,12 @@ actor SearchCoordinator {
     }
 
     /// Add a provider at runtime.
-    func addProvider(_ provider: any SearchProvider) {
+    public func addProvider(_ provider: any SearchProvider) {
         providers.append(provider)
     }
 
     /// Remove a provider by its ID.
-    func removeProvider(id: String) {
+    public func removeProvider(id: String) {
         providers.removeAll { $0.providerID == id }
     }
 

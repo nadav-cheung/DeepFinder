@@ -1,6 +1,7 @@
 import Foundation
 import Testing
-@testable import DeepFinder
+import DeepFinderPersist
+@testable import DeepFinderAI
 
 @Suite("AIConfig")
 struct AIConfigTests {

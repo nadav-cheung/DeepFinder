@@ -5,13 +5,17 @@
 /// Both CLI and GUI target the same daemon through these types, so changes here must
 /// remain backward-compatible or bump `ipcProtocolVersion`.
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderFS
+import DeepFinderPersist
 
 /// Protocol version for forward compatibility.
 ///
 /// Incremented when the wire format changes in a non-backward-compatible way.
 /// Old CLI versions can detect incompatibility and prompt the user to upgrade.
 /// This value is embedded in every ``IPCRequest`` encoding.
-let ipcProtocolVersion = 1
+public let ipcProtocolVersion = 1
 
 /// Maximum allowed query string length in characters.
 ///
@@ -19,12 +23,12 @@ let ipcProtocolVersion = 1
 /// excessive memory allocation in the search pipeline. The IPC framing
 /// layer enforces a 16 MB message limit; this guard rejects unreasonably
 /// long queries much earlier, well before the search engine processes them.
-let maxQueryLength = Constants.IPC.maxQueryLength
+public let maxQueryLength = Constants.IPC.maxQueryLength
 
 // MARK: - IPCError
 
 /// Fine-grained error types returned in IPC error responses.
-enum IPCError: Codable, Sendable, Equatable, Error {
+public enum IPCError: Codable, Sendable, Equatable, Error {
     /// The daemon is still starting up and not ready to serve queries.
     case daemonNotReady
     /// The query could not be processed (syntax error, too long, etc.).
@@ -40,7 +44,7 @@ enum IPCError: Codable, Sendable, Equatable, Error {
 // MARK: - DuplicateQueryStrategy
 
 /// Strategy for duplicate file detection (REQ-1.5-06).
-enum DuplicateQueryStrategy: String, Codable, Sendable, Equatable, CaseIterable {
+public enum DuplicateQueryStrategy: String, Codable, Sendable, Equatable, CaseIterable {
     /// Group by normalized file name.
     case name
     /// Group by file size.
@@ -54,7 +58,7 @@ enum DuplicateQueryStrategy: String, Codable, Sendable, Equatable, CaseIterable 
 // MARK: - IPCRequest
 
 /// All message types a client can send to the daemon.
-enum IPCRequest: Codable, Sendable, Equatable {
+public enum IPCRequest: Codable, Sendable, Equatable {
     /// Protocol version — included in every encoded message for forward compat.
     private enum CodingKeys: String, CodingKey {
         case ipcProtocolVersion
@@ -109,7 +113,7 @@ enum IPCRequest: Codable, Sendable, Equatable {
 
     // Custom Codable: encodes a `kind` discriminator + `ipcProtocolVersion` field.
 
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(ipcProtocolVersion, forKey: .ipcProtocolVersion)
         switch self {
@@ -157,7 +161,7 @@ enum IPCRequest: Codable, Sendable, Equatable {
         }
     }
 
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let kind = try c.decode(Kind.self, forKey: .kind)
 
@@ -224,41 +228,52 @@ enum IPCRequest: Codable, Sendable, Equatable {
 // MARK: - DaemonStats
 
 /// Runtime statistics reported by the daemon.
-struct DaemonStats: Codable, Sendable, Equatable {
+public struct DaemonStats: Codable, Sendable, Equatable {
+    public init(totalFiles: Int, indexState: String, uptimeSeconds: Double, memoryUsageMB: Double) {
+        self.totalFiles = totalFiles
+        self.indexState = indexState
+        self.uptimeSeconds = uptimeSeconds
+        self.memoryUsageMB = memoryUsageMB
+    }
     /// Total number of files currently in the index.
-    let totalFiles: Int
+    public let totalFiles: Int
     /// Current index state as a string (e.g. "live", "verifying", "polling").
-    let indexState: String
+    public let indexState: String
     /// Seconds since the daemon process started.
-    let uptimeSeconds: Double
+    public let uptimeSeconds: Double
     /// Approximate memory usage of the daemon process in megabytes.
-    let memoryUsageMB: Double
+    public let memoryUsageMB: Double
 }
 
 // MARK: - DaemonIndexStatus
 
 /// Current state of the file index as reported by the daemon.
-struct DaemonIndexStatus: Codable, Sendable, Equatable {
+public struct DaemonIndexStatus: Codable, Sendable, Equatable {
+    public init(state: String, filesIndexed: Int, lastScanDate: Date?) {
+        self.state = state
+        self.filesIndexed = filesIndexed
+        self.lastScanDate = lastScanDate
+    }
     /// Index state as a string (e.g. "stale", "verifying", "live", "polling").
-    let state: String
+    public let state: String
     /// Number of files currently indexed.
-    let filesIndexed: Int
+    public let filesIndexed: Int
     /// Timestamp of the last full scan, if available.
-    let lastScanDate: Date?
+    public let lastScanDate: Date?
 }
 
 // MARK: - SavedFilter
 
 /// A named filter macro for IPC transport (REQ-1.3-06).
-struct SavedFilter: Codable, Sendable, Equatable {
-    let name: String
-    let expression: String
+public struct SavedFilter: Codable, Sendable, Equatable {
+    public let name: String
+    public let expression: String
 }
 
 // MARK: - IPCResponse
 
 /// All message types the daemon can send back to a client.
-enum IPCResponse: Codable, Sendable, Equatable {
+public enum IPCResponse: Codable, Sendable, Equatable {
     private enum CodingKeys: String, CodingKey {
         case kind, results, queryID, error, stats, indexStatus, duplicates
         case bookmarks, filters, suggestions, configValue
@@ -290,7 +305,7 @@ enum IPCResponse: Codable, Sendable, Equatable {
     /// Config value response for configGet requests.
     case configValue(String)
 
-    func encode(to encoder: Encoder) throws {
+    public func encode(to encoder: Encoder) throws {
         var c = encoder.container(keyedBy: CodingKeys.self)
         switch self {
         case .results(let res, let qid):
@@ -326,7 +341,7 @@ enum IPCResponse: Codable, Sendable, Equatable {
         }
     }
 
-    init(from decoder: Decoder) throws {
+    public init(from decoder: Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
         let kind = try c.decode(Kind.self, forKey: .kind)
         switch kind {
@@ -373,9 +388,9 @@ enum IPCResponse: Codable, Sendable, Equatable {
 /// socket without relying on connection boundaries.
 ///
 /// Debuggable via `nc -U ~/.deep-finder/session/ipc.sock` — the payload is human-readable JSON.
-enum IPCFraming {
+public enum IPCFraming {
     /// Prepend a 4-byte big-endian UInt32 length header to `payload`.
-    static func addLengthPrefix(to payload: Data) -> Data {
+    public static func addLengthPrefix(to payload: Data) -> Data {
         var len = UInt32(payload.count).bigEndian
         var header = Data(bytes: &len, count: 4)
         header.append(payload)
@@ -383,7 +398,7 @@ enum IPCFraming {
     }
 
     /// Read the 4-byte length header, verify the payload is complete, return payload only.
-    static func stripLengthPrefix(from data: Data) throws -> Data {
+    public static func stripLengthPrefix(from data: Data) throws -> Data {
         guard data.count >= 4 else {
             throw IPCFramingError.insufficientHeader
         }
@@ -398,13 +413,13 @@ enum IPCFraming {
     }
 
     /// Encode a Codable value and add length prefix in one step.
-    static func encode<T: Codable>(_ value: T) throws -> Data {
+    public static func encode<T: Codable>(_ value: T) throws -> Data {
         let payload = try JSONEncoder().encode(value)
         return addLengthPrefix(to: payload)
     }
 
     /// Strip length prefix and decode a Codable value in one step.
-    static func decode<T: Codable>(_ type: T.Type, from data: Data) throws -> T {
+    public static func decode<T: Codable>(_ type: T.Type, from data: Data) throws -> T {
         let payload = try stripLengthPrefix(from: data)
         return try JSONDecoder().decode(type, from: payload)
     }
@@ -413,7 +428,7 @@ enum IPCFraming {
 // MARK: - IPCFramingError
 
 /// Errors that can occur during IPC frame parsing.
-enum IPCFramingError: Error, Sendable {
+public enum IPCFramingError: Error, Sendable {
     /// Received fewer than 4 bytes — not enough for the length header.
     case insufficientHeader
     /// The declared payload length exceeds the available data.

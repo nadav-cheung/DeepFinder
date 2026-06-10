@@ -1,6 +1,10 @@
 import Testing
 import Foundation
-@testable import DeepFinder
+import DeepFinderSearch
+import DeepFinderIndex
+import DeepFinderFS
+import DeepFinderPersist
+@testable import DeepFinderDaemon
 
 @Suite("IPCProtocol Codable round-trip")
 struct IPCProtocolTests {

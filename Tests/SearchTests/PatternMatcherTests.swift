@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 
-@testable import DeepFinder
+@testable import DeepFinderSearch
 
 @Suite("PatternMatcher")
 struct PatternMatcherTests {

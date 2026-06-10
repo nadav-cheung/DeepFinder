@@ -1,6 +1,8 @@
 import Foundation
 import Testing
-@testable import DeepFinder
+import DeepFinderIndex
+import DeepFinderPersist
+@testable import DeepFinderAI
 
 @Suite("SecretsStore")
 struct SecretsStoreTests {

@@ -1,4 +1,9 @@
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderServices
 
 // MARK: - REPLCommand
 
@@ -6,7 +11,7 @@ import Foundation
 ///
 /// All commands start with a colon (`:`) prefix. Input not starting with
 /// `:` is treated as a search query. Commands are case-insensitive.
-enum REPLCommand: String, CaseIterable, Sendable {
+public enum REPLCommand: String, CaseIterable, Sendable {
     case help
     case quit
     case stats
@@ -19,7 +24,7 @@ enum REPLCommand: String, CaseIterable, Sendable {
     case undo
 
     /// One-line help text for each command.
-    var description: String {
+    public var description: String {
         switch self {
         case .help:
             return "Show available commands"
@@ -55,7 +60,7 @@ enum REPLCommand: String, CaseIterable, Sendable {
     ///   - If the command is unrecognized, returns `(nil, [], false)`.
     ///   - If the input does not start with `:`, returns `(nil, [], true)`.
     ///   - Empty input returns `(nil, [], false)`.
-    static func parse(_ input: String) -> (command: REPLCommand?, args: [String], isQuery: Bool) {
+    public static func parse(_ input: String) -> (command: REPLCommand?, args: [String], isQuery: Bool) {
         let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else {
             return (nil, [], false)

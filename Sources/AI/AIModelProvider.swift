@@ -70,12 +70,15 @@
 /// 3. Declare supported ``AICapability`` values
 /// 4. Register in ``AIConfig`` -- no changes to existing code needed
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderPersist
 
 // MARK: - AICapability
 
 /// Capabilities an AI model provider can support.
 /// Each case maps to a distinct AI-powered feature in DeepFinder.
-enum AICapability: String, Sendable, Codable, CaseIterable {
+public enum AICapability: String, Sendable, Codable, CaseIterable {
     /// Translate natural language to search syntax
     case textToSearch
     /// Summarize search results
@@ -95,7 +98,7 @@ enum AICapability: String, Sendable, Codable, CaseIterable {
 // MARK: - AIError
 
 /// Errors that can occur during AI operations.
-enum AIError: Error, Sendable, Equatable {
+public enum AIError: Error, Sendable, Equatable {
     /// AI model is not available (disabled or not configured)
     case notAvailable
     /// API rate limit exceeded
@@ -118,7 +121,7 @@ enum AIError: Error, Sendable, Equatable {
 /// to existing code.
 ///
 /// Conforms to `Sendable` for Swift 6 strict concurrency safety.
-protocol AIModelProvider: Sendable {
+public protocol AIModelProvider: Sendable {
     /// Human-readable provider name (e.g. "deepseek", "qwen", "mock").
     var name: String { get }
 
@@ -170,8 +173,8 @@ protocol AIModelProvider: Sendable {
 // MARK: - AIModelProvider Defaults
 
 extension AIModelProvider {
-    var displayName: String { name }
-    var supportsOnDevice: Bool { false }
-    var contextLimit: Int { 128_000 }
-    var hasEmbeddingAPI: Bool { false }
+    public var displayName: String { name }
+    public var supportsOnDevice: Bool { false }
+    public var contextLimit: Int { 128_000 }
+    public var hasEmbeddingAPI: Bool { false }
 }

@@ -1,5 +1,11 @@
 import AppKit
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - PermissionChecker
 
@@ -11,7 +17,7 @@ import Foundation
 ///
 /// FDA detection uses the standard macOS approach: attempt to read a protected
 /// system directory. If the read throws a sandbox/permission error, FDA is not granted.
-enum PermissionChecker {
+public enum PermissionChecker {
 
     // MARK: - FDA
 
@@ -27,7 +33,7 @@ enum PermissionChecker {
     ///
     /// - Important: This only checks *read* access. FDA grants both read and write
     ///   to protected locations, but read-only detection is sufficient for our use case.
-    static func isFDAGranted() -> Bool {
+    public static func isFDAGranted() -> Bool {
         let home = NSHomeDirectory()
         let protectedPath = "\(home)/Library/Safari/History.db"
         do {
@@ -42,7 +48,7 @@ enum PermissionChecker {
 
     /// Opens System Settings > Privacy & Security > Full Disk Access.
     @MainActor
-    static func openFDASettings() {
+    public static func openFDASettings() {
         let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")!
         NSWorkspace.shared.open(url)
     }
@@ -52,13 +58,13 @@ enum PermissionChecker {
     /// Whether Accessibility permission is currently granted.
     ///
     /// Delegates to `HotkeyPermissionHelper.isAccessibilityGranted()`.
-    static func isAccessibilityGranted() -> Bool {
+    public static func isAccessibilityGranted() -> Bool {
         HotkeyPermissionHelper.isAccessibilityGranted()
     }
 
     /// Opens System Settings > Privacy & Security > Accessibility.
     @MainActor
-    static func openAccessibilitySettings() {
+    public static func openAccessibilitySettings() {
         HotkeyPermissionHelper.openAccessibilitySettings()
     }
 
@@ -72,7 +78,7 @@ enum PermissionChecker {
     /// - Parameter interval: Polling interval in seconds. Defaults to 3.
     /// - Returns: An `AsyncStream` of `Bool` values representing FDA status.
     @MainActor
-    static func fdaStatusStream(interval: TimeInterval = 3) -> AsyncStream<Bool> {
+    public static func fdaStatusStream(interval: TimeInterval = 3) -> AsyncStream<Bool> {
         AsyncStream { continuation in
             Task { @MainActor in
                 var lastStatus = isFDAGranted()
@@ -97,7 +103,7 @@ enum PermissionChecker {
     /// - Parameter interval: Polling interval in seconds. Defaults to 3.
     /// - Returns: An `AsyncStream` of `Bool` values representing Accessibility status.
     @MainActor
-    static func accessibilityStatusStream(interval: TimeInterval = 3) -> AsyncStream<Bool> {
+    public static func accessibilityStatusStream(interval: TimeInterval = 3) -> AsyncStream<Bool> {
         AsyncStream { continuation in
             Task { @MainActor in
                 var lastStatus = isAccessibilityGranted()

@@ -1,4 +1,10 @@
 import SwiftUI
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - SharePromptView
 
@@ -9,10 +15,10 @@ import SwiftUI
 /// displayed when `onDismiss` is provided.
 ///
 /// Fits in the Settings About tab at ~400 pt max width.
-struct SharePromptView: View {
+public struct SharePromptView: View {
 
     /// Called when the user taps the dismiss (X) button. When `nil`, the button is hidden.
-    var onDismiss: (() -> Void)? = nil
+    public var onDismiss: (() -> Void)? = nil
 
     // MARK: - State
 
@@ -26,21 +32,21 @@ struct SharePromptView: View {
     // MARK: - Design Tokens
 
     private enum Design {
-        static let cornerRadius: CGFloat = 12
-        static let gradientHeight: CGFloat = 1
-        static let hPadding: CGFloat = 16
-        static let vPadding: CGFloat = 14
-        static let spacing: CGFloat = 10
-        static let titleSize: CGFloat = 15
-        static let bodySize: CGFloat = 13
-        static let maxW: CGFloat = 400
+        public static let cornerRadius: CGFloat = 12
+        public static let gradientHeight: CGFloat = 1
+        public static let hPadding: CGFloat = 16
+        public static let vPadding: CGFloat = 14
+        public static let spacing: CGFloat = 10
+        public static let titleSize: CGFloat = 15
+        public static let bodySize: CGFloat = 13
+        public static let maxW: CGFloat = 400
 
-        static let valueProp = "macOS 最快的文件搜索工具 — 毫秒级全盘搜索，免费开源"
+        public static let valueProp = "macOS 最快的文件搜索工具 — 毫秒级全盘搜索，免费开源"
     }
 
     // MARK: - Body
 
-    var body: some View {
+    public var body: some View {
         VStack(spacing: 0) {
             // Signature gradient line at top
             Rectangle()

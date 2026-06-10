@@ -1,4 +1,7 @@
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderPersist
 
 // MARK: - SemanticGroup
 
@@ -6,11 +9,11 @@ import Foundation
 ///
 /// Each group has a human-readable name (e.g. "Reports", "Design Files")
 /// and the IDs of files belonging to that category.
-struct SemanticGroup: Sendable, Equatable {
+public struct SemanticGroup: Sendable, Equatable {
     /// Human-readable category name.
-    let name: String
+    public let name: String
     /// File record IDs in this group.
-    let fileIDs: [UInt32]
+    public let fileIDs: [UInt32]
 }
 
 // MARK: - SemanticGrouper
@@ -29,16 +32,16 @@ struct SemanticGroup: Sendable, Equatable {
 /// In all cases, the caller continues with a flat result list.
 ///
 /// REQ-3.0-08: Semantic Grouper
-struct SemanticGrouper: Sendable {
+public struct SemanticGrouper: Sendable {
 
     /// The AI provider used for categorization. `nil` means AI is disabled.
-    let provider: (any AIModelProvider)?
+    public let provider: (any AIModelProvider)?
 
     /// Minimum number of results required to trigger grouping.
     /// Below this threshold, grouping adds no value and is skipped.
     private static let minimumResults = 20
 
-    init(provider: (any AIModelProvider)?) {
+    public init(provider: (any AIModelProvider)?) {
         self.provider = provider
     }
 
@@ -50,7 +53,7 @@ struct SemanticGrouper: Sendable {
     ///   - ids: File record IDs corresponding to the results array.
     /// - Returns: An array of `SemanticGroup`, or `nil` if grouping is not applicable
     ///   (provider nil, too few results, mismatched arrays, or AI call failure).
-    func group(query: String, results: [FileMetadataSummary], ids: [UInt32]) async -> [SemanticGroup]? {
+    public func group(query: String, results: [FileMetadataSummary], ids: [UInt32]) async -> [SemanticGroup]? {
         // No provider or insufficient results: gracefully return nil
         guard let provider, results.count >= Self.minimumResults else { return nil }
         guard results.count == ids.count else { return nil }

@@ -3,6 +3,9 @@
 /// Enables finding "mockup_final.fig" when searching for "设计稿". Results are
 /// locally cached with TTL-based expiry. Gracefully degrades to empty when AI is off.
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderPersist
 
 // MARK: - CrossLanguageSearch
 
@@ -19,15 +22,15 @@ import Foundation
 /// matching.
 ///
 /// REQ-3.0-13: Cross-Language Search
-struct CrossLanguageSearch: Sendable {
+public struct CrossLanguageSearch: Sendable {
 
     /// The AI provider used for translation/synonym generation. `nil` means AI is disabled.
-    let provider: (any AIModelProvider)?
+    public let provider: (any AIModelProvider)?
 
     /// Thread-safe cache: query -> expanded terms.
     private let cache: ManagedTermCache
 
-    init(provider: (any AIModelProvider)?) {
+    public init(provider: (any AIModelProvider)?) {
         self.provider = provider
         self.cache = ManagedTermCache()
     }
@@ -42,7 +45,7 @@ struct CrossLanguageSearch: Sendable {
     ///
     /// - Parameter query: The user's search query (Chinese or English).
     /// - Returns: An array of expanded terms, or empty if unavailable.
-    func expandQuery(_ query: String) async -> [String] {
+    public func expandQuery(_ query: String) async -> [String] {
         // No provider configured: graceful fallback to pinyin + substring matching
         guard let provider else { return [] }
 
@@ -113,7 +116,7 @@ private final class ManagedTermCache: @unchecked Sendable {
     /// Maximum entries before triggering proactive eviction.
     private static let maxEntries = Constants.AI.crossLanguageCacheMaxEntries
 
-    func get(_ key: String) -> [String]? {
+    public func get(_ key: String) -> [String]? {
         lock.lock()
         defer { lock.unlock() }
         guard let entry = store[key] else { return nil }
@@ -124,7 +127,7 @@ private final class ManagedTermCache: @unchecked Sendable {
         return entry.value
     }
 
-    func set(_ key: String, value: [String]) {
+    public func set(_ key: String, value: [String]) {
         lock.lock()
         defer { lock.unlock() }
         if store.count > Self.maxEntries {

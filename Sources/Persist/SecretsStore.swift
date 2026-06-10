@@ -1,12 +1,13 @@
 import Foundation
 import OSLog
+import DeepFinderIndex
 
 /// Errors from secrets file operations.
-enum SecretsStoreError: Error, CustomStringConvertible {
+public enum SecretsStoreError: Error, CustomStringConvertible {
     case saveFailed(String)
     case deleteFailed(String)
 
-    var description: String {
+    public var description: String {
         switch self {
         case .saveFailed(let reason):
             return "Secrets save failed: \(reason)"
@@ -34,34 +35,34 @@ enum SecretsStoreError: Error, CustomStringConvertible {
 ///   "path_encryption_key_v1": "base64..."
 /// }
 /// ```
-struct SecretsStore: Sendable {
+public struct SecretsStore: Sendable {
 
     /// Path to the JSON secrets file on disk.
-    let filePath: String
+    public let filePath: String
 
     private static let logger = Logger(subsystem: Product.loggingSubsystem, category: "secrets")
 
-    init(filePath: String = Product.secretsPath) {
+    public init(filePath: String = Product.secretsPath) {
         self.filePath = NSString(string: filePath).expandingTildeInPath
     }
 
     // MARK: - Public API
 
     /// Save a value. If the key already exists, updates it.
-    func save(key: String, value: String) throws {
+    public func save(key: String, value: String) throws {
         var secrets = loadAll()
         secrets[key] = value
         try persist(secrets)
     }
 
     /// Load a value. Returns `nil` if the key doesn't exist or the file is missing/corrupted.
-    func load(key: String) -> String? {
+    public func load(key: String) -> String? {
         loadAll()[key]
     }
 
     /// Delete a value. Returns `true` if the key existed and was removed.
     @discardableResult
-    func delete(key: String) -> Bool {
+    public func delete(key: String) -> Bool {
         var secrets = loadAll()
         guard secrets[key] != nil else { return false }
         secrets.removeValue(forKey: key)

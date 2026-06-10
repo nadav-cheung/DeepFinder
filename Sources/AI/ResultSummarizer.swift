@@ -1,4 +1,7 @@
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderPersist
 
 // MARK: - ResultSummarizer
 
@@ -14,19 +17,19 @@ import Foundation
 /// Callers should check for `nil` and omit the summary UI element.
 ///
 /// REQ-3.0-06: Result Summary
-struct ResultSummarizer: Sendable {
+public struct ResultSummarizer: Sendable {
 
     /// The AI provider used for summarization. `nil` means AI is disabled.
-    let provider: (any AIModelProvider)?
+    public let provider: (any AIModelProvider)?
 
     /// Cache expiration interval (5 minutes).
     /// Prevents redundant API calls for repeated queries within a short session.
-    static let cacheTTL: TimeInterval = Constants.AI.summarizerCacheTTL
+    public static let cacheTTL: TimeInterval = Constants.AI.summarizerCacheTTL
 
     /// Thread-safe, bounded cache. See `ManagedCache` below for implementation details.
     private let cache: ManagedCache
 
-    init(provider: (any AIModelProvider)?) {
+    public init(provider: (any AIModelProvider)?) {
         self.provider = provider
         self.cache = ManagedCache()
     }
@@ -38,7 +41,7 @@ struct ResultSummarizer: Sendable {
     ///   - results: Metadata summaries of the search results. Only the first 30
     ///     are included in the AI prompt to bound token usage.
     /// - Returns: A summary string, or `nil` if unavailable (see graceful degradation above).
-    func summarize(query: String, results: [FileMetadataSummary]) async -> String? {
+    public func summarize(query: String, results: [FileMetadataSummary]) async -> String? {
         // No provider configured or no results: graceful fallback
         guard let provider, !results.isEmpty else { return nil }
 
@@ -108,7 +111,7 @@ private final class ManagedCache: @unchecked Sendable {
     /// Maximum entries before triggering proactive eviction.
     private static let maxEntries = Constants.AI.summarizerCacheMaxEntries
 
-    func get(_ key: String) -> String? {
+    public func get(_ key: String) -> String? {
         lock.lock()
         defer { lock.unlock() }
         guard let entry = store[key] else { return nil }
@@ -119,7 +122,7 @@ private final class ManagedCache: @unchecked Sendable {
         return entry.value
     }
 
-    func set(_ key: String, value: String) {
+    public func set(_ key: String, value: String) {
         lock.lock()
         defer { lock.unlock() }
         if store.count > Self.maxEntries {

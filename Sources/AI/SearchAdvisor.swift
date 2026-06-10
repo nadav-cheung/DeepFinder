@@ -1,4 +1,7 @@
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderPersist
 
 // MARK: - SearchAdvisor
 
@@ -15,12 +18,12 @@ import Foundation
 /// Callers should check for `nil` and omit the suggestion UI element.
 ///
 /// REQ-3.0-07: Search Advisor
-struct SearchAdvisor: Sendable {
+public struct SearchAdvisor: Sendable {
 
     /// The AI provider used for generating suggestions. `nil` means AI is disabled.
-    let provider: (any AIModelProvider)?
+    public let provider: (any AIModelProvider)?
 
-    init(provider: (any AIModelProvider)?) {
+    public init(provider: (any AIModelProvider)?) {
         self.provider = provider
     }
 
@@ -31,7 +34,7 @@ struct SearchAdvisor: Sendable {
     ///   - results: Metadata summaries of the current search results (may be empty).
     ///     Only the first 20 file names are included in the AI prompt.
     /// - Returns: A suggestion string in DeepFinder search syntax, or `nil` if unavailable.
-    func suggest(query: String, results: [FileMetadataSummary]) async -> String? {
+    public func suggest(query: String, results: [FileMetadataSummary]) async -> String? {
         // No provider configured: graceful fallback
         guard let provider else { return nil }
 

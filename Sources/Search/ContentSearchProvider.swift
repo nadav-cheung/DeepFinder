@@ -1,4 +1,5 @@
 import Foundation
+import DeepFinderIndex
 
 // MARK: - ContentSearchProvider
 
@@ -14,11 +15,11 @@ import Foundation
 /// Results are returned as `SearchResult` with `.substring` match type and a
 /// score proportional to the number of content matches found. Line-level match
 /// details can be retrieved via `contentMatches(for:)`.
-actor ContentSearchProvider: SearchProvider {
+public actor ContentSearchProvider: SearchProvider {
 
     // MARK: - Properties
 
-    let providerID = "content-search"
+    public let providerID = "content-search"
 
     private let index: InMemoryIndex
     private var storedMatches: [UInt32: [ContentMatch]] = [:]
@@ -28,22 +29,22 @@ actor ContentSearchProvider: SearchProvider {
     /// Create a content search provider backed by the given index.
     ///
     /// - Parameter index: The in-memory index to use for enumerating candidate files.
-    init(index: InMemoryIndex) {
+    public init(index: InMemoryIndex) {
         self.index = index
     }
 
     // MARK: - SearchProvider
 
-    func search(query: SearchQuery) async -> SearchResultSequence {
+    public func search(query: SearchQuery) async -> SearchResultSequence {
         let results = await performSearch(query: query)
         return SearchResultSequence(results)
     }
 
-    func prepare() async {
+    public func prepare() async {
         // No-op: content scanning reads files on demand.
     }
 
-    func cancel(queryID: String) async {
+    public func cancel(queryID: String) async {
         // MVP: scan completes synchronously per file, nothing to cancel.
     }
 
@@ -52,12 +53,12 @@ actor ContentSearchProvider: SearchProvider {
     /// Retrieve line-level match details for a previously found file.
     ///
     /// Returns `nil` if the file was not part of the last search results.
-    func contentMatches(for recordID: UInt32) -> [ContentMatch]? {
+    public func contentMatches(for recordID: UInt32) -> [ContentMatch]? {
         storedMatches[recordID]
     }
 
     /// Clear stored match details (e.g. between searches).
-    func clearMatches() {
+    public func clearMatches() {
         storedMatches.removeAll(keepingCapacity: true)
     }
 

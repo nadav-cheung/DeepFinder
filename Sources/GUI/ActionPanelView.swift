@@ -1,4 +1,10 @@
 import SwiftUI
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - FileAction
 
@@ -6,7 +12,7 @@ import SwiftUI
 ///
 /// Extends the context menu actions with Quick Look and Trash, providing
 /// a keyboard-navigable panel alternative to the right-click menu.
-enum FileAction: String, CaseIterable, Identifiable, Sendable {
+public enum FileAction: String, CaseIterable, Identifiable, Sendable {
     case open
     case reveal
     case copyPath
@@ -14,10 +20,10 @@ enum FileAction: String, CaseIterable, Identifiable, Sendable {
     case getInfo
     case trash
 
-    var id: String { rawValue }
+    public var id: String { rawValue }
 
     /// SF Symbol icon for the action.
-    var icon: String {
+    public var icon: String {
         switch self {
         case .open:      "arrow.down.doc"
         case .reveal:    "folder"
@@ -29,7 +35,7 @@ enum FileAction: String, CaseIterable, Identifiable, Sendable {
     }
 
     /// Localized display title.
-    var title: String {
+    public var title: String {
         switch self {
         case .open:      "打开"
         case .reveal:    "在 Finder 中显示"
@@ -41,7 +47,7 @@ enum FileAction: String, CaseIterable, Identifiable, Sendable {
     }
 
     /// Keyboard shortcut string displayed in the row.
-    var shortcut: String {
+    public var shortcut: String {
         switch self {
         case .open:      "↵"
         case .reveal:    "⌘↵"
@@ -64,10 +70,10 @@ enum FileAction: String, CaseIterable, Identifiable, Sendable {
 /// Max height is capped at 300pt. Each row displays an SF Symbol icon, title,
 /// and shortcut in secondary color. The panel uses `GlassEffectContainer` for
 /// the Liquid Glass background with a 16pt corner radius.
-struct ActionPanelView: View {
+public struct ActionPanelView: View {
 
     /// Called when the user activates an action via Enter key or click.
-    let onAction: (FileAction) -> Void
+    public let onAction: (FileAction) -> Void
 
     // MARK: - State
 
@@ -100,7 +106,7 @@ struct ActionPanelView: View {
 
     // MARK: - Body
 
-    var body: some View {
+    public var body: some View {
         GlassEffectContainer(
             intensity: .regular,
             cornerRadius: 16,

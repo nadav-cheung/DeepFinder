@@ -7,17 +7,25 @@
 import Foundation
 import OSLog
 import Speech
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderPersist
 
 /// A single speech recognition result, containing the transcribed text
 /// and whether this is the final (complete) result.
 ///
 /// REQ-3.0-12: Streams partial results for real-time display, then a final
 /// result when the user stops speaking.
-struct SpeechRecognitionResult: Sendable, Equatable {
+public struct SpeechRecognitionResult: Sendable, Equatable {
     /// The transcribed text (may be partial or final).
-    let text: String
+    public let text: String
     /// `true` when this is the final result for the current utterance.
-    let isFinal: Bool
+    public let isFinal: Bool
+
+    public init(text: String, isFinal: Bool) {
+        self.text = text
+        self.isFinal = isFinal
+    }
 }
 
 // MARK: - SpeechRecognizerProtocol
@@ -26,7 +34,7 @@ struct SpeechRecognitionResult: Sendable, Equatable {
 ///
 /// The real implementation wraps Apple's Speech framework. Tests inject
 /// a mock that returns canned results without requiring a microphone.
-protocol SpeechRecognizerProtocol: Sendable {
+public protocol SpeechRecognizerProtocol: Sendable {
     /// Whether a recognizer is available for the configured locale.
     var available: Bool { get async }
     /// Begin listening. Returns an AsyncStream of recognition results,
@@ -55,19 +63,19 @@ protocol SpeechRecognizerProtocol: Sendable {
 /// framework (which requires hardware microphone input).
 ///
 /// REQ-3.0-12: Local speech recognition.
-actor LocalSpeechProvider: @preconcurrency SpeechRecognizerProtocol {
+public actor LocalSpeechProvider: @preconcurrency SpeechRecognizerProtocol {
 
     // MARK: - SpeechRecognizerProtocol Conformance
 
-    var available: Bool {
+    public var available: Bool {
         get async { await Self.isAvailable() }
     }
 
-    func startRecognition() -> AsyncStream<SpeechRecognitionResult>? {
+    public func startRecognition() -> AsyncStream<SpeechRecognitionResult>? {
         startListening()
     }
 
-    func stopRecognition() async {
+    public func stopRecognition() async {
         stopListening()
     }
 
@@ -84,7 +92,7 @@ actor LocalSpeechProvider: @preconcurrency SpeechRecognizerProtocol {
     ///   and is not configurable via the Speech API. This constant documents
     ///   the observed ~1.5 s behavior for REQ-3.0-12 compliance and serves as
     ///   a reference for UI elements that display auto-trigger timing.
-    static let speechAutoTriggerInterval: TimeInterval = 1.5
+    public static let speechAutoTriggerInterval: TimeInterval = 1.5
 
     /// Whether the provider is currently listening for speech input.
     private(set) var isListening: Bool = false
@@ -108,7 +116,7 @@ actor LocalSpeechProvider: @preconcurrency SpeechRecognizerProtocol {
     // MARK: - Initializers
 
     /// Creates a provider for the user's current locale with real Speech framework.
-    init() {
+    public init() {
         self.locale = Locale.current
         self.mockResults = nil
         self.recognizer = SFSpeechRecognizer(locale: locale)
@@ -117,7 +125,7 @@ actor LocalSpeechProvider: @preconcurrency SpeechRecognizerProtocol {
     /// Creates a provider with mock results for testing.
     ///
     /// - Parameter mockResults: Fixed results to return from `transcribe()` / `transcribeStream()`.
-    init(mockResults: [SpeechRecognitionResult]) {
+    public init(mockResults: [SpeechRecognitionResult]) {
         self.locale = Locale.current
         self.mockResults = mockResults
         self.recognizer = nil
@@ -126,7 +134,7 @@ actor LocalSpeechProvider: @preconcurrency SpeechRecognizerProtocol {
     /// Creates a provider for a specific locale (used for testing unavailable locales).
     ///
     /// - Parameter locale: The locale to attempt speech recognition with.
-    init(locale: Locale) {
+    public init(locale: Locale) {
         self.locale = locale
         self.mockResults = nil
         self.recognizer = SFSpeechRecognizer(locale: locale)
@@ -138,7 +146,7 @@ actor LocalSpeechProvider: @preconcurrency SpeechRecognizerProtocol {
     ///
     /// On real hardware this typically returns `true`. May return `false`
     /// on CI runners or when the Speech framework is restricted.
-    static func isAvailable() async -> Bool {
+    public static func isAvailable() async -> Bool {
         guard let recognizer = SFSpeechRecognizer() else { return false }
         return recognizer.isAvailable
     }
@@ -152,7 +160,7 @@ actor LocalSpeechProvider: @preconcurrency SpeechRecognizerProtocol {
     /// not available for the configured locale.
     ///
     /// Only one listening session can be active at a time.
-    func startListening() -> AsyncStream<SpeechRecognitionResult>? {
+    public func startListening() -> AsyncStream<SpeechRecognitionResult>? {
         // If mock results are configured, return them as a stream
         if let mockResults {
             isListening = true
@@ -202,7 +210,7 @@ actor LocalSpeechProvider: @preconcurrency SpeechRecognizerProtocol {
     }
 
     /// Stops the current listening session.
-    func stopListening() {
+    public func stopListening() {
         isListening = false
         cleanup()
     }
@@ -213,7 +221,7 @@ actor LocalSpeechProvider: @preconcurrency SpeechRecognizerProtocol {
     ///
     /// For tests with mock results, returns the last (final) result.
     /// Returns nil if no results are available.
-    func transcribe() async -> SpeechRecognitionResult? {
+    public func transcribe() async -> SpeechRecognitionResult? {
         guard let mockResults, !mockResults.isEmpty else {
             return nil
         }

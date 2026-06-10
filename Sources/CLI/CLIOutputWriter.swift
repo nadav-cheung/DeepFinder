@@ -1,11 +1,16 @@
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderServices
 
 // MARK: - CLIOutputWriter
 
 /// Protocol for CLI output, enabling test injection.
 ///
 /// Production writes to stdout/stderr. Tests capture output for assertions.
-protocol CLIOutputWriter: Sendable {
+public protocol CLIOutputWriter: Sendable {
     func write(_ text: String)
     func writeError(_ text: String)
 }
@@ -13,13 +18,14 @@ protocol CLIOutputWriter: Sendable {
 // MARK: - StdoutWriter
 
 /// Production CLI output: writes to stdout and stderr.
-struct StdoutWriter: CLIOutputWriter {
-    func write(_ text: String) {
+public struct StdoutWriter: CLIOutputWriter {
+    public init() {}
+    public func write(_ text: String) {
         fputs(text, stdout)
         fflush(stdout)
     }
 
-    func writeError(_ text: String) {
+    public func writeError(_ text: String) {
         fputs(text, stderr)
         fflush(stderr)
     }

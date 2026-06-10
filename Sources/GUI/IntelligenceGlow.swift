@@ -1,4 +1,10 @@
 import SwiftUI
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - Glow Colors
 
@@ -6,18 +12,18 @@ import SwiftUI
 ///
 /// Fixed palette: teal, violet, coral, amber — matching the spec's Apple Intelligence
 /// aesthetic. Defined as static constants so tests can verify them without constructing views.
-enum GlowColors {
-    static let teal   = Color(red: 0x00 / 255, green: 0xC9 / 255, blue: 0xA7 / 255)
-    static let violet = Color(red: 0x84 / 255, green: 0x5E / 255, blue: 0xC2 / 255)
-    static let coral  = Color(red: 0xFF / 255, green: 0x6F / 255, blue: 0x91 / 255)
-    static let amber  = Color(red: 0xFF / 255, green: 0xC7 / 255, blue: 0x5F / 255)
+public enum GlowColors {
+    public static let teal   = Color(red: 0x00 / 255, green: 0xC9 / 255, blue: 0xA7 / 255)
+    public static let violet = Color(red: 0x84 / 255, green: 0x5E / 255, blue: 0xC2 / 255)
+    public static let coral  = Color(red: 0xFF / 255, green: 0x6F / 255, blue: 0x91 / 255)
+    public static let amber  = Color(red: 0xFF / 255, green: 0xC7 / 255, blue: 0x5F / 255)
 
     /// Eight interpolated color stops for smoother gradients.
     ///
     /// Returns the 4 base colors plus 4 midpoints, where each midpoint is the
     /// per-channel RGB average of its two adjacent base colors:
     /// `[teal, teal+vi, violet, violet+co, coral, coral+am, amber, amber+te]`
-    static func interpolatedColors() -> [Color] {
+    public static func interpolatedColors() -> [Color] {
         return [
             teal,
             average(teal, violet),
@@ -48,9 +54,9 @@ private extension Color {
     /// RGB components in the [0, 1] range.
     ///
     /// Uses `NSColor` conversion for reliable channel extraction on macOS.
-    struct RGBA { var red, green, blue: Double }
+    public struct RGBA { var red, green, blue: Double }
 
-    var components: RGBA {
+    public var components: RGBA {
         let ns = NSColor(self).usingColorSpace(.sRGB) ?? NSColor(self)
         return RGBA(red: Double(ns.redComponent),
                     green: Double(ns.greenComponent),
@@ -62,11 +68,11 @@ private extension Color {
 
 /// Describes one visual layer of the 4-layer glow effect.
 private struct GlowLayerConfig {
-    let lineWidth: CGFloat
-    let blur: CGFloat
-    let rotationDuration: Double
-    let clockwise: Bool
-    let activeOpacity: Double
+    public let lineWidth: CGFloat
+    public let blur: CGFloat
+    public let rotationDuration: Double
+    public let clockwise: Bool
+    public let activeOpacity: Double
 }
 
 // MARK: - IntelligenceGlow
@@ -87,16 +93,16 @@ private struct GlowLayerConfig {
 ///
 /// Intended as an overlay or border around the search panel — never as a standalone
 /// view. Use ``GlassEffectContainer`` for the complete wrapper.
-struct IntelligenceGlow: View {
+public struct IntelligenceGlow: View {
 
     /// Whether the glow is active (focused) or inactive (idle).
-    let isActive: Bool
+    public let isActive: Bool
 
     /// Corner radius matching the panel's Liquid Glass shape.
-    let cornerRadius: CGFloat
+    public let cornerRadius: CGFloat
 
     /// Border stroke width (applied to the sharpest core layer).
-    let borderWidth: CGFloat
+    public let borderWidth: CGFloat
 
     // Four independent rotation angles — one per layer.
     @State private var rotation1: Double = 0
@@ -115,7 +121,7 @@ struct IntelligenceGlow: View {
     ///   - isActive: Whether the glow should animate actively. Defaults to `true`.
     ///   - cornerRadius: Corner radius of the glow shape. Defaults to `24`.
     ///   - borderWidth: Stroke width of the core glow border. Defaults to `2`.
-    init(
+    public init(
         isActive: Bool = true,
         cornerRadius: CGFloat = 24,
         borderWidth: CGFloat = 2
@@ -137,7 +143,7 @@ struct IntelligenceGlow: View {
 
     // MARK: - Body
 
-    var body: some View {
+    public var body: some View {
         let colors = GlowColors.interpolatedColors()
         // Prepend the first color at the end for a seamless loop (9 stops total).
         let gradientColors = colors + [colors[0]]

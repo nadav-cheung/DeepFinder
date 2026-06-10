@@ -1,18 +1,19 @@
 import Foundation
 import OSLog
+import DeepFinderIndex
 
 // MARK: - ScanOptions
 
 /// Options controlling how content scanning behaves.
-struct ScanOptions: Sendable, Equatable {
+public struct ScanOptions: Sendable, Equatable {
     /// Whether the search is case-sensitive. Default is `false`.
-    var caseSensitive: Bool
+    public var caseSensitive: Bool
 
     /// Lines longer than this many characters are skipped to avoid
     /// pathological input (e.g. minified files). Default is `10000`.
-    var maxLineLength: Int
+    public var maxLineLength: Int
 
-    init(caseSensitive: Bool = false, maxLineLength: Int = Constants.ContentScanner.defaultMaxLineLength) {
+    public init(caseSensitive: Bool = false, maxLineLength: Int = Constants.ContentScanner.defaultMaxLineLength) {
         self.caseSensitive = caseSensitive
         self.maxLineLength = maxLineLength
     }
@@ -21,15 +22,15 @@ struct ScanOptions: Sendable, Equatable {
 // MARK: - ContentMatch
 
 /// A single line-level match found by content scanning.
-struct ContentMatch: Sendable, Equatable {
+public struct ContentMatch: Sendable, Equatable {
     /// Absolute path of the file containing the match.
-    let filePath: String
+    public let filePath: String
     /// 1-based line number where the match was found.
-    let lineNumber: Int
+    public let lineNumber: Int
     /// Full content of the matched line (without trailing newline).
-    let lineContent: String
+    public let lineContent: String
     /// Character range of the match within `lineContent`.
-    let matchRange: Range<String.Index>
+    public let matchRange: Range<String.Index>
 }
 
 // MARK: - TextFileExtensions
@@ -37,8 +38,8 @@ struct ContentMatch: Sendable, Equatable {
 /// Extensions considered safe to scan as text. Binary files are skipped.
 /// Case-insensitive via `.lowercased()` comparison.
 /// No cases exist — this enum is used only as a namespace for static members.
-enum TextFileExtensions {
-    static let whitelist: Set<String> = [
+public enum TextFileExtensions {
+    public static let whitelist: Set<String> = [
         "txt", "md", "swift", "py", "js", "json", "xml", "yaml", "yml",
         "csv", "log", "html", "css", "ts", "tsx", "jsx", "rb", "go",
         "rs", "java", "c", "h", "cpp", "hpp", "sh", "bash", "zsh",
@@ -48,7 +49,7 @@ enum TextFileExtensions {
     ]
 
     /// Returns `true` if the given extension (without leading dot) is in the whitelist.
-    static func isTextFile(_ ext: String?) -> Bool {
+    public static func isTextFile(_ ext: String?) -> Bool {
         guard let ext else { return false }
         return whitelist.contains(ext.lowercased())
     }
@@ -61,7 +62,7 @@ enum TextFileExtensions {
 /// Reads files line-by-line, auto-detects encoding via BOM (UTF-8 BOM,
 /// UTF-16 LE/BE), and yields all matches found. Files with extensions not
 /// in the text-file whitelist are skipped.
-enum ContentScanner: Sendable {
+public enum ContentScanner: Sendable {
 
     // MARK: - Logging
 
@@ -77,7 +78,7 @@ enum ContentScanner: Sendable {
     ///   - options: Scan options (case sensitivity, max line length).
     /// - Returns: Array of `ContentMatch`, one per line containing the query.
     ///   Empty if the file does not exist, is not a text file, or contains no matches.
-    static func scan(fileAtPath path: String, query: String, options: ScanOptions = ScanOptions()) -> [ContentMatch] {
+    public static func scan(fileAtPath path: String, query: String, options: ScanOptions = ScanOptions()) -> [ContentMatch] {
         guard !query.isEmpty else { return [] }
 
         // Extension check

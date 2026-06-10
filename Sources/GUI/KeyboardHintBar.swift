@@ -1,4 +1,10 @@
 import SwiftUI
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - KeyboardHintBar
 
@@ -7,20 +13,20 @@ import SwiftUI
 /// REQ-3.2-06: Shows a compact row of shortcut labels separated by thin dividers.
 /// Shortcut symbols use monospaced design for alignment; descriptive text uses
 /// the system font at size 11 in secondary color.
-struct KeyboardHintBar: View {
+public struct KeyboardHintBar: View {
 
     // MARK: - Hint Model
 
     fileprivate struct Hint: Identifiable {
-        let symbol: String
-        let label: String
-        var id: String { symbol + label }
+        public let symbol: String
+        public let label: String
+        public var id: String { symbol + label }
     }
 
     // MARK: - REQ-3.2-37: Testable hint count
 
     /// Number of hints displayed. Exposed for testing.
-    static let expectedHintCount = 6
+    public static let expectedHintCount = 6
 
     // MARK: - Hints
 
@@ -35,7 +41,7 @@ struct KeyboardHintBar: View {
 
     // MARK: - Body
 
-    var body: some View {
+    public var body: some View {
         VStack(spacing: 0) {
             Rectangle()
                 .fill(.separator)
@@ -65,11 +71,11 @@ struct KeyboardHintBar: View {
 
 /// A single keyboard shortcut hint with elevated key background and hover brightness.
 private struct HintItem: View {
-    let hint: KeyboardHintBar.Hint
+    public let hint: KeyboardHintBar.Hint
 
     @State private var isHovered = false
 
-    var body: some View {
+    public var body: some View {
         HStack(spacing: 3) {
             Text(hint.symbol)
                 .font(.system(size: 11, weight: .medium, design: .monospaced))

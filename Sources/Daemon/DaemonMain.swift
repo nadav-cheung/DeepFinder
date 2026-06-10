@@ -27,6 +27,10 @@
 import Darwin
 import Foundation
 import OSLog
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderFS
+import DeepFinderPersist
 
 // MARK: - DaemonState
 
@@ -143,7 +147,7 @@ public actor DaemonMain {
     // MARK: - Public Accessors
 
     /// Current daemon lifecycle state.
-    var state: DaemonState {
+    public var state: DaemonState {
         _state
     }
 
@@ -158,7 +162,7 @@ public actor DaemonMain {
     ///     Set to `false` in tests. Default is `true`.
     ///   - eventStreamProvider: Factory for creating the FileSystemEventStream.
     ///     Defaults to `FSEventStreamImpl`. Inject `MockEventStream` in tests.
-    init(
+    public init(
         dataDir: String = Product.dataDir,
         installSignals: Bool = true,
         eventStreamProvider: @escaping @Sendable () -> FileSystemEventStream = { FSEventStreamImpl() }
@@ -191,7 +195,7 @@ public actor DaemonMain {
     // MARK: - Static Utilities
 
     /// Expand `~` in a path to the user's home directory.
-    static func expandTilde(_ path: String) -> String {
+    public static func expandTilde(_ path: String) -> String {
         NSString(string: path).expandingTildeInPath
     }
 
@@ -199,7 +203,7 @@ public actor DaemonMain {
     ///
     /// Uses `task_info` with `MACH_TASK_BASIC_INFO` to read `resident_size`.
     /// Falls back to 0 if the call fails.
-    static func processMemoryMB() -> Double {
+    public static func processMemoryMB() -> Double {
         var info = mach_task_basic_info_data_t()
         var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info_data_t>.size / MemoryLayout<natural_t>.size)
         let kr = withUnsafeMutablePointer(to: &info) { ptr in
@@ -216,7 +220,7 @@ public actor DaemonMain {
     /// Creates the root directory (permissions 700) and standard subdirectories:
     /// `cache/`, `logs/`, `session/`. Intermediate directories are created as needed.
     /// - Throws: `DaemonError.dataDirectoryCreationFailed` if creation fails.
-    static func ensureDataDir(_ path: String) throws {
+    public static func ensureDataDir(_ path: String) throws {
         let resolved = expandTilde(path)
         let fm = FileManager.default
 
@@ -270,7 +274,7 @@ public actor DaemonMain {
     /// - Returns: A locked file descriptor for the PID file.
     /// - Throws: `DaemonError.alreadyRunning` if a live daemon already owns the file.
     /// - Throws: `DaemonError.pidWriteFailed` on I/O errors.
-    static func acquirePIDFile(pidPath: String) throws -> Int32 {
+    public static func acquirePIDFile(pidPath: String) throws -> Int32 {
         let flags: Int32 = O_CREAT | O_EXCL | O_WRONLY
         let mode: mode_t = mode_t(Product.pidFilePermissions)
 
@@ -351,7 +355,7 @@ public actor DaemonMain {
     ///
     /// - Parameter pidPath: Absolute path to the PID file.
     /// - Returns: `true` if a live daemon is already running.
-    static func checkExistingDaemon(pidPath: String) -> Bool {
+    public static func checkExistingDaemon(pidPath: String) -> Bool {
         let fm = FileManager.default
         guard fm.fileExists(atPath: pidPath) else {
             return false
@@ -552,7 +556,7 @@ public actor DaemonMain {
     /// Initiate graceful shutdown.
     ///
     /// Safe to call multiple times -- subsequent calls are no-ops.
-    func shutdown() async {
+    public func shutdown() async {
         guard !isShuttingDown else { return }
         isShuttingDown = true
         _state = .shuttingDown

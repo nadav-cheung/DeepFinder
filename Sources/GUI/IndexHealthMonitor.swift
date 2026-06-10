@@ -1,4 +1,10 @@
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - IndexHealthState
 
@@ -6,7 +12,7 @@ import Foundation
 ///
 /// Combines the daemon-reported index status with local permission checks
 /// to produce a unified health state that the UI can observe.
-enum IndexHealthState: Sendable, Equatable {
+public enum IndexHealthState: Sendable, Equatable {
     /// Index is fully built and FSEventWatcher is active.
     case live(filesIndexed: Int, lastScanDate: Date?)
     /// Index is currently being built or verified.
@@ -20,7 +26,7 @@ enum IndexHealthState: Sendable, Equatable {
 // MARK: - DegradationReason
 
 /// Specific reason for degraded index health.
-enum DegradationReason: Sendable, Equatable {
+public enum DegradationReason: Sendable, Equatable {
     /// Full Disk Access is not granted — some directories silently skipped.
     case fdaMissing
     /// Daemon is not running or IPC connection lost.
@@ -41,7 +47,7 @@ enum DegradationReason: Sendable, Equatable {
 /// Accepts `IPCClientProtocol` via init for testability.
 @MainActor
 @Observable
-final class IndexHealthMonitor {
+public final class IndexHealthMonitor {
 
     // MARK: - Published State
 
@@ -74,7 +80,7 @@ final class IndexHealthMonitor {
     /// - Parameters:
     ///   - ipcClient: IPC client for daemon queries. Pass `nil` in previews/tests.
     ///   - pollingInterval: Ignored — kept for backward compatibility. Polling is adaptive.
-    init(
+    public init(
         ipcClient: (any IPCClientProtocol)?,
         pollingInterval: TimeInterval = 5
     ) {
@@ -86,7 +92,7 @@ final class IndexHealthMonitor {
     /// Starts the polling loop. Safe to call multiple times — stops previous loop first.
     ///
     /// Uses adaptive intervals: 5s while indexing, 30s when live or degraded.
-    func startPolling() {
+    public func startPolling() {
         stopPolling()
         pollingTask = Task { [weak self] in
             while !Task.isCancelled {
@@ -98,13 +104,13 @@ final class IndexHealthMonitor {
     }
 
     /// Stops the polling loop.
-    func stopPolling() {
+    public func stopPolling() {
         pollingTask?.cancel()
         pollingTask = nil
     }
 
     /// Manually triggers a single state refresh. Useful for immediate UI updates.
-    func refreshNow() async {
+    public func refreshNow() async {
         await refreshState()
     }
 

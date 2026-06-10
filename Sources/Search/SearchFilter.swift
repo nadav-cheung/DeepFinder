@@ -1,4 +1,5 @@
 import Foundation
+import DeepFinderIndex
 
 // MARK: - FileTypeGroup
 
@@ -6,7 +7,7 @@ import Foundation
 ///
 /// Used by the ``SearchFilter/fileType(_:)`` filter case and the `type:` query modifier.
 /// Each group maps to a curated set of common file extensions.
-enum FileTypeGroup: String, Sendable {
+public enum FileTypeGroup: String, Sendable {
     /// Audio files: mp3, wav, aac, flac, ogg, wma, m4a.
     case audio
     /// Video files: mp4, mov, avi, mkv, wmv, flv, webm.
@@ -17,7 +18,7 @@ enum FileTypeGroup: String, Sendable {
     case document
 
     /// All extensions in this group, lowercased, without leading dots.
-    var extensions: Set<String> {
+    public var extensions: Set<String> {
         switch self {
         case .audio:
             return ["mp3", "wav", "aac", "flac", "ogg", "wma", "m4a"]
@@ -37,7 +38,7 @@ enum FileTypeGroup: String, Sendable {
 ///
 /// Each case wraps the minimal data needed to test whether a record matches.
 /// Filters are applied after text search in the `FilterPipeline` (AND semantics).
-enum SearchFilter: Sendable, Equatable {
+public enum SearchFilter: Sendable, Equatable {
     /// size >= N bytes
     case sizeMin(Int64)
     /// size <= N bytes
@@ -88,7 +89,7 @@ enum SearchFilter: Sendable, Equatable {
     // MARK: - Matching
 
     /// Returns `true` if the record satisfies this filter.
-    func matches(_ record: FileRecord) -> Bool {
+    public func matches(_ record: FileRecord) -> Bool {
         switch self {
         case .sizeMin(let min):
             return record.size >= min
@@ -160,7 +161,7 @@ enum SearchFilter: Sendable, Equatable {
     /// - `"5gb"`   -> `.sizeMin(5_368_709_120)` (bare value treated as min)
     ///
     /// Units: b, kb, mb, gb (case insensitive).
-    static func parseSizeFilter(_ input: String) -> SearchFilter? {
+    public static func parseSizeFilter(_ input: String) -> SearchFilter? {
         let trimmed = input.trimmingCharacters(in: .whitespaces).lowercased()
         guard !trimmed.isEmpty else { return nil }
 
@@ -199,7 +200,7 @@ enum SearchFilter: Sendable, Equatable {
     /// Supported formats:
     /// - `"today"`, `"yesterday"`, `"thisweek"`, `"thismonth"`, `"thisyear"`
     /// - `"2026-01-01..2026-03-31"` -> date range (exclusive upper bound = start of next day)
-    static func parseDateFilter(_ input: String, referenceDate: Date) -> SearchFilter? {
+    public static func parseDateFilter(_ input: String, referenceDate: Date) -> SearchFilter? {
         let trimmed = input.trimmingCharacters(in: .whitespaces).lowercased()
         let cal = Calendar(identifier: .gregorian)
 
@@ -250,7 +251,7 @@ enum SearchFilter: Sendable, Equatable {
     /// - `">2024-01-01"` → created after date
     /// - `"<2024-06-01"` → created before date
     /// - `"2024-01-01..2024-03-31"` → date range (exclusive upper bound = start of next day)
-    static func parseDateCreatedFilter(_ input: String, referenceDate: Date) -> SearchFilter? {
+    public static func parseDateCreatedFilter(_ input: String, referenceDate: Date) -> SearchFilter? {
         let trimmed = input.trimmingCharacters(in: .whitespaces).lowercased()
         let cal = Calendar(identifier: .gregorian)
 

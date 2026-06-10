@@ -1,7 +1,8 @@
 // Tests/MediaTests/MetadataExtractorRegistryTests.swift
 import Testing
 import Foundation
-@testable import DeepFinder
+import DeepFinderIndex
+@testable import DeepFinderMedia
 
 @Suite("MetadataExtractorRegistry")
 struct MetadataExtractorRegistryTests {

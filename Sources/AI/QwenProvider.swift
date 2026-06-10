@@ -1,4 +1,7 @@
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderPersist
 
 // MARK: - QwenProvider Re-export
 

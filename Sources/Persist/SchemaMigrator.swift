@@ -1,6 +1,7 @@
 import Foundation
 import OSLog
 import SQLite3
+import DeepFinderIndex
 
 /// Schema versioning, migration, and static SQLite utilities for ``IndexPersistence``.
 ///
@@ -11,12 +12,12 @@ import SQLite3
 /// - v1: initial schema (id, name, original_name, path, parent_path, is_directory, size, created_at, modified_at, ext)
 /// - v2: added metadata_json column (media metadata)
 /// - v3: path encryption — path and parent_path columns now store AES-256-GCM ciphertext
-enum SchemaMigrator {
+public enum SchemaMigrator {
 
     // MARK: - Schema Constants
 
     /// Current schema version. Bumped when the schema changes.
-    static let currentSchemaVersion: Int = 3
+    public static let currentSchemaVersion: Int = 3
 
     /// SQL to create the file_records table.
     static let createFileRecordsSQL = """
@@ -54,7 +55,7 @@ enum SchemaMigrator {
     /// Uses `PRAGMA user_version` to track the current schema version.
     /// Each migration step runs inside a transaction; on failure the transaction
     /// is rolled back and the database is marked as corrupted.
-    static func migrateSchema(on db: OpaquePointer) throws {
+    public static func migrateSchema(on db: OpaquePointer) throws {
         let currentVersion = readSchemaVersion(on: db)
 
         // Downgrade detection: DB was created by a newer version
@@ -93,7 +94,7 @@ enum SchemaMigrator {
     }
 
     /// Read PRAGMA user_version from the given connection.
-    static func readSchemaVersion(on db: OpaquePointer) -> Int {
+    public static func readSchemaVersion(on db: OpaquePointer) -> Int {
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v3(db, "PRAGMA user_version", -1, 0, &stmt, nil) == SQLITE_OK,
               let stmt else { return 0 }
@@ -126,7 +127,7 @@ enum SchemaMigrator {
     /// has opened the database and loaded the encryption key.
     ///
     /// - Parameter db: The open SQLite database connection.
-    static func migratePlaintextPathsIfNeeded(db: OpaquePointer) throws {
+    public static func migratePlaintextPathsIfNeeded(db: OpaquePointer) throws {
         // Check if paths are already encrypted (metadata flag)
         if readMetadataValue(db: db, key: "path_encryption") != nil {
             return
@@ -183,7 +184,7 @@ enum SchemaMigrator {
     // MARK: - Static SQLite Helpers
 
     /// Read a metadata value from the given database connection.
-    static func readMetadataValue(db: OpaquePointer, key: String) -> String? {
+    public static func readMetadataValue(db: OpaquePointer, key: String) -> String? {
         let sql = "SELECT value FROM metadata WHERE key = ?"
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v3(db, sql, -1, 0, &stmt, nil) == SQLITE_OK, let stmt else { return nil }
@@ -194,7 +195,7 @@ enum SchemaMigrator {
     }
 
     /// Write a metadata key-value pair to the given database connection.
-    static func writeMetadataValue(db: OpaquePointer, key: String, value: String) {
+    public static func writeMetadataValue(db: OpaquePointer, key: String, value: String) {
         let sql = "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)"
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v3(db, sql, -1, 0, &stmt, nil) == SQLITE_OK, let stmt else { return }
@@ -205,7 +206,7 @@ enum SchemaMigrator {
     }
 
     /// Count records in the given database.
-    static func countRecords(db: OpaquePointer) -> Int {
+    public static func countRecords(db: OpaquePointer) -> Int {
         var stmt: OpaquePointer?
         guard sqlite3_prepare_v3(db, "SELECT COUNT(*) FROM file_records", -1, 0, &stmt, nil) == SQLITE_OK,
               let stmt else { return 0 }
@@ -215,7 +216,7 @@ enum SchemaMigrator {
     }
 
     /// Load all records from the given database WITHOUT decrypting paths.
-    static func loadRecordsRaw(db: OpaquePointer) throws -> [FileRecord] {
+    public static func loadRecordsRaw(db: OpaquePointer) throws -> [FileRecord] {
         let sql = """
             SELECT id, name, original_name, path, parent_path, is_directory,
                    size, created_at, modified_at, ext, metadata_json
@@ -243,7 +244,7 @@ enum SchemaMigrator {
     }
 
     /// Parse a row WITHOUT decrypting path/parent_path. Used during migration.
-    static func recordFromStatementRaw(_ stmt: OpaquePointer) -> FileRecord {
+    public static func recordFromStatementRaw(_ stmt: OpaquePointer) -> FileRecord {
         let columns = parseColumns(from: stmt)
         return FileRecord(
             id: columns.id,
@@ -263,7 +264,7 @@ enum SchemaMigrator {
     /// Parse common columns (everything except path/parent_path) from a statement row.
     /// Used by both ``IndexPersistence/recordFromStatement`` (with decryption) and
     /// ``recordFromStatementRaw`` (without).
-    static func parseColumns(from stmt: OpaquePointer) -> (
+    public static func parseColumns(from stmt: OpaquePointer) -> (
         id: UInt32, name: String, originalName: String,
         isDirectory: Bool, size: Int64, createdAt: Date, modifiedAt: Date,
         ext: String?, metadata: ExtractedMetadata?
@@ -290,7 +291,7 @@ enum SchemaMigrator {
     }
 
     /// Execute a raw SQL statement on a given connection.
-    static func execSQL(_ db: OpaquePointer?, _ sql: String) throws {
+    public static func execSQL(_ db: OpaquePointer?, _ sql: String) throws {
         var errMsg: UnsafeMutablePointer<CChar>?
         let rc = sqlite3_exec(db, sql, nil, nil, &errMsg)
         if rc != SQLITE_OK {
@@ -301,7 +302,7 @@ enum SchemaMigrator {
     }
 
     /// Read a TEXT column, returning nil if NULL.
-    static func columnTextOrNil(_ stmt: OpaquePointer, _ index: Int32) -> String? {
+    public static func columnTextOrNil(_ stmt: OpaquePointer, _ index: Int32) -> String? {
         guard sqlite3_column_type(stmt, index) != SQLITE_NULL else { return nil }
         return String(cString: sqlite3_column_text(stmt, index))
     }

@@ -1,30 +1,31 @@
 import Foundation
+import DeepFinderIndex
 
 // MARK: - SearchResultSequence
 
 /// A Sendable `AsyncSequence` of search results. All providers return this
 /// concrete type so that results can safely cross actor boundaries
 /// (the existential `any AsyncSequence` is not `Sendable`).
-struct SearchResultSequence: AsyncSequence, Sendable {
-    typealias Element = SearchResult
-    typealias AsyncIterator = Iterator
+public struct SearchResultSequence: AsyncSequence, Sendable {
+    public typealias Element = SearchResult
+    public typealias AsyncIterator = Iterator
 
     /// The complete set of results to iterate over.
     private let elements: [SearchResult]
 
     /// Create a sequence wrapping a pre-computed array of results.
-    init(_ elements: [SearchResult]) {
+    public init(_ elements: [SearchResult]) {
         self.elements = elements
     }
 
-    func makeAsyncIterator() -> Iterator {
+    public func makeAsyncIterator() -> Iterator {
         Iterator(iterator: elements.makeIterator())
     }
 
-    struct Iterator: AsyncIteratorProtocol, Sendable {
-        var iterator: Array<SearchResult>.Iterator
+    public struct Iterator: AsyncIteratorProtocol, Sendable {
+        public var iterator: Array<SearchResult>.Iterator
 
-        mutating func next() async -> SearchResult? {
+        public mutating func next() async -> SearchResult? {
             iterator.next()
         }
     }
@@ -41,7 +42,7 @@ struct SearchResultSequence: AsyncSequence, Sendable {
 /// MVP has a single provider (`FileIndexProvider`); the protocol exists so
 /// future providers (content search, AI semantic search) can be added
 /// without modifying the coordinator.
-protocol SearchProvider: Sendable {
+public protocol SearchProvider: Sendable {
     /// Stable identifier for this provider (e.g. "file-index", "content-search").
     var providerID: String { get }
 

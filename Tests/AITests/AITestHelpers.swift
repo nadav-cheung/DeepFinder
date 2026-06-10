@@ -1,5 +1,5 @@
 import Foundation
-@testable import DeepFinder
+@testable import DeepFinderAI
 
 // MARK: - Mock HTTPClient shared by AI provider tests
 

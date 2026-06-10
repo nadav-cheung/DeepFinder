@@ -13,11 +13,12 @@
 import Foundation
 import OSLog
 import SQLite3
+import DeepFinderIndex
 
 // MARK: - IndexRecoveryError
 
 /// Failure modes detected or thrown during index recovery.
-enum IndexRecoveryError: Error, CustomStringConvertible {
+public enum IndexRecoveryError: Error, CustomStringConvertible {
     /// The database file is corrupted and cannot be repaired.
     case corruptionDetected(String)
     /// The database schema is from a newer version of the app.
@@ -27,7 +28,7 @@ enum IndexRecoveryError: Error, CustomStringConvertible {
     /// Recovery completed by deleting and recreating the database.
     case rebuiltFromScratch(String)
 
-    var description: String {
+    public var description: String {
         switch self {
         case .corruptionDetected(let detail):
             return "Database corruption detected: \(detail)"
@@ -56,7 +57,7 @@ enum IndexRecoveryError: Error, CustomStringConvertible {
 ///     try IndexRecovery.recover(dbPath: dbPath, dbDirectory: dbDir)
 /// }
 /// ```
-enum IndexRecovery {
+public enum IndexRecovery {
 
     // MARK: - Logging
 
@@ -76,7 +77,7 @@ enum IndexRecovery {
     ///
     /// - Parameter dbPath: Absolute path to the SQLite database file.
     /// - Returns: `true` if the database is healthy, `false` if missing or corrupted.
-    static func verifyIntegrity(dbPath: String) -> Bool {
+    public static func verifyIntegrity(dbPath: String) -> Bool {
         let fm = FileManager.default
 
         // Missing database is not corruption — first run or clean state
@@ -136,7 +137,7 @@ enum IndexRecovery {
     ///
     /// - Parameter dbPath: Absolute path to the SQLite database file.
     /// - Returns: `true` if the schema is compatible.
-    static func verifySchemaCompatibility(dbPath: String) -> Bool {
+    public static func verifySchemaCompatibility(dbPath: String) -> Bool {
         let fm = FileManager.default
         guard fm.fileExists(atPath: dbPath) else { return true }
 
@@ -172,7 +173,7 @@ enum IndexRecovery {
     ///   - dbPath: Absolute path to the SQLite database file.
     ///   - dbDirectory: Directory containing the database file (for WAL/SHM cleanup).
     /// - Throws: ``IndexRecoveryError`` if recovery fails.
-    static func recover(dbPath: String, dbDirectory: String) throws {
+    public static func recover(dbPath: String, dbDirectory: String) throws {
         logger.warning("Starting database recovery for \(dbPath, privacy: .public)")
 
         let fm = FileManager.default
@@ -211,7 +212,7 @@ enum IndexRecovery {
     /// attempt to preserve data. If the checkpoint fails, falls back to deletion.
     ///
     /// - Parameter dbDirectory: Directory containing the database and its WAL/SHM files.
-    static func cleanupWALFiles(dbDirectory: String) {
+    public static func cleanupWALFiles(dbDirectory: String) {
         let fm = FileManager.default
         let dbName = "index.db"
 
@@ -258,7 +259,7 @@ enum IndexRecovery {
     ///
     /// - Parameter pidPath: Absolute path to the PID file.
     /// - Returns: `true` if a stale PID file was found and cleaned up.
-    static func detectStaleLock(pidPath: String) -> Bool {
+    public static func detectStaleLock(pidPath: String) -> Bool {
         let fm = FileManager.default
         guard fm.fileExists(atPath: pidPath) else { return false }
 
@@ -306,7 +307,7 @@ enum IndexRecovery {
     ///   - dbDirectory: Directory containing the database file.
     ///   - pidPath: Absolute path to the PID file.
     /// - Throws: ``IndexRecoveryError`` if recovery fails or schema is incompatible.
-    static func runStartupRecovery(dbPath: String, dbDirectory: String, pidPath: String) throws {
+    public static func runStartupRecovery(dbPath: String, dbDirectory: String, pidPath: String) throws {
         logger.info("Running startup recovery sequence")
 
         // 1. Detect and clean stale lock files

@@ -19,6 +19,12 @@
 import AppKit
 import Foundation
 import Quartz
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - QuickLookPreviewProtocol
 
@@ -28,7 +34,7 @@ import Quartz
 /// Tests inject `MockQuickLookPreview` to verify toggle/navigation logic
 /// without requiring a real panel.
 @MainActor
-protocol QuickLookPreviewProtocol: Sendable {
+public protocol QuickLookPreviewProtocol: Sendable {
     /// Whether the preview panel is currently visible.
     var isPreviewOpen: Bool { get }
 
@@ -54,7 +60,7 @@ protocol QuickLookPreviewProtocol: Sendable {
 // MARK: - PreviewNavigationDirection
 
 /// Direction for navigating results during preview.
-enum PreviewNavigationDirection: Sendable {
+public enum PreviewNavigationDirection: Sendable {
     case up
     case down
 }
@@ -64,11 +70,11 @@ enum PreviewNavigationDirection: Sendable {
 /// Metadata shown when Quick Look cannot preview a file type.
 ///
 /// Displays the filename, size, and modification date as a readable summary.
-struct QuickLookMetadataFallback: Sendable, Equatable {
-    let filename: String
-    let size: Int64
-    let modifiedAt: Date
-    let path: String
+public struct QuickLookMetadataFallback: Sendable, Equatable {
+    public let filename: String
+    public let size: Int64
+    public let modifiedAt: Date
+    public let path: String
 }
 
 // MARK: - QuickLookPreviewableTypes
@@ -78,9 +84,9 @@ struct QuickLookMetadataFallback: Sendable, Equatable {
 /// Shared between `QuickLookPreviewState` (for metadata fallback logic)
 /// and `QuickLookPreviewController` (for `isPreviewable` static check).
 /// Also accessible from tests for direct verification.
-enum QuickLookPreviewableTypes: Sendable {
+public enum QuickLookPreviewableTypes: Sendable {
 
-    static let extensions: Set<String> = [
+    public static let extensions: Set<String> = [
         // Images
         "png", "jpg", "jpeg", "gif", "bmp", "tiff", "tif", "svg", "heic", "heif", "webp", "ico",
         // Documents
@@ -98,7 +104,7 @@ enum QuickLookPreviewableTypes: Sendable {
     ]
 
     /// Returns `true` if the given file extension is previewable by QLPreviewPanel.
-    static func isPreviewable(_ ext: String?) -> Bool {
+    public static func isPreviewable(_ ext: String?) -> Bool {
         guard let ext = ext?.lowercased() else { return false }
         return extensions.contains(ext)
     }
@@ -123,21 +129,21 @@ final class QuickLookPreviewState {
     private(set) var metadataFallback: QuickLookMetadataFallback? = nil
 
     /// Open the preview at the given index.
-    func open(at index: Int, result: SearchResult) {
+    public func open(at index: Int, result: SearchResult) {
         isPreviewOpen = true
         previewIndex = index
         updateMetadataFallback(result: result)
     }
 
     /// Close the preview.
-    func close() {
+    public func close() {
         isPreviewOpen = false
         previewIndex = nil
         metadataFallback = nil
     }
 
     /// Navigate to a new index and update the fallback.
-    func navigate(to index: Int, result: SearchResult) {
+    public func navigate(to index: Int, result: SearchResult) {
         previewIndex = index
         updateMetadataFallback(result: result)
     }
@@ -186,13 +192,13 @@ final class QuickLookPreviewController: NSObject, QuickLookPreviewProtocol {
 
     // MARK: - QuickLookPreviewProtocol Conformance
 
-    var isPreviewOpen: Bool { state.isPreviewOpen }
-    var previewIndex: Int? { state.previewIndex }
-    var metadataFallback: QuickLookMetadataFallback? { state.metadataFallback }
+    public var isPreviewOpen: Bool { state.isPreviewOpen }
+    public var previewIndex: Int? { state.previewIndex }
+    public var metadataFallback: QuickLookMetadataFallback? { state.metadataFallback }
 
     // MARK: - Toggle
 
-    func togglePreview(results: [SearchResult], selectedIndex: Int?) {
+    public func togglePreview(results: [SearchResult], selectedIndex: Int?) {
         if state.isPreviewOpen {
             closePreview()
             return
@@ -210,7 +216,7 @@ final class QuickLookPreviewController: NSObject, QuickLookPreviewProtocol {
 
     // MARK: - Navigation
 
-    func navigatePreview(results: [SearchResult], direction: PreviewNavigationDirection) -> Int? {
+    public func navigatePreview(results: [SearchResult], direction: PreviewNavigationDirection) -> Int? {
         guard state.isPreviewOpen else { return nil }
         guard !results.isEmpty else { return nil }
 
@@ -232,7 +238,7 @@ final class QuickLookPreviewController: NSObject, QuickLookPreviewProtocol {
 
     // MARK: - Close
 
-    func closePreview() {
+    public func closePreview() {
         state.close()
         acceptsPanel = false
 
@@ -337,10 +343,10 @@ extension QuickLookPreviewController {
 /// Used to bridge `SearchResult.record` to the QLPreviewPanel data source.
 final class PreviewableItem: NSObject, QLPreviewItem {
 
-    let previewItemURL: URL?
-    let previewItemTitle: String?
+    public let previewItemURL: URL?
+    public let previewItemTitle: String?
 
-    init(url: URL, title: String) {
+    public init(url: URL, title: String) {
         self.previewItemURL = url
         self.previewItemTitle = title
     }

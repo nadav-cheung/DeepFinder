@@ -1,6 +1,9 @@
 import Testing
 import Foundation
-@testable import DeepFinder
+import DeepFinderDaemon
+import DeepFinderSearch
+import DeepFinderIndex
+@testable import DeepFinderCLILib
 
 // MARK: - REQ-1.0-01 CLI Integration Tests
 //

@@ -1,6 +1,8 @@
 import Testing
 import Foundation
-@testable import DeepFinder
+import DeepFinderSearch
+import DeepFinderIndex
+@testable import DeepFinderCLILib
 
 @Suite("TerminalFormatter")
 struct TerminalFormatterTests {

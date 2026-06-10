@@ -1,5 +1,11 @@
 import Foundation
 import AppKit
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 @preconcurrency import Carbon
 
 // MARK: - HotkeyPermissionHelper
@@ -13,14 +19,14 @@ import AppKit
 /// 1. Checking current permission state
 /// 2. Requesting permission via the system prompt
 /// 3. Guiding the user to System Settings if the prompt was dismissed
-struct HotkeyPermissionHelper {
+public struct HotkeyPermissionHelper {
 
     // MARK: - Check Permission
 
     /// Check whether Accessibility permission is currently granted.
     ///
     /// - Returns: `true` if the app is trusted for Accessibility.
-    static func isAccessibilityGranted() -> Bool {
+    public static func isAccessibilityGranted() -> Bool {
         AXIsProcessTrusted()
     }
 
@@ -34,7 +40,7 @@ struct HotkeyPermissionHelper {
     /// - Returns: `true` if permission was already granted (no prompt needed),
     ///   `false` if a prompt was shown or permission is not yet granted.
     @discardableResult
-    static func requestAccessibility() -> Bool {
+    public static func requestAccessibility() -> Bool {
         // Use the string literal directly to avoid Swift 6 concurrency-safety error
         // with the C global `kAXTrustedCheckOptionPrompt`. The value is guaranteed
         // by Apple to be "AXTrustedCheckOptionPrompt" (documented, stable ABI).
@@ -54,7 +60,7 @@ struct HotkeyPermissionHelper {
     ///   user was prompted (permission not yet granted).
     @MainActor
     @discardableResult
-    static func promptIfNotGranted() -> Bool {
+    public static func promptIfNotGranted() -> Bool {
         if isAccessibilityGranted() {
             return true
         }
@@ -82,7 +88,7 @@ struct HotkeyPermissionHelper {
 
     /// Open the Accessibility pane in System Settings.
     @MainActor
-    static func openAccessibilitySettings() {
+    public static func openAccessibilitySettings() {
         if let url = URL(
             string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility"
         ) {

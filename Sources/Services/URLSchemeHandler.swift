@@ -1,4 +1,6 @@
 import Foundation
+import DeepFinderIndex
+import DeepFinderDaemon
 
 // MARK: - SearchURL
 
@@ -8,7 +10,7 @@ import Foundation
 /// - `deepfinder://search?q=keyword&limit=20&filter=ext:pdf`
 ///
 /// Invalid or unrecognized URLs resolve to `nil` via ``parse(_:)``.
-enum SearchURL: Sendable, Equatable {
+public enum SearchURL: Sendable, Equatable {
     /// A search request with query string, optional result limit, and optional filter expression.
     case search(query: String, limit: Int?, filter: String?)
 
@@ -19,7 +21,7 @@ enum SearchURL: Sendable, Equatable {
     ///
     /// - Parameter url: The URL to parse.
     /// - Returns: A ``SearchURL`` value, or `nil` for invalid/unrecognized URLs.
-    static func parse(_ url: URL) -> SearchURL? {
+    public static func parse(_ url: URL) -> SearchURL? {
         // Must have the correct scheme and host.
         guard url.scheme == Product.urlScheme, url.host == "search" else {
             return nil

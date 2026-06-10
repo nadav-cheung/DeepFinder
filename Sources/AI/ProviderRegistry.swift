@@ -1,21 +1,24 @@
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderPersist
 
 /// Information about a registered AI provider.
-struct ProviderInfo: Sendable, Equatable {
+public struct ProviderInfo: Sendable, Equatable {
     /// Config key value (e.g., "qwen", "deepseek")
-    let name: String
+    public let name: String
     /// Human-readable display name (e.g., "Qwen Cloud (通义千问)")
-    let displayName: String
+    public let displayName: String
     /// Uses OpenAI-compatible chat completions API format
-    let isOpenAICompatible: Bool
+    public let isOpenAICompatible: Bool
     /// Has a companion embedding API
-    let hasEmbeddingAPI: Bool
+    public let hasEmbeddingAPI: Bool
     /// Default endpoint URL (nil for custom/non-OAI)
-    let defaultEndpoint: String?
+    public let defaultEndpoint: String?
     /// Default model name
-    let defaultModel: String
+    public let defaultModel: String
     /// Requires custom endpoint/model configuration
-    let requiresCustomConfig: Bool
+    public let requiresCustomConfig: Bool
 }
 
 /// Registry of all supported AI providers with auto-routing logic.
@@ -26,10 +29,10 @@ struct ProviderInfo: Sendable, Equatable {
 /// 3. If custom protocol, add a new Provider implementation (e.g., AnthropicProvider)
 /// 4. ``ProviderRegistry/instantiate(model:apiKey:httpClient:customEndpoint:customModelName:)``
 ///    handles the mapping
-struct ProviderRegistry: Sendable {
+public struct ProviderRegistry: Sendable {
 
     /// All supported LLM providers, in display order.
-    static let allProviders: [ProviderInfo] = [
+    public static let allProviders: [ProviderInfo] = [
         // OpenAI-compatible providers
         ProviderInfo(name: "qwen", displayName: "Qwen Cloud (通义千问)",
                      isOpenAICompatible: true, hasEmbeddingAPI: true,
@@ -78,24 +81,24 @@ struct ProviderRegistry: Sendable {
     ]
 
     /// Priority order for auto-routing. First available wins. Apple last (region-restricted fallback).
-    static let autoPriority: [String] = [
+    public static let autoPriority: [String] = [
         "qwen", "zhipu", "deepseek", "openai", "moonshot", "minimax", "apple"
     ]
 
     /// All cloud providers that have embedding APIs.
-    static let embeddingProviders: [ProviderInfo] = allProviders.filter {
+    public static let embeddingProviders: [ProviderInfo] = allProviders.filter {
         $0.hasEmbeddingAPI && $0.isOpenAICompatible
     }
 
     /// Look up provider info by config name.
-    func providerInfo(for name: String) -> ProviderInfo? {
+    public func providerInfo(for name: String) -> ProviderInfo? {
         Self.allProviders.first { $0.name == name }
     }
 
     /// Instantiate an AIModelProvider from config.
     ///
     /// Returns nil when model is "off", provider is unknown, or required config is missing.
-    func instantiate(
+    public func instantiate(
         model: String,
         apiKey: String,
         httpClient: any HTTPClient = URLSessionHTTPClient(),

@@ -1,12 +1,13 @@
 // Sources/Media/PDFMetadataExtractor.swift
 import Foundation
 import PDFKit
+import DeepFinderIndex
 
 /// Extracts metadata from PDF files using PDFKit.
-struct PDFMetadataExtractor: MetadataExtractor, Sendable {
-    let supportedExtensions: Set<String> = ["pdf"]
+public struct PDFMetadataExtractor: MetadataExtractor, Sendable {
+    public let supportedExtensions: Set<String> = ["pdf"]
 
-    func extract(url: URL) async -> ExtractedMetadata? {
+    public func extract(url: URL) async -> ExtractedMetadata? {
         guard let document = PDFDocument(url: url) else {
             return nil
         }

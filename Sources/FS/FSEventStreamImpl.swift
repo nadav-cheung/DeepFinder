@@ -1,5 +1,7 @@
 import Foundation
 import CoreServices
+import DeepFinderIndex
+import DeepFinderPersist
 
 /// Production implementation of `FileSystemEventStream` using macOS FSEvents.
 ///
@@ -16,7 +18,9 @@ import CoreServices
 /// **Platform**: macOS only. FSEvents is not available on iOS, Linux, or Windows.
 /// Requires Full Disk Access to monitor protected directories (~/Documents, ~/Desktop, etc.).
 /// Without FDA, those directories are silently skipped by the system.
-final class FSEventStreamImpl: FileSystemEventStream, @unchecked Sendable {
+public final class FSEventStreamImpl: FileSystemEventStream, @unchecked Sendable {
+
+    public init() {}
 
     // MARK: - Configuration
 
@@ -55,11 +59,11 @@ final class FSEventStreamImpl: FileSystemEventStream, @unchecked Sendable {
 
     // MARK: - FileSystemEventStream Conformance
 
-    var isRunning: Bool {
+    public var isRunning: Bool {
         queue.sync { _isRunning }
     }
 
-    func start(
+    public func start(
         paths: [String],
         sinceEventID: UInt64 = UInt64(kFSEventStreamEventIdSinceNow),
         handler: @escaping @Sendable ([(path: String, flags: FSEventStreamEventFlags)]) -> Void
@@ -124,7 +128,7 @@ final class FSEventStreamImpl: FileSystemEventStream, @unchecked Sendable {
         }
     }
 
-    func stop() {
+    public func stop() {
         queue.sync {
             guard _isRunning, let stream else { return }
 

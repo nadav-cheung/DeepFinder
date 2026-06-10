@@ -2,14 +2,15 @@
 import Foundation
 import AVFoundation
 import CoreMedia
+import DeepFinderIndex
 
 /// Extracts metadata from audio files using AVFoundation.
-struct AudioMetadataExtractor: MetadataExtractor, Sendable {
-    let supportedExtensions: Set<String> = [
+public struct AudioMetadataExtractor: MetadataExtractor, Sendable {
+    public let supportedExtensions: Set<String> = [
         "mp3", "m4a", "wav", "aac", "flac", "ogg", "aiff", "wma"
     ]
 
-    func extract(url: URL) async -> ExtractedMetadata? {
+    public func extract(url: URL) async -> ExtractedMetadata? {
         let asset = AVURLAsset(url: url)
         let duration: CMTime
         let metadata: [AVMetadataItem]

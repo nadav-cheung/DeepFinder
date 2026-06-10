@@ -1,4 +1,5 @@
 import Foundation
+import DeepFinderIndex
 
 // MARK: - FilterPipeline
 
@@ -6,18 +7,18 @@ import Foundation
 ///
 /// All filters must match (AND semantics). Results that fail any filter are
 /// removed. Order of surviving results is preserved.
-struct FilterPipeline: Sendable {
+public struct FilterPipeline: Sendable {
     /// The filters composing this pipeline. Public for test introspection.
-    let filters: [SearchFilter]
+    public let filters: [SearchFilter]
 
-    init(filters: [SearchFilter]) {
+    public init(filters: [SearchFilter]) {
         self.filters = filters
     }
 
     /// Apply all filters to the results array.
     /// Returns only results whose record passes every filter.
     /// Preserves the original order of matching results.
-    func apply(to results: [SearchResult]) -> [SearchResult] {
+    public func apply(to results: [SearchResult]) -> [SearchResult] {
         guard !filters.isEmpty else { return results }
         return results.filter { result in
             filters.allSatisfy { filter in
@@ -38,7 +39,7 @@ struct FilterPipeline: Sendable {
     /// - `"folder:"` → isDirectory
     /// - `"dm:today"` → dateModifiedAfter
     /// - `"depth:3"` → maxDepth
-    static func parse(from modifiers: [(key: String, value: String)]) -> FilterPipeline {
+    public static func parse(from modifiers: [(key: String, value: String)]) -> FilterPipeline {
         var parsedFilters: [SearchFilter] = []
 
         for (key, value) in modifiers {

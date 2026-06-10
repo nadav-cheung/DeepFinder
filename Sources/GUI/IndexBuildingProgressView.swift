@@ -1,4 +1,10 @@
 import SwiftUI
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - IndexBuildingProgressView
 
@@ -9,17 +15,17 @@ import SwiftUI
 ///
 /// Placed in `SearchPanelView` (between filter bar and content area) and in
 /// `OnboardingView` during the indexing step.
-struct IndexBuildingProgressView: View {
+public struct IndexBuildingProgressView: View {
 
     /// Number of files indexed so far.
-    let filesIndexed: Int
+    public let filesIndexed: Int
 
     /// Estimated seconds remaining. When non-nil, an ETA suffix is appended to the file count.
     /// The view does NOT calculate ETA — the caller provides it.
-    var estimatedSeconds: Int? = nil
+    public var estimatedSeconds: Int? = nil
 
     /// Raw daemon state string ("indexing", "verifying", "polling").
-    var stateLabel: String = "索引中"
+    public var stateLabel: String = "索引中"
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var appeared: Bool = false
@@ -27,15 +33,15 @@ struct IndexBuildingProgressView: View {
     // MARK: - Design Tokens
 
     private enum Design {
-        static let height: CGFloat = 36
-        static let iconSize: CGFloat = 16
-        static let cornerRadius: CGFloat = 8
-        static let hPadding: CGFloat = 12
+        public static let height: CGFloat = 36
+        public static let iconSize: CGFloat = 16
+        public static let cornerRadius: CGFloat = 8
+        public static let hPadding: CGFloat = 12
     }
 
     // MARK: - Body
 
-    var body: some View {
+    public var body: some View {
         HStack(spacing: 8) {
             if reduceMotion {
                 Image(systemName: "tray.and.arrow.down.fill")

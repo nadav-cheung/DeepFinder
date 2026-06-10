@@ -1,5 +1,8 @@
 import AVFoundation
 import Speech
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderPersist
 
 // MARK: - SpeechAuthorizationStatus
 
@@ -10,7 +13,7 @@ import Speech
 /// unified status. Both must be `.authorized` for speech input to work.
 ///
 /// REQ-3.0-12: Speech authorization flow.
-enum SpeechAuthorizationStatus: Sendable, Equatable {
+public enum SpeechAuthorizationStatus: Sendable, Equatable {
     /// Permissions have not been requested yet.
     case notDetermined
     /// The user denied one or both permissions.
@@ -27,7 +30,7 @@ enum SpeechAuthorizationStatus: Sendable, Equatable {
 ///
 /// Production uses `LiveSpeechPermissionChecker` which calls Apple framework APIs.
 /// Tests inject a mock that returns canned statuses.
-protocol SpeechPermissionChecker: Sendable {
+public protocol SpeechPermissionChecker: Sendable {
     /// Current speech recognition authorization status.
     var speechStatus: SFSpeechRecognizerAuthorizationStatus { get async }
     /// Current microphone recording permission status.
@@ -41,16 +44,16 @@ protocol SpeechPermissionChecker: Sendable {
 // MARK: - LiveSpeechPermissionChecker
 
 /// Production implementation that calls Apple's Speech and AVFoundation APIs.
-struct LiveSpeechPermissionChecker: SpeechPermissionChecker {
-    var speechStatus: SFSpeechRecognizerAuthorizationStatus {
+public struct LiveSpeechPermissionChecker: SpeechPermissionChecker {
+    public var speechStatus: SFSpeechRecognizerAuthorizationStatus {
         SFSpeechRecognizer.authorizationStatus()
     }
 
-    var microphoneStatus: Bool {
+    public var microphoneStatus: Bool {
         AVAudioApplication.shared.recordPermission == .granted
     }
 
-    func requestSpeech() async -> SFSpeechRecognizerAuthorizationStatus {
+    public func requestSpeech() async -> SFSpeechRecognizerAuthorizationStatus {
         await withCheckedContinuation { continuation in
             SFSpeechRecognizer.requestAuthorization { status in
                 continuation.resume(returning: status)
@@ -58,7 +61,7 @@ struct LiveSpeechPermissionChecker: SpeechPermissionChecker {
         }
     }
 
-    func requestMicrophone() async -> Bool {
+    public func requestMicrophone() async -> Bool {
         await AVAudioApplication.requestRecordPermission()
     }
 }
@@ -76,19 +79,19 @@ struct LiveSpeechPermissionChecker: SpeechPermissionChecker {
 /// single `checkAndRequestPermission()` call that handles both in sequence.
 ///
 /// REQ-3.0-12: Microphone permission prompt and speech authorization.
-struct SpeechAuthorizer: Sendable {
+public struct SpeechAuthorizer: Sendable {
 
     /// The permission checker used for queries and requests.
     /// Defaults to `LiveSpeechPermissionChecker`; inject a mock for testing.
     private let checker: any SpeechPermissionChecker
 
     /// Creates an authorizer with the live permission checker.
-    init() {
+    public init() {
         self.checker = LiveSpeechPermissionChecker()
     }
 
     /// Creates an authorizer with a custom permission checker (for testing).
-    init(checker: any SpeechPermissionChecker) {
+    public init(checker: any SpeechPermissionChecker) {
         self.checker = checker
     }
 
@@ -100,7 +103,7 @@ struct SpeechAuthorizer: Sendable {
     /// permissions are granted. Returns `.denied` if either is denied.
     /// Returns `.restricted` if speech recognition is restricted.
     /// Returns `.notDetermined` if either has not been requested yet.
-    var status: SpeechAuthorizationStatus {
+    public var status: SpeechAuthorizationStatus {
         get async {
             let speech = await checker.speechStatus
             let mic = await checker.microphoneStatus
@@ -130,7 +133,7 @@ struct SpeechAuthorizer: Sendable {
     /// both, returns `true`. If either is denied or restricted, returns `false`.
     ///
     /// - Returns: `true` only if both permissions are authorized.
-    func checkAndRequestPermission() async -> Bool {
+    public func checkAndRequestPermission() async -> Bool {
         // Step 1: Speech Recognition
         let speech = await checker.speechStatus
         let resolvedSpeech: SFSpeechRecognizerAuthorizationStatus

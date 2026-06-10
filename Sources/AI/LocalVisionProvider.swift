@@ -6,6 +6,9 @@
 import Foundation
 import Vision
 import OSLog
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderPersist
 
 private let logger = Logger(subsystem: Product.aiSubsystem, category: "local-vision")
 
@@ -25,11 +28,13 @@ private let logger = Logger(subsystem: Product.aiSubsystem, category: "local-vis
 /// without Vision-generated tags.
 ///
 /// REQ-3.0-10: Local image classification.
-struct LocalVisionProvider: Sendable {
+public struct LocalVisionProvider: Sendable {
+
+    public init() {}
 
     /// File extensions that this provider can analyze.
     /// Images with other extensions are silently skipped.
-    static let supportedExtensions: Set<String> = ["jpg", "jpeg", "png", "heic", "gif"]
+    public static let supportedExtensions: Set<String> = ["jpg", "jpeg", "png", "heic", "gif"]
 
     /// Minimum confidence threshold (0-1) for a label to be included.
     /// Tuned to produce useful tags without excessive noise.
@@ -40,7 +45,7 @@ struct LocalVisionProvider: Sendable {
     /// - Parameter url: File URL of the image to analyze.
     /// - Returns: Array of tag strings (e.g. ["sunset", "beach", "ocean"]),
     ///   or `nil` if the image cannot be read or analyzed.
-    func analyzeImage(at url: URL) async -> [String]? {
+    public func analyzeImage(at url: URL) async -> [String]? {
         // Verify the file exists and is readable
         guard FileManager.default.fileExists(atPath: url.path) else {
             return nil
@@ -86,7 +91,7 @@ struct LocalVisionProvider: Sendable {
     /// when there is nothing to store.
     ///
     /// REQ-3.0-10: Vision tags persistence.
-    static func tagsToMetadata(_ tags: [String]) -> ExtractedMetadata? {
+    public static func tagsToMetadata(_ tags: [String]) -> ExtractedMetadata? {
         guard !tags.isEmpty else { return nil }
         return ExtractedMetadata(
             fileExtension: "",

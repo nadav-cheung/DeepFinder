@@ -1,4 +1,10 @@
 import SwiftUI
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - IndexHealthBanner
 
@@ -9,12 +15,12 @@ import SwiftUI
 /// Persistent but dismissible per session. Does NOT block interaction with results.
 ///
 /// Placed in `SearchPanelView` between the filter bar and the content area.
-struct IndexHealthBanner: View {
+public struct IndexHealthBanner: View {
 
-    let healthState: IndexHealthState
+    public let healthState: IndexHealthState
 
     /// Called when the user taps the "前往设置" button.
-    var onOpenSettings: () -> Void = {}
+    public var onOpenSettings: () -> Void = {}
 
     @State private var isDismissed: Bool = false
     @State private var dismissHovering: Bool = false
@@ -22,14 +28,14 @@ struct IndexHealthBanner: View {
     // MARK: - Design Tokens
 
     private enum Design {
-        static let cornerRadius: CGFloat = 8
-        static let hPadding: CGFloat = 12
-        static let iconSize: CGFloat = 14
+        public static let cornerRadius: CGFloat = 8
+        public static let hPadding: CGFloat = 12
+        public static let iconSize: CGFloat = 14
     }
 
     // MARK: - Body
 
-    var body: some View {
+    public var body: some View {
         if !isDismissed, case .degraded(let reason) = healthState {
             bannerContent(reason: reason)
                 .transition(.opacity.combined(with: .move(edge: .top)).animation(.spring(duration: 0.3, bounce: 0.15)))

@@ -1,4 +1,9 @@
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderServices
 
 // MARK: - FuzzyCorrector
 
@@ -6,7 +11,7 @@ import Foundation
 ///
 /// Uses Levenshtein distance with early termination to find the closest known term
 /// within a configurable edit distance threshold. All comparisons are case-insensitive.
-struct FuzzyCorrector {
+public struct FuzzyCorrector {
 
     /// Known terms (lowercased) derived from indexed file names and extensions.
     private let terms: [String]
@@ -17,7 +22,7 @@ struct FuzzyCorrector {
     /// Build the corrector from a set of known filenames or words.
     ///
     /// Terms are lowercased internally for case-insensitive matching.
-    init(knownTerms: Set<String>) {
+    public init(knownTerms: Set<String>) {
         self.terms = knownTerms.map { $0.lowercased() }
         self.termLengths = self.terms.map { $0.count }
     }
@@ -29,7 +34,7 @@ struct FuzzyCorrector {
     ///   - maxDistance: Maximum Levenshtein distance to consider. Defaults to 2.
     /// - Returns: The best matching known term (original casing from `knownTerms`),
     ///   or `nil` if no match within `maxDistance` or the query is an exact match.
-    func suggest(for query: String, maxDistance: Int = 2) -> String? {
+    public func suggest(for query: String, maxDistance: Int = 2) -> String? {
         let lowered = query.lowercased()
         guard !lowered.isEmpty else { return nil }
 

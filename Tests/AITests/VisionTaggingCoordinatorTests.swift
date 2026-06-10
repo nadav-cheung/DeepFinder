@@ -3,7 +3,7 @@ import Testing
 import Foundation
 import CoreGraphics
 import ImageIO
-@testable import DeepFinder
+@testable import DeepFinderAI
 
 @Suite("VisionTaggingCoordinator")
 struct VisionTaggingCoordinatorTests {

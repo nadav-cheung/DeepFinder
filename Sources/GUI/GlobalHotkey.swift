@@ -1,6 +1,12 @@
 import Foundation
 import Carbon
 import CoreGraphics
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - KeyCombination
 
@@ -23,7 +29,7 @@ public struct KeyCombination: Sendable, Equatable {
 // MARK: - HotkeyRegistrationError
 
 /// Errors that can occur during global hotkey registration.
-enum HotkeyRegistrationError: Error, Sendable, CustomStringConvertible {
+public enum HotkeyRegistrationError: Error, Sendable, CustomStringConvertible {
     /// Another application has already registered this key combination.
     case conflict(keyCombination: KeyCombination)
     /// Registration failed after exhausting all retries.
@@ -31,7 +37,7 @@ enum HotkeyRegistrationError: Error, Sendable, CustomStringConvertible {
     /// Registration failed for an unknown reason.
     case unknown(status: OSStatus)
 
-    var description: String {
+    public var description: String {
         switch self {
         case .conflict(let combo):
             return "Hotkey conflict: another app has registered the same key combination (keyCode: \(combo.keyCode), modifiers: \(combo.modifiers))"
@@ -63,7 +69,7 @@ final class GlobalHotkey: @unchecked Sendable {
     // MARK: - Constants
 
     /// Default hotkey: Control+Command+K (⌃⌘K).
-    static let defaultKeyCombination = KeyCombination(
+    public static let defaultKeyCombination = KeyCombination(
         keyCode: UInt32(kVK_ANSI_K), // 0x28
         modifiers: UInt32(cmdKey | controlKey)
     )
@@ -72,21 +78,21 @@ final class GlobalHotkey: @unchecked Sendable {
     ///
     /// `RegisterEventHotKey` returns `eventHotKeyExistsErr` (-9878) when the key combination
     /// is already claimed by another process.
-    static let carbonHotKeyConflictError: OSStatus = -9878
+    public static let carbonHotKeyConflictError: OSStatus = -9878
 
     /// Maximum number of retry attempts when registration fails.
-    static let maxRetryAttempts = 3
+    public static let maxRetryAttempts = 3
 
     /// Exponential backoff base delay in seconds for retries.
     /// Attempt 1: 1s, Attempt 2: 2s, Attempt 3: 4s.
-    static let retryBaseDelay: UInt64 = 1_000_000_000 // 1 second in nanoseconds
+    public static let retryBaseDelay: UInt64 = 1_000_000_000 // 1 second in nanoseconds
 
     // MARK: - State
 
     private let lock = NSLock()
 
     /// The key combination to register.
-    let keyCombination: KeyCombination
+    public let keyCombination: KeyCombination
 
     /// Whether the hotkey is currently registered with the system.
     private(set) var isRegistered: Bool = false
@@ -130,13 +136,13 @@ final class GlobalHotkey: @unchecked Sendable {
     ///
     /// - Parameter status: The `OSStatus` returned by `RegisterEventHotKey`.
     /// - Returns: `true` if the status indicates a conflict.
-    static func detectConflict(status: OSStatus) -> Bool {
+    public static func detectConflict(status: OSStatus) -> Bool {
         return status == carbonHotKeyConflictError
     }
 
     // MARK: - Init
 
-    init(keyCombination: KeyCombination = defaultKeyCombination) {
+    public init(keyCombination: KeyCombination = defaultKeyCombination) {
         self.keyCombination = keyCombination
     }
 
@@ -151,7 +157,7 @@ final class GlobalHotkey: @unchecked Sendable {
     /// Attempts `RegisterEventHotKey` first. If that fails, falls back to `CGEventTap`.
     /// - Parameter handler: Closure to invoke when the hotkey is pressed.
     /// - Returns: `true` if registration succeeded, `false` otherwise.
-    func register(handler: @escaping () -> Void) -> Bool {
+    public func register(handler: @escaping () -> Void) -> Bool {
         lock.lock()
         defer { lock.unlock() }
 
@@ -189,7 +195,7 @@ final class GlobalHotkey: @unchecked Sendable {
     ///
     /// - Parameter handler: Closure to invoke when the hotkey is pressed.
     /// - Returns: `.success` if registered, or a `HotkeyRegistrationError` describing the failure.
-    func registerWithRetry(handler: @escaping @Sendable () -> Void) async -> Result<Void, HotkeyRegistrationError> {
+    public func registerWithRetry(handler: @escaping @Sendable () -> Void) async -> Result<Void, HotkeyRegistrationError> {
         setUpForRegistration(handler: handler)
 
         for attempt in 0...Self.maxRetryAttempts {
@@ -272,7 +278,7 @@ final class GlobalHotkey: @unchecked Sendable {
     /// Tear down the global hotkey registration.
     ///
     /// Safe to call multiple times. Safe to call when not registered.
-    func unregister() {
+    public func unregister() {
         lock.lock()
         defer { lock.unlock() }
         unregisterLocked()
@@ -284,7 +290,7 @@ final class GlobalHotkey: @unchecked Sendable {
     ///
     /// Directly invokes the stored handler, bypassing the system event machinery.
     /// This allows tests to verify handler wiring without Accessibility permissions.
-    func simulateHotkeyPress() {
+    public func simulateHotkeyPress() {
         lock.lock()
         let h = handler
         lock.unlock()

@@ -1,6 +1,6 @@
 import Testing
 import SwiftUI
-@testable import DeepFinder
+@testable import DeepFinderGUILib
 
 @Suite("IntelligenceGlow")
 struct IntelligenceGlowTests {

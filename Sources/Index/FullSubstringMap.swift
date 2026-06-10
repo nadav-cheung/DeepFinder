@@ -9,11 +9,11 @@
 ///
 /// Thread safety: This is a value type (struct). When used inside an actor
 /// (e.g. `InMemoryIndex`), no internal synchronization is needed.
-struct FullSubstringMap {
+public struct FullSubstringMap {
 
     /// Maximum filename length (in characters) that this map will index.
     /// Longer names are handled by TrigramIndex.
-    static let maxNameLength = 64
+    public static let maxNameLength = 64
 
     /// Maps lowercase substring -> set of FileRecord IDs containing that substring.
     private var index: [String: Set<UInt32>] = [:]
@@ -22,10 +22,10 @@ struct FullSubstringMap {
     private var _count: Int = 0
 
     /// Number of unique filenames inserted (and not yet removed).
-    var count: Int { _count }
+    public var count: Int { _count }
 
     /// Whether the map is empty.
-    var isEmpty: Bool { _count == 0 }
+    public var isEmpty: Bool { _count == 0 }
 
     /// Insert all substrings of `name` and associate them with `id`.
     /// Names longer than `maxNameLength` characters are silently skipped.
@@ -59,7 +59,7 @@ struct FullSubstringMap {
     /// Look up all FileRecord IDs whose filename contains `substring`.
     /// Returns an empty array if no matches.
     /// - Precondition: `substring` must not be empty (use `InMemoryIndex.allRecords()` instead).
-    func search(substring: String) -> [UInt32] {
+    public func search(substring: String) -> [UInt32] {
         precondition(!substring.isEmpty, "FullSubstringMap.search requires a non-empty substring")
         let key = substring.precomposedStringWithCanonicalMapping.lowercased()
         guard let ids = index[key] else { return [] }

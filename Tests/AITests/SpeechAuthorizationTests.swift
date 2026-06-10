@@ -1,6 +1,6 @@
 import Testing
 import Speech
-@testable import DeepFinder
+@testable import DeepFinderAI
 
 @Suite("SpeechAuthorization")
 struct SpeechAuthorizationTests {

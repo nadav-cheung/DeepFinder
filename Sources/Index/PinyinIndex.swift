@@ -13,7 +13,7 @@ import Foundation
 ///
 /// Thread safety: This is a value type (struct). When used inside an actor
 /// (e.g. `InMemoryIndex`), no internal synchronization is needed.
-struct PinyinIndex {
+public struct PinyinIndex {
 
     /// Maps a trie key (as scalar array) to the set of FileRecord IDs stored at that key.
     /// Needed because Trie stores a single value per key — we use a Set to hold multiple IDs.
@@ -31,10 +31,10 @@ struct PinyinIndex {
     private var chineseIDs: Set<UInt32> = []
 
     /// Number of entries with Chinese characters.
-    var count: Int { chineseIDs.count }
+    public var count: Int { chineseIDs.count }
 
     /// Whether the index is empty.
-    var isEmpty: Bool { chineseIDs.isEmpty }
+    public var isEmpty: Bool { chineseIDs.isEmpty }
 
     // MARK: - Insert
 
@@ -95,7 +95,7 @@ struct PinyinIndex {
     /// Search for file IDs matching the given pinyin query.
     /// Searches both the full pinyin trie and the first-letter trie,
     /// returning the union of results.
-    func search(pinyin: String) -> [UInt32] {
+    public func search(pinyin: String) -> [UInt32] {
         let normalized = pinyin.precomposedStringWithCanonicalMapping.lowercased()
         let scalars = Array(normalized.unicodeScalars)
         guard !scalars.isEmpty else { return Array(chineseIDs) }
@@ -254,7 +254,7 @@ struct PinyinIndex {
     // MARK: - Public Helpers
 
     /// A tokenized Chinese segment with its pinyin representation and position in the source string.
-    struct PinyinToken {
+    public struct PinyinToken {
         /// Full pinyin (no spaces/tone marks), e.g. "baogao"
         public let fullPinyin: String
         /// First-letter scalars, e.g. ["b", "g"]

@@ -3,6 +3,9 @@
 /// Handles Gemini-specific protocol: x-goog-api-key auth, candidates/parts/text
 /// JSON structure, and context injection into the user message parts array.
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderPersist
 
 /// Provider for Google's Gemini models via the Gemini API.
 ///
@@ -15,22 +18,22 @@ import Foundation
 /// since Gemini does not support a separate system message in generateContent.
 ///
 /// REQ-3.0-Gemini.
-struct GeminiProvider: AIModelProvider, Sendable {
-    let name = "gemini"
-    let displayName = "Google Gemini"
-    let capabilities: Set<AICapability> = [.textToSearch, .resultSummary, .querySuggestion, .intentAnalysis]
-    let supportsOnDevice = false
-    let contextLimit = 1_000_000
-    let hasEmbeddingAPI = true
+public struct GeminiProvider: AIModelProvider, Sendable {
+    public let name = "gemini"
+    public let displayName = "Google Gemini"
+    public let capabilities: Set<AICapability> = [.textToSearch, .resultSummary, .querySuggestion, .intentAnalysis]
+    public let supportsOnDevice = false
+    public let contextLimit = 1_000_000
+    public let hasEmbeddingAPI = true
 
     private let apiKey: String
     private let model: String
     private let httpClient: any HTTPClient
-    let endpoint: URL
+    public let endpoint: URL
 
     private static let maxOutputTokens = Constants.AI.maxOutputTokens
 
-    init(apiKey: String, model: String, httpClient: any HTTPClient = URLSessionHTTPClient()) {
+    public init(apiKey: String, model: String, httpClient: any HTTPClient = URLSessionHTTPClient()) {
         self.apiKey = apiKey
         self.model = model
         self.httpClient = httpClient
@@ -45,7 +48,7 @@ struct GeminiProvider: AIModelProvider, Sendable {
 
     // MARK: - complete()
 
-    func complete(prompt: String, context: AIContext?) -> AsyncThrowingStream<String, Error> {
+    public func complete(prompt: String, context: AIContext?) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
@@ -71,7 +74,7 @@ struct GeminiProvider: AIModelProvider, Sendable {
 
     // MARK: - translateToSearchSyntax()
 
-    func translateToSearchSyntax(naturalLanguage: String) async throws -> String {
+    public func translateToSearchSyntax(naturalLanguage: String) async throws -> String {
         let prompt = Self.searchTranslationPrompt.replacingOccurrences(
             of: "{{query}}", with: naturalLanguage
         )

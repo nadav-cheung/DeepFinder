@@ -1,6 +1,6 @@
 import Testing
 import Foundation
-@testable import DeepFinder
+@testable import DeepFinderDaemon
 
 struct ConfigStoreTests {
 

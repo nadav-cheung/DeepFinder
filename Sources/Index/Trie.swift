@@ -9,20 +9,20 @@
 ///
 /// Thread safety: When used inside an actor (e.g. `InMemoryIndex`), no internal
 /// synchronization is needed beyond the COW guarantee.
-struct Trie<Key: Hashable, Value> {
+public struct Trie<Key: Hashable, Value> {
 
     /// Internal node — holds an optional value at this node and children keyed
     /// by the next element. Reference type enables COW via isKnownUniquelyReferenced.
     private final class Node {
-        var value: Value?
-        var children: [Key: Node] = [:]
+        public var value: Value?
+        public var children: [Key: Node] = [:]
 
-        init(value: Value? = nil) {
+        public init(value: Value? = nil) {
             self.value = value
         }
 
         /// Deep-copy this node and all descendants.
-        func deepCopy() -> Node {
+        public func deepCopy() -> Node {
             let copy = Node(value: value)
             for (key, child) in children {
                 copy.children[key] = child.deepCopy()
@@ -35,11 +35,11 @@ struct Trie<Key: Hashable, Value> {
     /// Number of complete entries (keys with associated values) in the trie.
     private var _count = 0
 
-    var count: Int { _count }
+    public var count: Int { _count }
 
-    var isEmpty: Bool { _count == 0 }
+    public var isEmpty: Bool { _count == 0 }
 
-    init() {}
+    public init() {}
 
     /// Ensure `root` is uniquely referenced. If not, deep-copy the entire
     /// node tree so that subsequent mutations do not affect other Trie copies.
@@ -71,7 +71,7 @@ struct Trie<Key: Hashable, Value> {
 
     /// Return the value stored at exactly this key, or nil if no value exists at this node.
     /// Unlike search(prefix:), this does NOT traverse into child nodes.
-    func get(key: [Key]) -> Value? {
+    public func get(key: [Key]) -> Value? {
         var node = root
         for element in key {
             guard let child = node.children[element] else { return nil }
@@ -82,7 +82,7 @@ struct Trie<Key: Hashable, Value> {
 
     /// Search for all values whose keys start with the given prefix.
     /// Returns results in depth-first order.
-    func search(prefix: [Key]) -> [Value] {
+    public func search(prefix: [Key]) -> [Value] {
         // Walk to the node corresponding to the prefix
         var node = root
         for element in prefix {

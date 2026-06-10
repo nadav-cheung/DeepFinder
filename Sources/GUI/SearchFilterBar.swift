@@ -1,4 +1,10 @@
 import SwiftUI
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - FilterType
 
@@ -6,7 +12,7 @@ import SwiftUI
 ///
 /// REQ-3.2-35: Pill-style filter bar with SF Symbol icons and Chinese labels.
 /// Each type maps to a search syntax expression for filtering by file extension or type.
-enum FilterType: String, CaseIterable, Identifiable, Sendable {
+public enum FilterType: String, CaseIterable, Identifiable, Sendable {
     case documents
     case images
     case code
@@ -14,10 +20,10 @@ enum FilterType: String, CaseIterable, Identifiable, Sendable {
     case audio
     case directories
 
-    var id: String { rawValue }
+    public var id: String { rawValue }
 
     /// SF Symbol name for the filter icon.
-    var systemImage: String {
+    public var systemImage: String {
         switch self {
         case .documents:  return "doc.fill"
         case .images:     return "photo.fill"
@@ -29,7 +35,7 @@ enum FilterType: String, CaseIterable, Identifiable, Sendable {
     }
 
     /// Display label in Chinese.
-    var label: String {
+    public var label: String {
         switch self {
         case .documents:  return "文档"
         case .images:     return "图片"
@@ -41,7 +47,7 @@ enum FilterType: String, CaseIterable, Identifiable, Sendable {
     }
 
     /// Search syntax string for this filter (e.g. "ext:pdf,doc,docx").
-    func filterSyntax() -> String {
+    public func filterSyntax() -> String {
         switch self {
         case .documents:
             return "ext:pdf,doc,docx,txt,rtf,pages,md"
@@ -64,9 +70,9 @@ enum FilterType: String, CaseIterable, Identifiable, Sendable {
 /// A single filter pill view used inside SearchFilterBar.
 ///
 /// Not intended for standalone use — rendered by `SearchFilterBar`.
-struct FilterPill: Identifiable {
-    let type: FilterType
-    var id: String { type.rawValue }
+public struct FilterPill: Identifiable {
+    public let type: FilterType
+    public var id: String { type.rawValue }
 }
 
 // MARK: - SearchFilterBar
@@ -76,7 +82,7 @@ struct FilterPill: Identifiable {
 /// REQ-3.2-35: ScrollView(.horizontal) with capsule-shaped pills. Active pills
 /// use `.tint` background, inactive use `.quaternary`. Tapping toggles membership
 /// in the `activeFilters` set. Each pill shows an SF Symbol icon + Chinese label.
-struct SearchFilterBar: View {
+public struct SearchFilterBar: View {
 
     /// Currently active filters, bound to the parent view.
     @Binding var activeFilters: Set<FilterType>
@@ -84,7 +90,7 @@ struct SearchFilterBar: View {
     /// All available filter pills.
     private let pills = FilterType.allCases.map { FilterPill(type: $0) }
 
-    var body: some View {
+    public var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 6) {
                 ForEach(pills) { pill in
@@ -119,13 +125,13 @@ struct SearchFilterBar: View {
 
 /// Individual pill button with hover state tracking.
 private struct FilterPillButton: View {
-    let type: FilterType
-    let isActive: Bool
-    let toggle: () -> Void
+    public let type: FilterType
+    public let isActive: Bool
+    public let toggle: () -> Void
 
     @State private var isHovered = false
 
-    var body: some View {
+    public var body: some View {
         Button(action: toggle) {
             HStack(spacing: 4) {
                 Image(systemName: type.systemImage)

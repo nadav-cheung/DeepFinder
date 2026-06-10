@@ -1,4 +1,9 @@
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderServices
 
 // MARK: - ConfigCommandRunner
 
@@ -6,7 +11,7 @@ import Foundation
 ///
 /// All operations delegate to the daemon via IPC (configGet/configSet).
 /// The runner formats output for display and returns exit codes.
-struct ConfigCommandRunner {
+public struct ConfigCommandRunner {
 
     // MARK: - get
 
@@ -17,7 +22,7 @@ struct ConfigCommandRunner {
     ///   - client: IPC client for daemon communication.
     ///   - output: Output writer for display.
     /// - Returns: Exit code (0 = success, non-zero = error).
-    static func get(
+    public static func get(
         key: String,
         client: any IPCClientProtocol,
         output: any CLIOutputWriter
@@ -57,7 +62,7 @@ struct ConfigCommandRunner {
     ///   - client: IPC client for daemon communication.
     ///   - output: Output writer for display.
     /// - Returns: Exit code (0 = success, non-zero = error).
-    static func set(
+    public static func set(
         key: String,
         value: String,
         client: any IPCClientProtocol,
@@ -95,7 +100,7 @@ struct ConfigCommandRunner {
     ///   - client: IPC client for daemon communication.
     ///   - output: Output writer for display.
     /// - Returns: Exit code (0 = success, non-zero = error).
-    static func list(
+    public static func list(
         client: any IPCClientProtocol,
         output: any CLIOutputWriter
     ) async -> Int32 {
@@ -142,7 +147,7 @@ struct ConfigCommandRunner {
     ///   - output: Output writer for display.
     ///   - confirm: If `true`, skip the confirmation prompt (for testing).
     /// - Returns: Exit code (0 = success, non-zero = error).
-    static func reset(
+    public static func reset(
         client: any IPCClientProtocol,
         output: any CLIOutputWriter,
         confirm: Bool = false

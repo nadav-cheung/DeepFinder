@@ -1,10 +1,11 @@
 import Foundation
 import CryptoKit
+import DeepFinderIndex
 
 // MARK: - PathEncryption Errors
 
 /// Errors thrown by ``PathEncryption`` during encrypt/decrypt operations.
-enum PathEncryptionError: Error, CustomStringConvertible {
+public enum PathEncryptionError: Error, CustomStringConvertible {
     case keyReadFailed
     case keyWriteFailed(Error)
     case keyInvalid
@@ -14,7 +15,7 @@ enum PathEncryptionError: Error, CustomStringConvertible {
     case decryptionFailed(Error)
     case invalidCiphertext
 
-    var description: String {
+    public var description: String {
         switch self {
         case .keyReadFailed:
             return "Failed to read encryption key from secrets store"
@@ -67,7 +68,7 @@ enum PathEncryptionError: Error, CustomStringConvertible {
 /// accelerated on Apple Silicon). The struct is `Sendable`.
 ///
 /// REQ-3.0-18: Path encryption at the persistence layer.
-struct PathEncryption: Sendable {
+public struct PathEncryption: Sendable {
 
     /// Secrets file key used to store the AES-256 key.
     private static let secretsKey = "path_encryption_key_v1"
@@ -87,7 +88,7 @@ struct PathEncryption: Sendable {
     /// - Parameter secretsStore: The secrets store to use. Defaults to the standard
     ///   secrets file (`~/.deep-finder/.env`).
     /// - Throws: ``PathEncryptionError`` if the key cannot be loaded or created.
-    init(secretsStore: SecretsStore = SecretsStore()) throws {
+    public init(secretsStore: SecretsStore = SecretsStore()) throws {
         self.secretsStore = secretsStore
         self.symmetricKey = try Self.loadOrCreateKey(using: secretsStore)
     }
@@ -101,7 +102,7 @@ struct PathEncryption: Sendable {
     /// - Parameter plaintext: The plaintext string to encrypt.
     /// - Returns: A Base64-encoded string containing nonce + ciphertext + tag.
     /// - Throws: ``PathEncryptionError`` if encryption fails.
-    func encrypt(_ plaintext: String) throws -> String {
+    public func encrypt(_ plaintext: String) throws -> String {
         guard let data = plaintext.data(using: .utf8) else {
             throw PathEncryptionError.encodingFailed
         }
@@ -128,7 +129,7 @@ struct PathEncryption: Sendable {
     ///   (nonce + ciphertext + tag).
     /// - Returns: The original plaintext string.
     /// - Throws: ``PathEncryptionError`` if decryption fails or the ciphertext is malformed.
-    func decrypt(_ encrypted: String) throws -> String {
+    public func decrypt(_ encrypted: String) throws -> String {
         guard let combined = Data(base64Encoded: encrypted) else {
             throw PathEncryptionError.decodingFailed
         }
@@ -169,7 +170,7 @@ struct PathEncryption: Sendable {
     /// encryption key — only checks structural validity.
     ///
     /// Used during migration to detect whether paths are already encrypted.
-    static func looksEncrypted(_ value: String) -> Bool {
+    public static func looksEncrypted(_ value: String) -> Bool {
         guard let data = Data(base64Encoded: value), data.count >= 28 else {
             return false
         }

@@ -4,6 +4,9 @@
 /// SSELineSequence parses Server-Sent Events response bodies into individual lines
 /// consumed by OpenAI-compatible providers.
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderPersist
 
 // MARK: - HTTPClient
 
@@ -16,7 +19,7 @@ import Foundation
 /// body is constructed by `OpenAICompatibleProvider` and contains only metadata from
 /// ``AIContext``/``FileMetadataSummary`` -- never file contents. See the module-level
 /// documentation in `AIModelProvider.swift` for the full privacy model.
-protocol HTTPClient: Sendable {
+public protocol HTTPClient: Sendable {
     /// Perform an HTTP request and return the raw response.
     func perform(_ request: URLRequest) async throws -> HTTPClientResponse
     /// Timeout interval for each request, in seconds.
@@ -26,15 +29,15 @@ protocol HTTPClient: Sendable {
 // MARK: - HTTPClientResponse
 
 /// The response from an HTTP request, abstracting `URLResponse` for testability.
-struct HTTPClientResponse: Sendable {
+public struct HTTPClientResponse: Sendable {
     /// HTTP status code (e.g. 200, 429).
-    let statusCode: Int
+    public let statusCode: Int
     /// Raw body data.
-    let data: Data
+    public let data: Data
     /// Response headers.
-    let headers: [String: String]
+    public let headers: [String: String]
 
-    init(statusCode: Int, data: Data, headers: [String: String] = [:]) {
+    public init(statusCode: Int, data: Data, headers: [String: String] = [:]) {
         self.statusCode = statusCode
         self.data = data
         self.headers = headers
@@ -44,16 +47,16 @@ struct HTTPClientResponse: Sendable {
 // MARK: - URLSessionHTTPClient
 
 /// Production HTTP client backed by `URLSession`.
-struct URLSessionHTTPClient: HTTPClient {
-    let requestTimeout: TimeInterval
+public struct URLSessionHTTPClient: HTTPClient {
+    public let requestTimeout: TimeInterval
     private let session: URLSession
 
-    init(timeout: TimeInterval = Constants.AI.requestTimeout, session: URLSession = .shared) {
+    public init(timeout: TimeInterval = Constants.AI.requestTimeout, session: URLSession = .shared) {
         self.requestTimeout = timeout
         self.session = session
     }
 
-    func perform(_ request: URLRequest) async throws -> HTTPClientResponse {
+    public func perform(_ request: URLRequest) async throws -> HTTPClientResponse {
         var req = request
         req.timeoutInterval = requestTimeout
         let (data, response) = try await session.data(for: req)
@@ -80,15 +83,15 @@ struct URLSessionHTTPClient: HTTPClient {
 /// (`OpenAICompatibleProvider.complete()`). Lines that fail JSON parsing in
 /// `parseContentDelta` are also silently skipped, so transient API glitches
 /// (e.g., incomplete JSON due to network buffering) don't crash the stream.
-struct SSELineSequence: AsyncSequence, Sendable {
-    typealias Element = String
-    let data: Data
+public struct SSELineSequence: AsyncSequence, Sendable {
+    public typealias Element = String
+    public let data: Data
 
-    struct AsyncIterator: AsyncIteratorProtocol {
-        let data: Data
-        var offset: Data.Index = 0
+    public struct AsyncIterator: AsyncIteratorProtocol {
+        public let data: Data
+        public var offset: Data.Index = 0
 
-        mutating func next() async -> String? {
+        public mutating func next() async -> String? {
             // Scan for "data: " prefix lines
             while offset < data.endIndex {
                 // Find next newline
@@ -114,7 +117,7 @@ struct SSELineSequence: AsyncSequence, Sendable {
         }
     }
 
-    func makeAsyncIterator() -> AsyncIterator {
+    public func makeAsyncIterator() -> AsyncIterator {
         AsyncIterator(data: data)
     }
 }

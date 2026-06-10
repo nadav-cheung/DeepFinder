@@ -1,15 +1,21 @@
 import SwiftUI
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - PermissionStep
 
 /// Steps in the permission guide flow.
-enum PermissionStep: Int, CaseIterable, Sendable {
+public enum PermissionStep: Int, CaseIterable, Sendable {
     case welcome
     case fda
     case accessibility
     case complete
 
-    var isLast: Bool { self == .complete }
+    public var isLast: Bool { self == .complete }
 }
 
 // MARK: - PermissionGuideView
@@ -25,7 +31,7 @@ enum PermissionStep: Int, CaseIterable, Sendable {
 /// Wrapped in `GlassEffectContainer` for visual consistency with the main search panel.
 /// Each step uses `GlowColors` brand colors for icons. Real-time permission status
 /// updates via `PermissionChecker` polling.
-struct PermissionGuideView: View {
+public struct PermissionGuideView: View {
 
     @State private var step: PermissionStep = .welcome
     @State private var fdaGranted: Bool = false
@@ -37,21 +43,21 @@ struct PermissionGuideView: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Called when the flow completes (all steps done or skipped).
-    var onComplete: () -> Void = {}
+    public var onComplete: () -> Void = {}
 
     // MARK: - Design Tokens
 
     private enum Design {
-        static let iconSize: CGFloat = 40
-        static let stepSpacing: CGFloat = 20
-        static let buttonHeight: CGFloat = 44
-        static let cornerRadius: CGFloat = 16
-        static let statusBadgePadding: CGFloat = 6
+        public static let iconSize: CGFloat = 40
+        public static let stepSpacing: CGFloat = 20
+        public static let buttonHeight: CGFloat = 44
+        public static let cornerRadius: CGFloat = 16
+        public static let statusBadgePadding: CGFloat = 6
     }
 
     // MARK: - Body
 
-    var body: some View {
+    public var body: some View {
         GlassEffectContainer(cornerRadius: 24, glowActive: false) {
             VStack(spacing: Design.stepSpacing) {
                 Spacer().frame(height: 8)

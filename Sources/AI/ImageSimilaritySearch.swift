@@ -6,25 +6,28 @@
 import Foundation
 import Vision
 import OSLog
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderPersist
 
 private let logger = Logger(subsystem: Product.aiSubsystem, category: "image-similarity")
 
 /// A feature vector extracted from an image by the Vision framework.
 ///
 /// REQ-3.0-11: Stores the raw feature print data for later similarity comparison.
-struct ImageFeatureVector: Sendable, Equatable {
+public struct ImageFeatureVector: Sendable, Equatable {
     /// Raw feature data (array of Float32 values encoded as bytes).
-    let data: Data
+    public let data: Data
     /// The FileRecord ID this vector was extracted from.
-    let fileID: UInt32
+    public let fileID: UInt32
 }
 
 /// A similarity search result pairing a file ID with its similarity score.
-struct SimilarityResult: Sendable, Equatable {
+public struct SimilarityResult: Sendable, Equatable {
     /// The FileRecord ID of the matching image.
-    let fileID: UInt32
+    public let fileID: UInt32
     /// Cosine similarity score in range [0.0, 1.0].
-    let similarity: Double
+    public let similarity: Double
 }
 
 /// Extracts feature vectors from images and finds visually similar images.
@@ -40,12 +43,12 @@ struct SimilarityResult: Sendable, Equatable {
 /// - `cosineSimilarity()` returns 0.0 for empty or zero-magnitude vectors
 ///
 /// REQ-3.0-11: Image similarity search via on-device embeddings.
-struct ImageSimilaritySearch: Sendable {
+public struct ImageSimilaritySearch: Sendable {
 
     /// Minimum similarity score (0-1) for a result to be included.
     /// Filters out noise from unrelated images. Tuned for Vision feature prints,
     /// which typically produce scores in [0.0, 1.0] for similar images.
-    static let similarityThreshold: Double = 0.1
+    public static let similarityThreshold: Double = 0.1
 
     // MARK: - Feature Extraction
 
@@ -55,7 +58,7 @@ struct ImageSimilaritySearch: Sendable {
     ///
     /// - Parameter url: File URL of the image to analyze.
     /// - Returns: Feature data bytes, or `nil` if extraction fails.
-    func extractFeatureVector(from url: URL) async -> Data? {
+    public func extractFeatureVector(from url: URL) async -> Data? {
         guard FileManager.default.fileExists(atPath: url.path) else {
             return nil
         }
@@ -96,7 +99,7 @@ struct ImageSimilaritySearch: Sendable {
     ///   - b: Second feature vector data.
     /// - Returns: Cosine similarity in range [-1.0, 1.0] (typically [0.0, 1.0]
     ///   for Vision feature prints).
-    func cosineSimilarity(_ a: Data, _ b: Data) -> Double {
+    public func cosineSimilarity(_ a: Data, _ b: Data) -> Double {
         let stride = MemoryLayout<Float>.stride
         let count = min(a.count / stride, b.count / stride)
         guard count > 0 else { return 0.0 }
@@ -140,7 +143,7 @@ struct ImageSimilaritySearch: Sendable {
     ///   - candidates: Array of indexed image feature vectors to search against.
     ///   - topK: Maximum number of results to return (default 20).
     /// - Returns: Similarity results sorted by similarity descending.
-    func findSimilar(
+    public func findSimilar(
         queryVector: Data,
         candidates: [ImageFeatureVector],
         topK: Int = 20

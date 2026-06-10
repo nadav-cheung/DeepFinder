@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import DeepFinder
+@testable import DeepFinderAI
 
 @Suite("AnthropicProvider")
 struct AnthropicProviderTests {

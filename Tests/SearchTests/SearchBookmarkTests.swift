@@ -1,6 +1,6 @@
 import Foundation
 import Testing
-@testable import DeepFinder
+@testable import DeepFinderSearch
 
 @Suite("SearchBookmark")
 struct SearchBookmarkTests {

@@ -1,6 +1,12 @@
 import SwiftUI
 import AppKit
 import Speech
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - SearchPanelView
 
@@ -22,7 +28,7 @@ import Speech
 /// - REQ-3.2-19: Panel open/close spring animation (in hosting controller).
 /// - REQ-3.2-20: Focus glow on search bar border.
 /// - REQ-3.2-29: Tab autocomplete from selected result.
-struct SearchPanelView: View {
+public struct SearchPanelView: View {
 
     @ObservedObject var viewModel: SearchViewModel
     @State private var resultsListState = ResultsListState()
@@ -30,7 +36,7 @@ struct SearchPanelView: View {
     // MARK: - REQ-3.2-01: Dynamic Placeholder
 
     /// Candidate placeholder strings, rotated on each panel open.
-    static let placeholders = [
+    public static let placeholders = [
         "搜索文件、文件夹...",
         "今天想找什么？",
         "输入关键词开始搜索...",
@@ -78,7 +84,7 @@ struct SearchPanelView: View {
 
     // MARK: - Body
 
-    var body: some View {
+    public var body: some View {
         GlassEffectContainer(
             intensity: .regular,
             cornerRadius: 24,
@@ -589,14 +595,14 @@ struct SearchPanelView: View {
 /// Used by both `daemonDisconnectedView` and `searchErrorView` to avoid
 /// duplicating the layout, animation, and retry button structure.
 private struct ErrorStateCard: View {
-    let icon: String
-    let iconColor: Color
-    let title: String
-    let subtitle: String
-    let iconAppeared: Bool
-    let retryAction: (() -> Void)?
+    public let icon: String
+    public let iconColor: Color
+    public let title: String
+    public let subtitle: String
+    public let iconAppeared: Bool
+    public let retryAction: (() -> Void)?
 
-    var body: some View {
+    public var body: some View {
         VStack(spacing: 12) {
             Image(systemName: icon)
                 .font(.system(size: 24))
@@ -638,18 +644,18 @@ private struct ErrorStateCard: View {
 private final class SpeechOverlayActionsHandler: SpeechOverlayActions, @unchecked Sendable {
     private let viewModel: SearchViewModel
 
-    init(viewModel: SearchViewModel) {
+    public init(viewModel: SearchViewModel) {
         self.viewModel = viewModel
     }
 
-    func triggerSearch(_ query: String) async {
+    public func triggerSearch(_ query: String) async {
         await MainActor.run {
             viewModel.searchText = query
             Task { await viewModel.search() }
         }
     }
 
-    func dismissOverlay() {
+    public func dismissOverlay() {
         // No-op: the overlay dismiss is handled by the view's state.
     }
 }

@@ -28,6 +28,9 @@
 /// All vectors are stored on-device. Vector search never involves network calls
 /// or cloud APIs, regardless of which ``EmbeddingProvider`` generated the vectors.
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderPersist
 
 /// Protocol for storing and searching dense vectors (embeddings).
 ///
@@ -40,7 +43,7 @@ import Foundation
 ///
 /// Conforms to `Sendable` for Swift 6 strict concurrency safety.
 /// Implementations should use actor isolation or locking for thread-safe storage.
-protocol VectorStore: Sendable {
+public protocol VectorStore: Sendable {
     /// Insert or update a vector for the given file ID.
     ///
     /// If a vector already exists for this ID, it is replaced.

@@ -1,5 +1,10 @@
 import Testing
-@testable import DeepFinder
+import DeepFinderIndex
+import DeepFinderSearch
+import Speech
+import DeepFinderAI
+import DeepFinderDaemon
+@testable import DeepFinderGUILib
 
 @Suite("SpeechOverlayView")
 @MainActor

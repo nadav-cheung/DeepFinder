@@ -1,13 +1,19 @@
 import SwiftUI
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - ToastItem
 
 /// Data model for a single toast notification.
-struct ToastItem: Identifiable, Equatable {
-    let message: String
-    let id: UUID
+public struct ToastItem: Identifiable, Equatable {
+    public let message: String
+    public let id: UUID
 
-    init(message: String, id: UUID = UUID()) {
+    public init(message: String, id: UUID = UUID()) {
         self.message = message
         self.id = id
     }
@@ -22,7 +28,7 @@ struct ToastItem: Identifiable, Equatable {
 /// and medium-weight 12pt text. It transitions in from the top edge with a
 /// spring animation (subtle scale + opacity) and dismisses itself after
 /// 1.5 seconds.
-struct ToastOverlay: ViewModifier {
+public struct ToastOverlay: ViewModifier {
 
     /// The current toast to display. Set to `nil` to dismiss.
     @Binding var item: ToastItem?
@@ -32,12 +38,12 @@ struct ToastOverlay: ViewModifier {
 
     @State private var dismissTask: Task<Void, Never>?
 
-    init(item: Binding<ToastItem?>, displayDuration: Double = 1.5) {
+    public init(item: Binding<ToastItem?>, displayDuration: Double = 1.5) {
         self._item = item
         self.displayDuration = displayDuration
     }
 
-    func body(content: Content) -> some View {
+    public func body(content: Content) -> some View {
         content
             .overlay(alignment: .top) {
                 if let item {
@@ -86,14 +92,14 @@ struct ToastOverlay: ViewModifier {
 
 /// Convenience modifier that manages its own `@State` toast item,
 /// so callers only need to set the message.
-struct ToastModifier: ViewModifier {
+public struct ToastModifier: ViewModifier {
 
     /// Set to a non-nil message to present a toast.
     @Binding var message: String?
 
     @State private var item: ToastItem?
 
-    func body(content: Content) -> some View {
+    public func body(content: Content) -> some View {
         content
             .onChange(of: message) { _, newValue in
                 if let newValue {
@@ -118,7 +124,7 @@ extension View {
     ///
     /// - Parameter message: Binding to an optional message string.
     /// - Returns: A view with toast overlay capability.
-    func showToast(_ message: Binding<String?>) -> some View {
+    public func showToast(_ message: Binding<String?>) -> some View {
         modifier(ToastModifier(message: message))
     }
 }

@@ -1,5 +1,11 @@
 import SwiftUI
 import AppKit
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - ResultsListView
 
@@ -23,7 +29,7 @@ import AppKit
 /// REQ-3.2-31: Cmd+K action panel.
 /// REQ-3.2-34: EmptyStateView for zero results.
 /// REQ-3.2-36: stable results on rapid input.
-struct ResultsListView: View {
+public struct ResultsListView: View {
 
     @Bindable var state: ResultsListState
     @FocusState private var isFocused: Bool
@@ -32,10 +38,10 @@ struct ResultsListView: View {
     // MARK: - Callbacks
 
     /// Called when the user activates a file (Enter key).
-    var onOpen: (SearchResult) -> Void = { _ in }
+    public var onOpen: (SearchResult) -> Void = { _ in }
 
     /// Called when the user reveals a file in Finder (Cmd+Enter).
-    var onReveal: (SearchResult) -> Void = { _ in }
+    public var onReveal: (SearchResult) -> Void = { _ in }
 
     // MARK: - Panel State
 
@@ -78,7 +84,7 @@ struct ResultsListView: View {
 
     // MARK: - Body
 
-    var body: some View {
+    public var body: some View {
         ZStack {
             mainContent
 
@@ -582,7 +588,7 @@ struct ResultsListView: View {
 private struct ExtendedKeyboardHandlers: ViewModifier {
     fileprivate let view: ResultsListView
 
-    func body(content: Content) -> some View {
+    public func body(content: Content) -> some View {
         content
             // Arrow keys — check modifiers on the KeyPress event.
             .onKeyPress(.upArrow, phases: .down) { press in

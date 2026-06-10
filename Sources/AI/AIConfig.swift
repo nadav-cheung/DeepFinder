@@ -4,6 +4,9 @@
 /// accessors used throughout the AI module. API keys are migrated from plaintext
 /// config into SecretsStore on first read.
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderPersist
 
 // MARK: - AIConfigKey
 
@@ -12,7 +15,7 @@ import Foundation
 /// These map to the CLI config system:
 ///   `deepfinder config set ai.<key> <value>`
 ///   `deepfinder config get ai.<key>`
-enum AIConfigKey: String, CaseIterable {
+public enum AIConfigKey: String, CaseIterable {
     case enabled
     case model
     case sendMetadata
@@ -43,7 +46,7 @@ enum AIConfigKey: String, CaseIterable {
 /// deepfinder config set ai.apiKey sk-...
 /// ```
 /// Local-only features (vision, speech) default to enabled since they never leave the device.
-struct AIConfig: Sendable {
+public struct AIConfig: Sendable {
     /// Default values for all AI config keys.
     ///
     /// - `ai.enabled`: `"false"` -- master switch, must be explicitly enabled
@@ -52,7 +55,7 @@ struct AIConfig: Sendable {
     /// - `ai.pathAnonymization`: `"true"` -- paths anonymized by default for privacy
     /// - `ai.localVision`: `"true"` -- on-device vision analysis enabled (no network)
     /// - `ai.apiKey`: `""` -- empty until user provides one
-    static let defaults: [String: String] = [
+    public static let defaults: [String: String] = [
         "ai.enabled": "false",
         "ai.model": "off",
         "ai.sendMetadata": "false",
@@ -68,12 +71,12 @@ struct AIConfig: Sendable {
     ]
 
     /// Check whether AI is enabled in the given config dictionary.
-    static func isEnabled(config: [String: String]) -> Bool {
+    public static func isEnabled(config: [String: String]) -> Bool {
         config["ai.enabled"] == "true"
     }
 
     /// Get the configured model name, or "off" if not set.
-    static func modelName(config: [String: String]) -> String {
+    public static func modelName(config: [String: String]) -> String {
         config["ai.model"] ?? "off"
     }
 
@@ -83,7 +86,7 @@ struct AIConfig: Sendable {
     /// When a secrets file value is found, any stale plaintext entry in the config
     /// dictionary is cleaned up by calling the removal callback. The caller is
     /// responsible for persisting the updated config.
-    static func getAPIKey(
+    public static func getAPIKey(
         config: [String: String],
         secretsStore: SecretsStore = SecretsStore(),
         onPlaintextCleanup: ((String) -> Void)? = nil
@@ -100,7 +103,7 @@ struct AIConfig: Sendable {
 
     /// Save the API key to secrets file and remove any plaintext copy from the
     /// config dictionary via the removal callback.
-    static func saveAPIKey(
+    public static func saveAPIKey(
         _ value: String,
         secretsStore: SecretsStore = SecretsStore(),
         onPlaintextCleanup: ((String) -> Void)? = nil
@@ -112,7 +115,7 @@ struct AIConfig: Sendable {
 
     /// Generate a JSON sample showing what data would be sent to AI providers.
     /// Used by `deepfinder config get ai.data_preview` (REQ-3.0-02/15).
-    static func dataPreview() -> String {
+    public static func dataPreview() -> String {
         let sample = FileMetadataSummary(
             name: "example.pdf",
             path: "~/Documents/example.pdf",
@@ -129,33 +132,33 @@ struct AIConfig: Sendable {
     }
 
     /// Get the configured embedding model name, or "nlcontextual" if not set.
-    static func embeddingModelName(config: [String: String]) -> String {
+    public static func embeddingModelName(config: [String: String]) -> String {
         config["ai.embeddingModel"] ?? "nlcontextual"
     }
 
     /// Get the AI cache TTL in seconds, clamped to [60, 3600]. Default: 300.
-    static func cacheTTL(config: [String: String]) -> Int {
+    public static func cacheTTL(config: [String: String]) -> Int {
         let raw = Int(config["ai.cacheTTL"] ?? "300") ?? 300
         return min(3600, max(60, raw))
     }
 
     /// Check whether cloud fallback is enabled. Defaults to true.
-    static func cloudFallbackEnabled(config: [String: String]) -> Bool {
+    public static func cloudFallbackEnabled(config: [String: String]) -> Bool {
         config["ai.cloudFallback"] != "false"
     }
 
     /// Get the custom cloud endpoint URL, or empty string if not configured.
-    static func customEndpoint(config: [String: String]) -> String {
+    public static func customEndpoint(config: [String: String]) -> String {
         config["ai.customEndpoint"] ?? ""
     }
 
     /// Get the custom model name override, or empty string if not configured.
-    static func customModelName(config: [String: String]) -> String {
+    public static func customModelName(config: [String: String]) -> String {
         config["ai.customModelName"] ?? ""
     }
 
     /// Get the custom API key, or empty string if not configured.
-    static func customAPIKey(config: [String: String]) -> String {
+    public static func customAPIKey(config: [String: String]) -> String {
         config["ai.customAPIKey"] ?? ""
     }
 }

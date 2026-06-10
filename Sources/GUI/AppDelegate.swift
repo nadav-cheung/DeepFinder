@@ -1,6 +1,13 @@
 import AppKit
 import Foundation
 import OSLog
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
+import DeepFinderServices
 
 // MARK: - Notification Names
 
@@ -10,9 +17,9 @@ import OSLog
 /// to signal each other without direct references.
 extension Notification.Name {
     /// Toggle the search panel visibility.
-    static let toggleSearchPanel = Notification.Name("\(Product.identifier).toggleSearchPanel")
+    public static let toggleSearchPanel = Notification.Name("\(Product.identifier).toggleSearchPanel")
     /// Show the settings window.
-    static let showSettings = Notification.Name("\(Product.identifier).showSettings")
+    public static let showSettings = Notification.Name("\(Product.identifier).showSettings")
 }
 
 // MARK: - DaemonSpawner
@@ -33,14 +40,14 @@ public protocol DaemonSpawner: Sendable {
 /// spawner. Production creates a `DeepFinderAppConfiguration` with real components.
 public struct DeepFinderAppConfiguration: Sendable {
     /// Key combination for the global hotkey. Default: Ctrl+Cmd+K.
-    var hotkeyCombination: KeyCombination = GlobalHotkey.defaultKeyCombination
+    public var hotkeyCombination: KeyCombination = GlobalHotkey.defaultKeyCombination
 
     /// Factory closure that creates a `DaemonSpawner`. Called once during launch.
-    var daemonSpawnerFactory: @Sendable () -> any DaemonSpawner
+    public var daemonSpawnerFactory: @Sendable () -> any DaemonSpawner
 
     /// Factory closure that creates a `StatusBarController` with wired callbacks.
     /// Parameters: show, hide, settings, quit closures.
-    var statusBarControllerFactory: @MainActor @Sendable (
+    public var statusBarControllerFactory: @MainActor @Sendable (
         _ onShow: @escaping () -> Void,
         _ onHide: @escaping () -> Void,
         _ onSettings: @escaping () -> Void,
@@ -48,13 +55,13 @@ public struct DeepFinderAppConfiguration: Sendable {
     ) -> StatusBarController
 
     /// Factory closure that creates a `SearchPanelHostingController`.
-    var searchPanelFactory: @MainActor @Sendable () -> SearchPanelHostingController
+    public var searchPanelFactory: @MainActor @Sendable () -> SearchPanelHostingController
 
     /// Factory closure that creates a settings `NSWindow`.
-    var settingsWindowFactory: @MainActor @Sendable () -> NSWindow
+    public var settingsWindowFactory: @MainActor @Sendable () -> NSWindow
 
     /// Whether to auto-spawn the daemon on launch. Default: true.
-    var autoSpawnDaemon: Bool = true
+    public var autoSpawnDaemon: Bool = true
 }
 
 // MARK: - DeepFinderAppDelegate
@@ -224,24 +231,24 @@ public final class DeepFinderAppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Actions
 
     /// Toggle search panel visibility.
-    func toggleSearchPanel() {
+    public func toggleSearchPanel() {
         NSApp?.activate(ignoringOtherApps: true)
         searchPanelController?.toggle()
     }
 
     /// Show the search panel.
-    func showSearchPanel() {
+    public func showSearchPanel() {
         NSApp?.activate(ignoringOtherApps: true)
         searchPanelController?.show()
     }
 
     /// Hide the search panel.
-    func hideSearchPanel() {
+    public func hideSearchPanel() {
         searchPanelController?.hide()
     }
 
     /// Show the settings window (creates on first call, reuses after).
-    func showSettingsWindow() {
+    public func showSettingsWindow() {
         NSApp?.activate(ignoringOtherApps: true)
         if settingsWindow == nil {
             settingsWindow = configuration.settingsWindowFactory()
@@ -250,7 +257,7 @@ public final class DeepFinderAppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Called when the user clicks "Quit" from the status bar menu.
-    func requestQuit() {
+    public func requestQuit() {
         logger.info("requestQuit — user requested termination")
         NSApp?.terminate(nil)
     }
@@ -261,7 +268,7 @@ public final class DeepFinderAppDelegate: NSObject, NSApplicationDelegate {
     ///
     /// If the URL is a valid search URL, the search panel is shown and the query
     /// is executed. Invalid/unrecognized URLs are logged and ignored.
-    func handleURL(_ url: URL) {
+    public func handleURL(_ url: URL) {
         guard let searchURL = SearchURL.parse(url) else {
             logger.warning("Unrecognized URL scheme event: \(url.absoluteString, privacy: .public)")
             return
@@ -338,7 +345,7 @@ extension DeepFinderAppConfiguration {
 
 /// Production `DaemonSpawner` that delegates to `IPCClient.ensureDaemonRunning()`.
 private final class DaemonSpawnerViaIPCClient: DaemonSpawner {
-    func ensureDaemonRunning() async throws {
+    public func ensureDaemonRunning() async throws {
         let client = IPCClient(socketPath: Product.socketPath)
         try await client.ensureDaemonRunning()
     }
@@ -354,11 +361,11 @@ private final class IPCSettingsConfigProvider: SettingsConfigProvider {
     private let ipcClient: IPCClient
     private let logger = Logger(subsystem: Product.daemonSubsystem, category: "settings-ipc")
 
-    init(ipcClient: IPCClient) {
+    public init(ipcClient: IPCClient) {
         self.ipcClient = ipcClient
     }
 
-    func getExcludedPaths() async -> [String] {
+    public func getExcludedPaths() async -> [String] {
         do {
             let response = try await ipcClient.send(.configGet(key: "excludedPaths"))
             if case .results(let results, _) = response {
@@ -370,7 +377,7 @@ private final class IPCSettingsConfigProvider: SettingsConfigProvider {
         return []
     }
 
-    func addExcludedPath(_ path: String) async {
+    public func addExcludedPath(_ path: String) async {
         do {
             _ = try await ipcClient.send(.configSet(key: "addExcludedPath", value: path))
         } catch {
@@ -378,7 +385,7 @@ private final class IPCSettingsConfigProvider: SettingsConfigProvider {
         }
     }
 
-    func removeExcludedPath(_ path: String) async {
+    public func removeExcludedPath(_ path: String) async {
         do {
             _ = try await ipcClient.send(.configSet(key: "removeExcludedPath", value: path))
         } catch {
@@ -386,7 +393,7 @@ private final class IPCSettingsConfigProvider: SettingsConfigProvider {
         }
     }
 
-    func getIndexStats() async -> SettingsIndexStats {
+    public func getIndexStats() async -> SettingsIndexStats {
         do {
             let response = try await ipcClient.send(.indexStatus)
             if case .indexStatus(let s) = response {
@@ -402,7 +409,7 @@ private final class IPCSettingsConfigProvider: SettingsConfigProvider {
         return SettingsIndexStats(state: "unknown", filesIndexed: 0, lastScanDate: nil)
     }
 
-    func triggerRebuildIndex() async {
+    public func triggerRebuildIndex() async {
         do {
             _ = try await ipcClient.send(.configSet(key: "rebuildIndex", value: "true"))
         } catch {

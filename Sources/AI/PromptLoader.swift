@@ -1,4 +1,7 @@
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderPersist
 
 /// Loads externalized system prompts from the app bundle.
 ///
@@ -7,12 +10,12 @@ import Foundation
 ///
 /// Fallback: if a prompt file cannot be loaded, callers should use
 /// their inline default prompt string.
-struct PromptLoader: Sendable {
+public struct PromptLoader: Sendable {
 
     /// Load a prompt by logical name (without .txt extension).
     ///
     /// Returns the prompt content, or nil if not found.
-    static func load(name: String) -> String? {
+    public static func load(name: String) -> String? {
         // Search main bundle and module bundle (for tests)
         let bundles = [Bundle.main]
         for bundle in bundles {

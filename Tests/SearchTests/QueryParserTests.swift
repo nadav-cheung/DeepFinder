@@ -1,7 +1,7 @@
 import Testing
 import Foundation
 
-@testable import DeepFinder
+@testable import DeepFinderSearch
 
 // MARK: - QueryParser Tests
 

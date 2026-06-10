@@ -1,6 +1,8 @@
 import Foundation
 import Testing
-@testable import DeepFinder
+import DeepFinderIndex
+import DeepFinderSearch
+@testable import DeepFinderServices
 
 @Suite("HTTPSearchService")
 struct HTTPSearchServiceTests {

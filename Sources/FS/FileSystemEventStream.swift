@@ -1,11 +1,13 @@
 import Foundation
+import DeepFinderIndex
+import DeepFinderPersist
 
 /// Semantic file system event types, abstracting away raw FSEventStreamEventFlags.
 ///
 /// These map to the corresponding `kFSEventStreamEventFlagItem*` flags from the
 /// macOS FSEvents API, but with clearer naming. Multiple events can occur in a
 /// single coalesced notification (e.g. a file can be both created and modified).
-enum FileEvent: Sendable, Hashable {
+public enum FileEvent: Sendable, Hashable {
     /// A new file or directory was created.
     case created
     /// A file or directory was deleted.
@@ -21,7 +23,7 @@ enum FileEvent: Sendable, Hashable {
     ///
     /// Multiple flags can be set simultaneously (e.g. a file can be created and
     /// modified in the same event coalescing window).
-    static func from(flags: FSEventStreamEventFlags) -> Set<FileEvent> {
+    public static func from(flags: FSEventStreamEventFlags) -> Set<FileEvent> {
         var events: Set<FileEvent> = []
         if flags & FSEventStreamEventFlags(kFSEventStreamEventFlagItemCreated) != 0 {
             events.insert(.created)
@@ -50,7 +52,7 @@ enum FileEvent: Sendable, Hashable {
 ///
 /// The handler receives an array of (path, flags) tuples matching the raw
 /// FSEvents callback shape, keeping the protocol close to the system API.
-protocol FileSystemEventStream: Sendable {
+public protocol FileSystemEventStream: Sendable {
     /// Begin monitoring the given directory paths. The handler is called
     /// asynchronously when file system events are detected.
     ///

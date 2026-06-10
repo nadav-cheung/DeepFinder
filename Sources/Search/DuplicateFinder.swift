@@ -1,15 +1,21 @@
 import Foundation
+import DeepFinderIndex
 
 /// A group of files that are considered duplicates by some criterion.
 ///
 /// `Codable` for IPC serialization (REQ-1.5-06).
-struct DuplicateGroup: Codable, Sendable, Equatable {
+public struct DuplicateGroup: Codable, Sendable, Equatable {
     /// The grouping key: file name, size string, hash digest, or "empty".
-    let key: String
+    public let key: String
     /// The records that share this key.
-    let records: [FileRecord]
+    public let records: [FileRecord]
 
-    static func == (lhs: DuplicateGroup, rhs: DuplicateGroup) -> Bool {
+    public init(key: String, records: [FileRecord]) {
+        self.key = key
+        self.records = records
+    }
+
+    public static func == (lhs: DuplicateGroup, rhs: DuplicateGroup) -> Bool {
         lhs.key == rhs.key
             && lhs.records.count == rhs.records.count
             && zip(lhs.records, rhs.records).allSatisfy { $0.id == $1.id }
@@ -18,7 +24,7 @@ struct DuplicateGroup: Codable, Sendable, Equatable {
 
 /// Finds duplicate files using various strategies: by name, size, content hash,
 /// empty files/directories, and directory child count.
-actor DuplicateFinder {
+public actor DuplicateFinder {
 
     /// The index used for file lookups.
     private let index: InMemoryIndex
@@ -26,7 +32,7 @@ actor DuplicateFinder {
     /// Create a duplicate finder backed by the given index.
     ///
     /// - Parameter index: The in-memory index to enumerate records from.
-    init(index: InMemoryIndex) {
+    public init(index: InMemoryIndex) {
         self.index = index
     }
 
@@ -34,7 +40,7 @@ actor DuplicateFinder {
 
     /// Group records by normalized (lowercased) file name.
     /// Returns only groups with two or more records.
-    func findByName() async -> [DuplicateGroup] {
+    public func findByName() async -> [DuplicateGroup] {
         let records = await index.allRecords()
         var grouped: [String: [FileRecord]] = [:]
 
@@ -52,7 +58,7 @@ actor DuplicateFinder {
     // MARK: - By Size
 
     /// Group records by file size. Returns only groups with two or more records.
-    func findBySize() async -> [DuplicateGroup] {
+    public func findBySize() async -> [DuplicateGroup] {
         let records = await index.allRecords()
         var grouped: [Int64: [FileRecord]] = [:]
 
@@ -71,7 +77,7 @@ actor DuplicateFinder {
     /// For the given file paths, group by SHA-256 content hash.
     /// Only returns groups with two or more records sharing the same hash.
     /// The caller should pre-filter to same-size files for efficiency.
-    func findByHash(paths: [String]) async -> [DuplicateGroup] {
+    public func findByHash(paths: [String]) async -> [DuplicateGroup] {
         let allRecords = await index.allRecords()
         let pathToRecord = Dictionary(uniqueKeysWithValues: allRecords.map { ($0.path, $0) })
 
@@ -100,7 +106,7 @@ actor DuplicateFinder {
     // MARK: - Empty Files & Directories
 
     /// Find zero-byte files and directories with no children in the index.
-    func findEmpty() async -> [FileRecord] {
+    public func findEmpty() async -> [FileRecord] {
         let records = await index.allRecords()
 
         // Collect all directory paths that have at least one child
@@ -129,7 +135,7 @@ actor DuplicateFinder {
 
     /// Group directories by their number of direct children.
     /// Only returns groups where the child count >= minCount.
-    func findByChildCount(minCount: Int = 1) async -> [DuplicateGroup] {
+    public func findByChildCount(minCount: Int = 1) async -> [DuplicateGroup] {
         let records = await index.allRecords()
 
         // Count children per parent path

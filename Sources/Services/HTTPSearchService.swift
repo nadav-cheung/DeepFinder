@@ -24,6 +24,8 @@
 import Foundation
 import Network
 import OSLog
+import DeepFinderIndex
+import DeepFinderDaemon
 
 private let logger = Logger(subsystem: Product.daemonSubsystem, category: "http")
 
@@ -40,10 +42,10 @@ private let logger = Logger(subsystem: Product.daemonSubsystem, category: "http"
 /// - `GET /stats` -> index stats via `statsHandler`
 /// - All other routes -> 404
 /// Errors thrown by ``HTTPSearchService``.
-enum HTTPError: Error, LocalizedError {
+public enum HTTPError: Error, LocalizedError {
     case invalidPort(UInt16)
 
-    var errorDescription: String? {
+    public var errorDescription: String? {
         switch self {
         case .invalidPort(let port):
             return "Invalid port number: \(port)"
@@ -51,16 +53,16 @@ enum HTTPError: Error, LocalizedError {
     }
 }
 
-actor HTTPSearchService {
+public actor HTTPSearchService {
 
     // MARK: - Types
 
     /// Handler invoked for `/search` requests. Returns an array of dictionaries
     /// (each representing one result) given query, limit, and offset.
-    typealias SearchHandler = @Sendable (String, Int, Int) async -> [[String: String]]
+    public typealias SearchHandler = @Sendable (String, Int, Int) async -> [[String: String]]
 
     /// Handler invoked for `/stats` requests. Returns a stats dictionary.
-    typealias StatsHandler = @Sendable () async -> [String: Any]
+    public typealias StatsHandler = @Sendable () async -> [String: Any]
 
     // MARK: - Properties
 
@@ -74,21 +76,21 @@ actor HTTPSearchService {
     /// as a `token` query parameter or `Authorization: Bearer <token>` header.
     /// The token is also written to `~/.deep-finder/session/http-token` so local
     /// trusted clients can read it from disk.
-    let authToken: String = UUID().uuidString
+    public let authToken: String = UUID().uuidString
 
     /// The actual port the server is listening on. Nil if not started.
-    var listeningPort: UInt16? {
+    public var listeningPort: UInt16? {
         listener?.port?.rawValue
     }
 
     /// Whether the server is currently running.
-    var isRunning: Bool {
+    public var isRunning: Bool {
         listener != nil
     }
 
     // MARK: - Init
 
-    init(
+    public init(
         port: UInt16 = UInt16(Product.defaultHTTPPort),
         searchHandler: @escaping SearchHandler,
         statsHandler: @escaping StatsHandler
@@ -101,7 +103,7 @@ actor HTTPSearchService {
     // MARK: - Lifecycle
 
     /// Start the HTTP server and wait for it to become ready.
-    func start() async throws {
+    public func start() async throws {
         let parameters = NWParameters.tcp
 
         guard let nwPort = NWEndpoint.Port(rawValue: port) else {
@@ -201,7 +203,7 @@ actor HTTPSearchService {
     }
 
     /// Stop the HTTP server.
-    func stop() {
+    public func stop() {
         listener?.cancel()
         listener = nil
     }
@@ -212,19 +214,19 @@ actor HTTPSearchService {
 /// Stateless HTTP request parser and router.
 /// Separated from the actor for testability — all routing logic can be tested
 /// without starting a network server.
-enum HTTPRouter {
+public enum HTTPRouter {
 
     /// Represents a parsed HTTP request.
-    struct HTTPRequest {
-        let method: String
-        let path: String
-        let queryParams: [String: String]
+    public struct HTTPRequest {
+        public let method: String
+        public let path: String
+        public let queryParams: [String: String]
         /// Raw header lines (for extracting Authorization header).
-        let headers: [String: String]
+        public let headers: [String: String]
     }
 
     /// Parse raw HTTP request data into an HTTPRequest.
-    static func parseRequest(data: Data) -> HTTPRequest? {
+    public static func parseRequest(data: Data) -> HTTPRequest? {
         guard let requestString = String(data: data, encoding: .utf8) else { return nil }
         let lines = requestString.split(separator: "\r\n")
         let requestLine = lines.first ?? ""
@@ -257,7 +259,7 @@ enum HTTPRouter {
     }
 
     /// Route a parsed request and produce a response body + status code.
-    static func route(
+    public static func route(
         request: HTTPRequest,
         searchResults: [[String: String]] = [],
         stats: [String: Any] = [:]
@@ -301,7 +303,7 @@ enum HTTPRouter {
     /// Accepts the token via:
     /// - `?token=<value>` query parameter
     /// - `Authorization: Bearer <value>` header
-    static func hasValidToken(request: HTTPRequest, authToken: String) -> Bool {
+    public static func hasValidToken(request: HTTPRequest, authToken: String) -> Bool {
         // Check query parameter
         if let tokenParam = request.queryParams["token"], tokenParam == authToken {
             return true
@@ -316,7 +318,7 @@ enum HTTPRouter {
     }
 
     /// Handle a raw request: parse, authenticate, route, and send response over the connection.
-    static func handleRequest(
+    public static func handleRequest(
         data: Data,
         connection: NWConnection,
         searchHandler: @escaping HTTPSearchService.SearchHandler,
@@ -375,7 +377,7 @@ enum HTTPRouter {
     // MARK: - Response
 
     /// Build and send an HTTP response.
-    static func sendResponse(connection: NWConnection, statusCode: Int, body: String) {
+    public static func sendResponse(connection: NWConnection, statusCode: Int, body: String) {
         let statusText: String
         switch statusCode {
         case 200: statusText = "OK"
@@ -407,7 +409,7 @@ enum HTTPRouter {
 
     // MARK: - Helpers
 
-    static func parseQueryParams(_ queryString: String) -> [String: String] {
+    public static func parseQueryParams(_ queryString: String) -> [String: String] {
         var params: [String: String] = [:]
         for pair in queryString.split(separator: "&") {
             let kv = pair.split(separator: "=", maxSplits: 1)
@@ -419,7 +421,7 @@ enum HTTPRouter {
         return params
     }
 
-    static func jsonString(from dict: [String: Any]) -> String {
+    public static func jsonString(from dict: [String: Any]) -> String {
         guard let data = try? JSONSerialization.data(withJSONObject: dict, options: [.sortedKeys]) else {
             return "{}"
         }
@@ -427,7 +429,7 @@ enum HTTPRouter {
     }
 
     /// Build a full HTTP response string (for testing).
-    static func buildResponse(statusCode: Int, body: String) -> String {
+    public static func buildResponse(statusCode: Int, body: String) -> String {
         let statusText: String
         switch statusCode {
         case 200: statusText = "OK"

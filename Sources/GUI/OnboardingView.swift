@@ -1,10 +1,16 @@
 import AppKit
 import SwiftUI
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - OnboardingStep
 
 /// Steps in the onboarding flow.
-enum OnboardingStep: Int, CaseIterable {
+public enum OnboardingStep: Int, CaseIterable {
     case welcome
     case features
     case permissions
@@ -22,29 +28,29 @@ enum OnboardingStep: Int, CaseIterable {
 final class OnboardingViewModel: ObservableObject {
 
     /// UserDefaults key for tracking whether onboarding was completed.
-    static let didCompleteKey = "\(Product.identifier).didCompleteOnboarding"
+    public static let didCompleteKey = "\(Product.identifier).didCompleteOnboarding"
 
     /// Check whether onboarding has been completed in a previous launch.
-    static var didCompleteOnboarding: Bool {
+    public static var didCompleteOnboarding: Bool {
         UserDefaults.standard.bool(forKey: didCompleteKey)
     }
 
     /// Called when the onboarding window should be dismissed.
-    let onDismiss: () -> Void
+    public let onDismiss: () -> Void
 
-    init(onDismiss: @escaping () -> Void) {
+    public init(onDismiss: @escaping () -> Void) {
         self.onDismiss = onDismiss
     }
 
     /// Mark onboarding as complete, persist to UserDefaults, and dismiss.
-    func completeOnboarding() {
+    public func completeOnboarding() {
         UserDefaults.standard.set(true, forKey: Self.didCompleteKey)
         onDismiss()
     }
 
     /// Open System Settings > Privacy & Security > Accessibility to allow
     /// the global hotkey to function.
-    func openAccessibilitySettings() {
+    public func openAccessibilitySettings() {
         HotkeyPermissionHelper.openAccessibilitySettings()
     }
 }
@@ -53,15 +59,15 @@ final class OnboardingViewModel: ObservableObject {
 
 /// A single feature highlight card used in the onboarding flow.
 private struct FeatureCard: View {
-    let icon: String
-    let color: Color
-    let title: String
-    let description: String
-    var accentColor: Color? = nil
+    public let icon: String
+    public let color: Color
+    public let title: String
+    public let description: String
+    public var accentColor: Color? = nil
 
     @State private var isHovering = false
 
-    var body: some View {
+    public var body: some View {
         HStack(spacing: 0) {
             if let accentColor {
                 RoundedRectangle(cornerRadius: 2)
@@ -99,7 +105,7 @@ private struct FeatureCard: View {
 
 /// Multi-step first-launch onboarding with welcome, feature highlights,
 /// permissions setup, and completion confirmation.
-struct OnboardingView: View {
+public struct OnboardingView: View {
 
     @ObservedObject var viewModel: OnboardingViewModel
     @State private var currentStep: OnboardingStep = .welcome
@@ -109,7 +115,7 @@ struct OnboardingView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
-    var body: some View {
+    public var body: some View {
         GlassEffectContainer(cornerRadius: 24, glowActive: false) {
             VStack(spacing: 24) {
                 stepContent
@@ -330,14 +336,14 @@ struct OnboardingView: View {
 ///
 /// Creates a standalone titled window hosting the ``OnboardingView``.
 /// The caller is responsible for positioning and presenting the window.
-enum OnboardingWindow {
+public enum OnboardingWindow {
 
     /// Create the onboarding NSWindow.
     ///
     /// - Parameter onDismiss: Called when the user taps "Get Started".
     /// - Returns: A configured NSWindow ready to be displayed.
     @MainActor
-    static func createWindow(onDismiss: @escaping () -> Void) -> NSWindow {
+    public static func createWindow(onDismiss: @escaping () -> Void) -> NSWindow {
         let viewModel = OnboardingViewModel(onDismiss: onDismiss)
         let view = OnboardingView(viewModel: viewModel)
 

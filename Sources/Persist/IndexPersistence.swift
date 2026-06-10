@@ -26,18 +26,19 @@
 import Foundation
 import OSLog
 import SQLite3
+import DeepFinderIndex
 
 // MARK: - SQLite Transient Constant
 
 /// SQLite destructor constant that tells SQLite to copy the data before returning.
 /// Equivalent to `SQLITE_TRANSIENT` from the C API.
 /// Internal visibility: shared with ``SchemaMigrator`` in the same module.
-let SQLTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
+public let SQLTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
 // MARK: - IndexPersistence Errors
 
 /// Errors thrown by ``IndexPersistence`` during SQLite operations.
-enum PersistenceError: Error, CustomStringConvertible {
+public enum PersistenceError: Error, CustomStringConvertible {
     case openFailed(String)
     case execFailed(String, Int32)
     case prepareFailed(String, Int32)
@@ -45,7 +46,7 @@ enum PersistenceError: Error, CustomStringConvertible {
     case stepFailed(Int32)
     case migrationFailed(String)
 
-    var description: String {
+    public var description: String {
         switch self {
         case .openFailed(let msg):
             return "Failed to open database: \(msg)"
@@ -81,7 +82,7 @@ enum PersistenceError: Error, CustomStringConvertible {
 /// of durability and performance. The `-wal` and `-shm` files are co-located with the
 /// main database file. On unclean shutdown, the WAL is replayed automatically by SQLite
 /// on the next open.
-actor IndexPersistence {
+public actor IndexPersistence {
 
     // MARK: - Logging
 
@@ -110,7 +111,7 @@ actor IndexPersistence {
     ///
     /// - Parameter dbPath: File path, or `":memory:"` for an in-memory database.
     /// - Throws: `PersistenceError` if the database cannot be opened or configured.
-    init(dbPath: String) throws {
+    public init(dbPath: String) throws {
         self._dbPath = dbPath == ":memory:" ? nil : dbPath
 
         logger.info("Opening database: \(dbPath, privacy: .public)")
@@ -178,14 +179,14 @@ actor IndexPersistence {
     // MARK: - Public Accessors
 
     /// Path to the database file. `nil` for in-memory databases.
-    nonisolated var dbPath: String? { _dbPath }
+    public nonisolated var dbPath: String? { _dbPath }
 
     /// Close the database connection. Used by recovery before deleting WAL files.
     ///
     /// After calling this method, all subsequent operations on this instance will
     /// crash (nil pointer dereference on `db`). The caller must create a new
     /// ``IndexPersistence`` instance to reopen the database.
-    func close() {
+    public func close() {
         guard let db else { return }
         logger.info("Closing database")
         sqlite3_close(db)
@@ -204,7 +205,7 @@ actor IndexPersistence {
     ///   the in-memory index is the source of truth during normal operation, and
     ///   persistence is a durability best-effort layer. A failed batch write will
     ///   be naturally repaired on the next daemon restart (full rescan).
-    func saveRecords(_ records: [FileRecord]) {
+    public func saveRecords(_ records: [FileRecord]) {
         guard !records.isEmpty else { return }
 
         logger.debug("Saving \(records.count) records to database")
@@ -278,7 +279,7 @@ actor IndexPersistence {
     }
 
     /// Load all FileRecords from the database.
-    func loadAllRecords() throws -> [FileRecord] {
+    public func loadAllRecords() throws -> [FileRecord] {
         let sql = """
             SELECT id, name, original_name, path, parent_path, is_directory,
                    size, created_at, modified_at, ext, metadata_json
@@ -315,7 +316,7 @@ actor IndexPersistence {
     ///
     /// - Parameter ids: The record IDs to delete.
     /// - Note: Silently returns on prepare failure. See ``saveRecords`` for rationale.
-    func deleteRecords(_ ids: [UInt32]) {
+    public func deleteRecords(_ ids: [UInt32]) {
         guard !ids.isEmpty else { return }
 
         // Build parameterized IN clause
@@ -345,7 +346,7 @@ actor IndexPersistence {
     /// - Parameter pathPrefix: The mount point path of the volume (e.g. "/Volumes/USB Drive").
     /// - Returns: The number of deleted records.
     @discardableResult
-    func deleteRecordsByPathPrefix(_ pathPrefix: String) -> Int {
+    public func deleteRecordsByPathPrefix(_ pathPrefix: String) -> Int {
         // Without encryption, use the fast SQL path
         guard pathEncryption != nil else {
             let sql = "DELETE FROM file_records WHERE path = ? OR path LIKE ?"
@@ -379,12 +380,12 @@ actor IndexPersistence {
     // MARK: - Event Cursor
 
     /// Persist the last FSEvent stream cursor for resumption.
-    func saveEventCursor(_ cursor: UInt64) {
+    public func saveEventCursor(_ cursor: UInt64) {
         saveMetadata(key: "event_cursor", value: String(cursor))
     }
 
     /// Load the last FSEvent stream cursor, if any.
-    func loadEventCursor() -> UInt64? {
+    public func loadEventCursor() -> UInt64? {
         guard let str = loadMetadata(key: "event_cursor") else { return nil }
         return UInt64(str)
     }
@@ -392,7 +393,7 @@ actor IndexPersistence {
     // MARK: - Integrity & Maintenance
 
     /// Verify database integrity using PRAGMA integrity_check.
-    func verifyIntegrity() throws -> Bool {
+    public func verifyIntegrity() throws -> Bool {
         var stmt: OpaquePointer?
         let sql = "PRAGMA integrity_check"
         guard prepare(sql, &stmt) == SQLITE_OK, let stmt else {
@@ -408,14 +409,14 @@ actor IndexPersistence {
     }
 
     /// Force a WAL checkpoint (TRUNCATE mode).
-    func flush() throws {
+    public func flush() throws {
         logger.debug("Flushing WAL checkpoint")
         try exec("PRAGMA wal_checkpoint(TRUNCATE)")
         logger.debug("WAL checkpoint complete")
     }
 
     /// Read the current schema version from PRAGMA user_version.
-    func schemaVersion() throws -> Int {
+    public func schemaVersion() throws -> Int {
         var stmt: OpaquePointer?
         let sql = "PRAGMA user_version"
         guard prepare(sql, &stmt) == SQLITE_OK, let stmt else {
@@ -429,7 +430,7 @@ actor IndexPersistence {
     }
 
     /// Read the current journal_mode from the database.
-    func readJournalMode() throws -> String {
+    public func readJournalMode() throws -> String {
         var stmt: OpaquePointer?
         let sql = "PRAGMA journal_mode"
         guard prepare(sql, &stmt) == SQLITE_OK, let stmt else {

@@ -1,5 +1,5 @@
 import Testing
-@testable import DeepFinder
+@testable import DeepFinderGUILib
 
 @Suite("FilterType")
 struct FilterTypeTests {

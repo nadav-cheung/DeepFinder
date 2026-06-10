@@ -1,6 +1,11 @@
 import Foundation
 import Testing
-@testable import DeepFinder
+import DeepFinderDaemon
+import DeepFinderSearch
+import DeepFinderFS
+import DeepFinderPersist
+import DeepFinderCLILib
+@testable import DeepFinderServices
 
 @Suite("ServeMode")
 struct ServeModeTests {
@@ -73,7 +78,7 @@ struct ServeModeTests {
 
     @Test("--serve with mock daemon starts HTTP service")
     func testServeModeWithMock() async {
-        let mock = MockIPCClient(response: .stats(DaemonStats(
+        let mock = MockIPCClientForServeMode(response: .stats(DaemonStats(
             totalFiles: 42,
             indexState: "live",
             uptimeSeconds: 100,
@@ -92,7 +97,7 @@ struct ServeModeTests {
 
     @Test("--serve with --port uses specified port in output")
     func testServeWithPort() async {
-        let mock = MockIPCClient(response: .stats(DaemonStats(
+        let mock = MockIPCClientForServeMode(response: .stats(DaemonStats(
             totalFiles: 0,
             indexState: "live",
             uptimeSeconds: 0,
@@ -124,4 +129,12 @@ struct ServeModeTests {
         let running = await service.isRunning
         #expect(running == false)
     }
+}
+
+// MARK: - Test Helpers
+
+actor MockIPCClientForServeMode: IPCClientProtocol {
+    var response: IPCResponse
+    init(response: IPCResponse) { self.response = response }
+    func send(_ request: IPCRequest) async throws -> IPCResponse { response }
 }

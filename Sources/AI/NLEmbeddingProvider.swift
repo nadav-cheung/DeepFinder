@@ -6,6 +6,9 @@
 @preconcurrency import Foundation
 @preconcurrency import NaturalLanguage
 import OSLog
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderPersist
 
 private let logger = Logger(subsystem: Product.aiSubsystem, category: "nl-embedding")
 
@@ -23,9 +26,9 @@ private let logger = Logger(subsystem: Product.aiSubsystem, category: "nl-embedd
 ///
 /// **Privacy**: All computation is on-device. Zero network calls. Zero dependencies.
 /// **Availability**: macOS 14+. DeepFinder targets macOS 26+.
-struct NLEmbeddingProvider: EmbeddingProvider, Sendable {
-    let name = "nlcontextual"
-    let dimensions = 512
+public struct NLEmbeddingProvider: EmbeddingProvider, Sendable {
+    public let name = "nlcontextual"
+    public let dimensions = 512
 
     /// Shared model instances — loaded once, reused across all provider instances.
     /// NLContextualEmbedding is @unchecked Sendable and safe for concurrent reads.
@@ -54,9 +57,9 @@ struct NLEmbeddingProvider: EmbeddingProvider, Sendable {
     private var latinEmbedding: NLContextualEmbedding? { Self.sharedLatin }
     private var cjkEmbedding: NLContextualEmbedding? { Self.sharedCJK }
 
-    init() {}
+    public init() {}
 
-    func embed(text: String) async throws -> [Float] {
+    public func embed(text: String) async throws -> [Float] {
         guard !text.isEmpty else {
             return Array(repeating: 0, count: dimensions)
         }
@@ -65,7 +68,7 @@ struct NLEmbeddingProvider: EmbeddingProvider, Sendable {
 
     /// Sequential batch embedding — NLContextualEmbedding is not safe for
     /// concurrent calls even though it is @unchecked Sendable.
-    func embedBatch(texts: [String]) async throws -> [[Float]] {
+    public func embedBatch(texts: [String]) async throws -> [[Float]] {
         var results: [[Float]] = []
         results.reserveCapacity(texts.count)
         for text in texts {

@@ -2,7 +2,7 @@
 import Testing
 import Foundation
 import ImageIO
-@testable import DeepFinder
+@testable import DeepFinderMedia
 
 @Suite("ImageMetadataExtractor")
 struct ImageMetadataExtractorTests {

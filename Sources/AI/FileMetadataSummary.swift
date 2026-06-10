@@ -4,6 +4,9 @@
 /// cloud AI providers never see the macOS username. The sole data type crossing the
 /// AI module boundary from the search engine.
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderPersist
 
 /// A privacy-safe summary of file metadata for AI consumption.
 ///
@@ -17,19 +20,19 @@ import Foundation
 ///
 /// To construct: always use `FileMetadataSummary.from(_:tags:anonymizePaths:)`
 /// which applies the privacy transformation. Do not construct directly with raw paths.
-struct FileMetadataSummary: Sendable, Codable, Equatable {
+public struct FileMetadataSummary: Sendable, Codable, Equatable {
     /// File name (e.g. "report.pdf")
-    let name: String
+    public let name: String
     /// File path, optionally anonymized
-    let path: String
+    public let path: String
     /// File size in bytes
-    let size: Int64
+    public let size: Int64
     /// Last modification date
-    let modifiedAt: Date
+    public let modifiedAt: Date
     /// File extension without dot (e.g. "pdf"), nil for directories
     let `extension`: String?
     /// Tags generated locally (e.g. Vision framework labels, user tags)
-    let localTags: [String]
+    public let localTags: [String]
 
     /// Create a FileMetadataSummary from a FileRecord.
     ///
@@ -37,7 +40,7 @@ struct FileMetadataSummary: Sendable, Codable, Equatable {
     ///   - record: The source FileRecord.
     ///   - tags: Locally-generated tags to include.
     ///   - anonymizePaths: If true, replace `/Users/<username>/` with `~/`.
-    static func from(
+    public static func from(
         _ record: FileRecord,
         tags: [String] = [],
         anonymizePaths: Bool = true

@@ -1,9 +1,10 @@
 import Foundation
+import DeepFinderIndex
 
 // MARK: - SortCriterion
 
 /// Criterion for sorting search results.
-enum SortCriterion: Sendable {
+public enum SortCriterion: Sendable {
     /// Sort by match type priority, then filename length, then recency, then path depth.
     case relevance
     /// Sort alphabetically by filename using locale-aware comparison.
@@ -19,13 +20,13 @@ enum SortCriterion: Sendable {
 // MARK: - SearchSorter
 
 /// Stateless sorter for search results. All methods are static; no instance needed.
-struct SearchSorter: Sendable {
+public struct SearchSorter: Sendable {
 
     /// Prevent instantiation — all API is static.
     private init() {}
 
     /// Sort results according to the given criterion.
-    static func sort(_ results: [SearchResult], by criterion: SortCriterion) -> [SearchResult] {
+    public static func sort(_ results: [SearchResult], by criterion: SortCriterion) -> [SearchResult] {
         switch criterion {
         case .relevance:
             results.sorted(by: relevanceOrder)
@@ -46,7 +47,7 @@ struct SearchSorter: Sendable {
     /// Both inputs are NFC-normalized before comparison.
     ///
     /// Returns `true` when `a` should appear before `b`.
-    static func naturalCompare(_ a: String, _ b: String) -> Bool {
+    public static func naturalCompare(_ a: String, _ b: String) -> Bool {
         let aNorm = a.precomposedStringWithCanonicalMapping
         let bNorm = b.precomposedStringWithCanonicalMapping
 
@@ -84,7 +85,7 @@ struct SearchSorter: Sendable {
     }
 
     /// Delegate to the shared ``PathUtils/depth(_:)`` utility.
-    static func pathDepth(_ path: String) -> Int {
+    public static func pathDepth(_ path: String) -> Int {
         PathUtils.depth(path)
     }
 

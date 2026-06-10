@@ -1,5 +1,8 @@
 // Sources/AI/VisionTaggingCoordinator.swift
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderPersist
 
 /// Coordinates background Vision tagging for image files discovered during indexing.
 ///
@@ -23,16 +26,16 @@ import Foundation
 /// ```
 ///
 /// REQ-3.0-10: Wire Vision tags into file scanning pipeline.
-actor VisionTaggingCoordinator {
+public actor VisionTaggingCoordinator {
 
     /// Maximum number of concurrent Vision analyses.
-    static let defaultMaxConcurrency = 4
+    public static let defaultMaxConcurrency = 4
 
     private let provider: LocalVisionProvider
     private let maxConcurrency: Int
     private let localVisionEnabled: Bool
 
-    init(
+    public init(
         provider: LocalVisionProvider = LocalVisionProvider(),
         maxConcurrency: Int = defaultMaxConcurrency,
         localVisionEnabled: Bool = true
@@ -50,7 +53,7 @@ actor VisionTaggingCoordinator {
     ///
     /// - Parameter files: Array of (fileID, URL) pairs for image files.
     /// - Returns: Array of (fileID, ExtractedMetadata?) in the same order as input.
-    func processBatch(_ files: [(id: UInt32, url: URL)]) async -> [(id: UInt32, metadata: ExtractedMetadata?)] {
+    public func processBatch(_ files: [(id: UInt32, url: URL)]) async -> [(id: UInt32, metadata: ExtractedMetadata?)] {
         guard localVisionEnabled else {
             return files.map { ($0.id, nil) }
         }

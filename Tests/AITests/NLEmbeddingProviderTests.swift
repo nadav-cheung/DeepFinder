@@ -1,7 +1,7 @@
 import Foundation
 import Testing
 @preconcurrency import NaturalLanguage
-@testable import DeepFinder
+@testable import DeepFinderAI
 
 /// Whether NLContextualEmbedding models can be loaded in this process.
 /// Some test environments (headless CI, swift-testing helper) crash with SIGSEGV

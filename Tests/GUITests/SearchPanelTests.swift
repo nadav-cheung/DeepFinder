@@ -1,7 +1,12 @@
 import Testing
 import Foundation
 import AppKit
-@testable import DeepFinder
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderCLILib
+@testable import DeepFinderGUILib
 
 @Suite("SearchPanel")
 struct SearchPanelTests {
@@ -29,7 +34,7 @@ struct SearchPanelTests {
 
     @Test("ViewModel search text updates via published property")
     func testSearchTextUpdates() async {
-        let mock = MockGUIIPCClient(response: .results([], queryID: "q1"))
+        let mock = MockGUIIPCClient(response: .results([SearchResult](), queryID: "q1"))
         let viewModel = await SearchViewModel(ipcClient: mock)
 
         await MainActor.run {
@@ -45,7 +50,7 @@ struct SearchPanelTests {
 
     @Test("ViewModel search() sends IPC query request")
     func testSearchTriggersIPCQuery() async throws {
-        let mock = MockGUIIPCClient(response: .results([], queryID: "q1"))
+        let mock = MockGUIIPCClient(response: .results([SearchResult](), queryID: "q1"))
         let viewModel = await SearchViewModel(ipcClient: mock)
 
         await MainActor.run {
@@ -88,7 +93,7 @@ struct SearchPanelTests {
 
     @Test("ViewModel tracks selected index")
     func testSelectedIndexTracking() async {
-        let mock = MockGUIIPCClient(response: .results([], queryID: "q1"))
+        let mock = MockGUIIPCClient(response: .results([SearchResult](), queryID: "q1"))
         let viewModel = await SearchViewModel(ipcClient: mock)
 
         await MainActor.run {
@@ -148,7 +153,7 @@ struct SearchPanelTests {
         #expect(results.count == 1)
 
         // Second search returns empty
-        await mock.setResponse(.results([], queryID: "q2"))
+        await mock.setResponse(.results([SearchResult](), queryID: "q2"))
         await MainActor.run {
             viewModel.searchText = "beta"
         }
@@ -184,7 +189,7 @@ struct SearchPanelTests {
 
     @Test("ViewModel has no results after search returning empty array")
     func testEmptyResultsMessage() async throws {
-        let mock = MockGUIIPCClient(response: .results([], queryID: "q1"))
+        let mock = MockGUIIPCClient(response: .results([SearchResult](), queryID: "q1"))
         let viewModel = await SearchViewModel(ipcClient: mock)
 
         await MainActor.run {
@@ -203,7 +208,7 @@ struct SearchPanelTests {
 
     @Test("showToast cancels previous dismiss task; last toast wins")
     func testToastCancelsPreviousDismiss() async throws {
-        let mock = MockGUIIPCClient(response: .results([], queryID: "q1"))
+        let mock = MockGUIIPCClient(response: .results([SearchResult](), queryID: "q1"))
         let viewModel = await SearchViewModel(ipcClient: mock)
 
         await MainActor.run {
@@ -223,7 +228,7 @@ struct SearchPanelTests {
 
     @Test("cancelAllTasks cancels history search and toast dismiss tasks")
     func testCancelAllTasks() async throws {
-        let mock = MockGUIIPCClient(response: .results([], queryID: "q1"))
+        let mock = MockGUIIPCClient(response: .results([SearchResult](), queryID: "q1"))
         let viewModel = await SearchViewModel(ipcClient: mock)
 
         await MainActor.run {

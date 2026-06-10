@@ -1,4 +1,5 @@
 import Foundation
+import DeepFinderIndex
 
 // MARK: - Path Utilities
 
@@ -7,9 +8,9 @@ import Foundation
 /// Counts non-empty path components by splitting on "/" and filtering empty
 /// segments. This handles trailing slashes and double slashes consistently
 /// (e.g. "/a//b/" → 2, "" → 0).
-enum PathUtils {
+public enum PathUtils {
     /// Returns the number of non-empty path components in `path`.
-    static func depth(_ path: String) -> Int {
+    public static func depth(_ path: String) -> Int {
         path.components(separatedBy: "/").filter { !$0.isEmpty }.count
     }
 }
@@ -20,7 +21,7 @@ enum PathUtils {
 ///
 /// Lower `rawValue` equals higher priority, which drives result ordering.
 /// For example, an exact match always sorts before a substring match.
-enum MatchType: Int, Codable, Comparable, Sendable {
+public enum MatchType: Int, Codable, Comparable, Sendable {
     /// The query exactly matches the full filename (case-insensitive).
     case exact = 0
     /// The query matches the beginning of the filename.
@@ -30,7 +31,7 @@ enum MatchType: Int, Codable, Comparable, Sendable {
     /// The query appears as a substring anywhere in the filename.
     case substring = 3
 
-    static func < (lhs: MatchType, rhs: MatchType) -> Bool {
+    public static func < (lhs: MatchType, rhs: MatchType) -> Bool {
         lhs.rawValue < rhs.rawValue
     }
 }
@@ -38,13 +39,13 @@ enum MatchType: Int, Codable, Comparable, Sendable {
 // MARK: - SearchQuery
 
 /// A user search query, storing both the original input and a normalized form.
-struct SearchQuery: Sendable {
+public struct SearchQuery: Sendable {
     /// Original user input, unmodified.
-    let rawQuery: String
+    public let rawQuery: String
     /// NFC-normalized + lowercased form (used for matching).
-    let normalizedQuery: String
+    public let normalizedQuery: String
 
-    init(_ query: String) {
+    public init(_ query: String) {
         self.rawQuery = query
         self.normalizedQuery = query
             .precomposedStringWithCanonicalMapping
@@ -59,17 +60,24 @@ struct SearchQuery: Sendable {
 /// Equality is determined by ``FileRecord/id`` for deduplication purposes --
 /// two results pointing to the same file are considered equal regardless of
 /// which provider produced them or what match type was detected.
-struct SearchResult: Codable, Sendable, Equatable {
+public struct SearchResult: Codable, Sendable, Equatable {
     /// The file record that matched the query.
-    let record: FileRecord
+    public let record: FileRecord
     /// Identifier of the provider that produced this result (e.g. "file-index").
-    let providerID: String
+    public let providerID: String
     /// Relevance score assigned by the provider (higher is better).
-    let score: Double
+    public let score: Double
     /// How the query matched the filename.
-    let matchType: MatchType
+    public let matchType: MatchType
 
-    static func == (lhs: SearchResult, rhs: SearchResult) -> Bool {
+    public init(record: FileRecord, providerID: String, score: Double, matchType: MatchType) {
+        self.record = record
+        self.providerID = providerID
+        self.score = score
+        self.matchType = matchType
+    }
+
+    public static func == (lhs: SearchResult, rhs: SearchResult) -> Bool {
         lhs.record.id == rhs.record.id
     }
 }

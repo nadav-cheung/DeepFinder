@@ -1,4 +1,10 @@
 import SwiftUI
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - ResultCategory
 
@@ -6,7 +12,7 @@ import SwiftUI
 ///
 /// Each case maps to a set of file extensions, a display name, an SF Symbol,
 /// and a sort priority (lower = higher priority in grouped displays).
-enum ResultCategory: String, CaseIterable, Sendable {
+public enum ResultCategory: String, CaseIterable, Sendable {
     case code
     case documents
     case images
@@ -42,7 +48,7 @@ enum ResultCategory: String, CaseIterable, Sendable {
     /// Determines the category for a search result based on its file extension.
     ///
     /// Directories always fall into `.other`. Unknown extensions also map to `.other`.
-    static func categorize(_ result: SearchResult) -> ResultCategory {
+    public static func categorize(_ result: SearchResult) -> ResultCategory {
         guard let ext = result.record.extension?.lowercased() else {
             return .other
         }
@@ -52,7 +58,7 @@ enum ResultCategory: String, CaseIterable, Sendable {
     // MARK: - Display Properties
 
     /// Human-readable name for UI display.
-    var displayName: String {
+    public var displayName: String {
         switch self {
         case .code:      return "代码"
         case .documents:  return "文档"
@@ -65,7 +71,7 @@ enum ResultCategory: String, CaseIterable, Sendable {
     }
 
     /// SF Symbol name for the category icon.
-    var systemImage: String {
+    public var systemImage: String {
         switch self {
         case .code:      return "chevron.left.forwardslash.chevron.right"
         case .documents:  return "doc.fill"
@@ -78,7 +84,7 @@ enum ResultCategory: String, CaseIterable, Sendable {
     }
 
     /// Sort priority (lower = shown first in grouped results).
-    var sortPriority: Int {
+    public var sortPriority: Int {
         switch self {
         case .code:      return 0
         case .documents:  return 1
@@ -91,7 +97,7 @@ enum ResultCategory: String, CaseIterable, Sendable {
     }
 
     /// Accent color for the category, used for section headers and indicators.
-    var color: Color {
+    public var color: Color {
         switch self {
         case .code:      return .blue
         case .documents:  return .orange

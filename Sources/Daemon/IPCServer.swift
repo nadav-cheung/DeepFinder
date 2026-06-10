@@ -6,11 +6,15 @@
 /// from other users.
 import Foundation
 import OSLog
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderFS
+import DeepFinderPersist
 
 // MARK: - IPCServerError
 
 /// Errors thrown by ``IPCServer`` during socket operations.
-enum IPCServerError: Error, Sendable, Equatable {
+public enum IPCServerError: Error, Sendable, Equatable {
     /// Failed to create the Unix domain socket.
     case socketCreationFailed(String)
     case bindFailed(String)
@@ -35,7 +39,7 @@ enum IPCServerError: Error, Sendable, Equatable {
 /// The default path `~/.deep-finder/session/ipc.sock` is well within this limit.
 ///
 /// Thread-safe via actor isolation.
-actor IPCServer {
+public actor IPCServer {
 
     // MARK: - Logging
 
@@ -76,7 +80,7 @@ actor IPCServer {
     private var activeClientCount: Int = 0
 
     /// Whether the server is currently listening for connections.
-    var isRunning: Bool {
+    public var isRunning: Bool {
         listenFD >= 0
     }
 
@@ -92,7 +96,7 @@ actor IPCServer {
     ///   - duplicateProvider: Async closure that finds duplicates by strategy (REQ-1.5-06).
     ///   - maxConnsPerSecond: Maximum new connections allowed per second (default 10).
     ///   - maxConcurrentClients: Maximum concurrent client connections (default 50).
-    init(
+    public init(
         socketPath: String,
         coordinator: SearchCoordinator,
         statsProvider: @escaping @Sendable () async -> DaemonStats = {
@@ -126,7 +130,7 @@ actor IPCServer {
     ///
     /// Removes any stale socket file at `socketPath` before binding.
     /// - Throws: `IPCServerError` if socket creation, binding, or listening fails.
-    func start() throws {
+    public func start() throws {
         guard listenFD < 0 else {
             throw IPCServerError.alreadyRunning
         }
@@ -231,7 +235,7 @@ actor IPCServer {
     ///   client handler's `defer { close(fd) }` fires on the next I/O error or when
     ///   the blocking `read()`/`write()` syscall returns. Under normal shutdown, the
     ///   clients will complete their current request before noticing cancellation.
-    func stop() {
+    public func stop() {
         guard listenFD >= 0 else { return }
 
         logger.info("Stopping IPC server on \(self.socketPath, privacy: .public)")
@@ -482,7 +486,7 @@ actor IPCServer {
     }
 
     /// Dispatch a decoded IPCRequest to the appropriate handler.
-    func dispatchRequest(_ request: IPCRequest) async -> IPCResponse {
+    public func dispatchRequest(_ request: IPCRequest) async -> IPCResponse {
         switch request {
         case .query(let query, let limit):
             // Defense-in-depth: reject oversized queries even if the decoder

@@ -1,14 +1,20 @@
 import SwiftUI
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - DiagnosticSuggestion
 
 /// A single suggestion row in the empty-state view with diagnostic context.
 private struct DiagnosticSuggestion: Identifiable {
-    let text: String
-    let icon: String?
-    let isActionable: Bool  // true = uses brand color, false = uses .quaternary
-    let action: String      // key for dispatch: "openSettings", "checkSpelling", etc.
-    var id: String { text }
+    public let text: String
+    public let icon: String?
+    public let isActionable: Bool  // true = uses brand color, false = uses .quaternary
+    public let action: String      // key for dispatch: "openSettings", "checkSpelling", etc.
+    public var id: String { text }
 }
 
 // MARK: - EmptyStateView
@@ -20,27 +26,27 @@ private struct DiagnosticSuggestion: Identifiable {
 /// AI semantic search (when enabled), and narrowing scope.
 ///
 /// When **Reduce Motion** is enabled the icon is displayed without animation.
-struct EmptyStateView: View {
+public struct EmptyStateView: View {
 
     /// The query that produced no results.
-    let query: String
+    public let query: String
 
     /// Whether AI semantic search is available. When `true`, an additional
     /// suggestion chip is shown.
-    var hasAIEnabled: Bool = false
+    public var hasAIEnabled: Bool = false
 
     /// Called when the user taps a suggestion chip. The argument is the
     /// suggestion text (used both as label and as a dispatch key).
-    var onSuggestionTap: (String) -> Void = { _ in }
+    public var onSuggestionTap: (String) -> Void = { _ in }
 
     /// Whether Full Disk Access has been granted. `nil` = unknown/not checked.
-    var fdaGranted: Bool? = nil
+    public var fdaGranted: Bool? = nil
 
     /// Whether the index is currently being built.
-    var isIndexing: Bool = false
+    public var isIndexing: Bool = false
 
     /// Called when the user taps a suggestion that should open settings.
-    var onOpenSettings: (() -> Void)? = nil
+    public var onOpenSettings: (() -> Void)? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -56,11 +62,11 @@ struct EmptyStateView: View {
     // MARK: - Design Tokens
 
     private enum Design {
-        static let iconSize: CGFloat = 14
-        static let pillHPadding: CGFloat = 12
-        static let pillVPadding: CGFloat = 6
-        static let pillCornerRadius: CGFloat = 8
-        static let spacing: CGFloat = 8
+        public static let iconSize: CGFloat = 14
+        public static let pillHPadding: CGFloat = 12
+        public static let pillVPadding: CGFloat = 6
+        public static let pillCornerRadius: CGFloat = 8
+        public static let spacing: CGFloat = 8
     }
 
     // MARK: - Suggestions
@@ -115,7 +121,7 @@ struct EmptyStateView: View {
 
     // MARK: - Body
 
-    var body: some View {
+    public var body: some View {
         VStack(spacing: 20) {
             icon
 
@@ -245,17 +251,17 @@ struct EmptyStateView: View {
 
 /// Informational pill with hover scale effect, extracted to support @State.
 private struct InformationalPillView: View {
-    let suggestion: DiagnosticSuggestion
-    let onTap: (String) -> Void
+    public let suggestion: DiagnosticSuggestion
+    public let onTap: (String) -> Void
 
     @State private var isHovered = false
 
     private enum Design {
-        static let pillHPadding: CGFloat = 12
-        static let pillVPadding: CGFloat = 6
+        public static let pillHPadding: CGFloat = 12
+        public static let pillVPadding: CGFloat = 6
     }
 
-    var body: some View {
+    public var body: some View {
         Button {
             onTap(suggestion.text)
         } label: {

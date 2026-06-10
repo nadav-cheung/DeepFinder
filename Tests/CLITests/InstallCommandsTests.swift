@@ -1,6 +1,7 @@
 import Testing
 import Foundation
-@testable import DeepFinder
+import DeepFinderDaemon
+@testable import DeepFinderCLILib
 
 @Suite("InstallCommandRunner")
 struct InstallCommandsTests {

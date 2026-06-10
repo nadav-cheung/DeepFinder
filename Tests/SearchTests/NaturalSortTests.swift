@@ -1,6 +1,7 @@
 import Testing
 import Foundation
-@testable import DeepFinder
+import DeepFinderIndex
+@testable import DeepFinderSearch
 
 struct NaturalSortTests {
 

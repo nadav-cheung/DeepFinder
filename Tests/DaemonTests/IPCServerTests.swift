@@ -1,6 +1,8 @@
 import Testing
 import Foundation
-@testable import DeepFinder
+import DeepFinderIndex
+import DeepFinderSearch
+@testable import DeepFinderDaemon
 
 @Suite("IPCServer Unix socket")
 struct IPCServerTests {

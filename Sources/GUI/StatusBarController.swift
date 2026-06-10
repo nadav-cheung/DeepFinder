@@ -1,6 +1,12 @@
 import AppKit
 import Foundation
 import OSLog
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - StatusBarControllerActions
 
@@ -9,7 +15,7 @@ import OSLog
 /// Production `StatusBarController` implements this. Tests inject mocks
 /// to verify toggle/search/quit behavior without creating real NSStatusItems.
 @MainActor
-protocol StatusBarControllerActions {
+public protocol StatusBarControllerActions {
     func showSearchPanel()
     func hideSearchPanel()
     func openSettings()
@@ -22,14 +28,14 @@ protocol StatusBarControllerActions {
 ///
 /// Maps index state strings to a human-readable label and icon.
 /// The badge is displayed as the status item's button tooltip.
-enum IndexStatusBadge: String, Sendable, Equatable {
+public enum IndexStatusBadge: String, Sendable, Equatable {
     case idle
     case indexing
     case live
     case error
 
     /// Create from daemon-reported index state string.
-    init(stateString: String) {
+    public init(stateString: String) {
         switch stateString.lowercased() {
         case "live":
             self = .live
@@ -43,7 +49,7 @@ enum IndexStatusBadge: String, Sendable, Equatable {
     }
 
     /// SF Symbol name for the status bar icon overlay.
-    var iconName: String {
+    public var iconName: String {
         switch self {
         case .idle: "magnifyingglass"
         case .indexing: "arrow.trianglehead.2.clockwise"
@@ -53,7 +59,7 @@ enum IndexStatusBadge: String, Sendable, Equatable {
     }
 
     /// Tooltip text for the status bar item.
-    var tooltip: String {
+    public var tooltip: String {
         switch self {
         case .idle: "\(Product.name) — 空闲"
         case .indexing: "\(Product.name) — 正在索引..."
@@ -130,7 +136,7 @@ public final class StatusBarController: NSObject, StatusBarControllerActions {
     ///
     /// Creates an NSStatusItem with a magnifying glass icon. Clicking the icon
     /// shows a dropdown menu with Search, Settings, Check for Updates, and Quit.
-    func install() {
+    public func install() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         self.statusItem = item
 
@@ -148,7 +154,7 @@ public final class StatusBarController: NSObject, StatusBarControllerActions {
     }
 
     /// Remove the status bar item from the menu bar.
-    func remove() {
+    public func remove() {
         if let item = statusItem {
             NSStatusBar.system.removeStatusItem(item)
             self.statusItem = nil
@@ -161,7 +167,7 @@ public final class StatusBarController: NSObject, StatusBarControllerActions {
     /// Update the index status badge displayed in the status bar.
     ///
     /// Updates the button tooltip and icon to reflect the current index state.
-    func updateIndexStatus(_ status: IndexStatusBadge) {
+    public func updateIndexStatus(_ status: IndexStatusBadge) {
         guard status != indexStatus else { return }
         logger.info("Index status: \(self.indexStatus.rawValue) -> \(status.rawValue)")
         self.indexStatus = status
@@ -171,25 +177,25 @@ public final class StatusBarController: NSObject, StatusBarControllerActions {
     }
 
     /// Update the index status from a daemon state string.
-    func updateIndexStatus(stateString: String) {
+    public func updateIndexStatus(stateString: String) {
         updateIndexStatus(IndexStatusBadge(stateString: stateString))
     }
 
     // MARK: - StatusBarControllerActions
 
-    func showSearchPanel() {
+    public func showSearchPanel() {
         onShowSearchPanel()
     }
 
-    func hideSearchPanel() {
+    public func hideSearchPanel() {
         onHideSearchPanel()
     }
 
-    func openSettings() {
+    public func openSettings() {
         onOpenSettings()
     }
 
-    func quitApp() {
+    public func quitApp() {
         onQuit()
     }
 
@@ -265,5 +271,5 @@ public final class StatusBarController: NSObject, StatusBarControllerActions {
 
 private enum UpdateConstants {
     /// GitHub Releases page for checking new versions.
-    static let updateURL = URL(string: "https://github.com/nadav-cheung/DeepFinder/releases")!
+    public static let updateURL = URL(string: "https://github.com/nadav-cheung/DeepFinder/releases")!
 }

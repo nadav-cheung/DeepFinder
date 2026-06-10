@@ -1,16 +1,20 @@
 import Foundation
+import DeepFinderIndex
+import DeepFinderPersist
 
 /// Test double for FileSystemEventStream. Allows programmatic injection of
 /// events and tracks lifecycle state for assertions.
 ///
 /// `@unchecked Sendable` because all mutable state is accessed only from the
 /// test thread (synchronous test harness, no real concurrency).
-final class MockEventStream: FileSystemEventStream, @unchecked Sendable {
+public final class MockEventStream: FileSystemEventStream, @unchecked Sendable {
 
-    private(set) var isRunning: Bool = false
+    public init() {}
+
+    public private(set) var isRunning: Bool = false
     private var handler: (@Sendable ([(path: String, flags: FSEventStreamEventFlags)]) -> Void)?
 
-    func start(
+    public func start(
         paths: [String],
         sinceEventID: UInt64 = 0,
         handler: @escaping @Sendable ([(path: String, flags: FSEventStreamEventFlags)]) -> Void
@@ -19,14 +23,14 @@ final class MockEventStream: FileSystemEventStream, @unchecked Sendable {
         self.handler = handler
     }
 
-    func stop() {
+    public func stop() {
         isRunning = false
         handler = nil
     }
 
     /// Deliver a single synthetic event to the handler installed by `start`.
     /// No-op if the stream is not running (no handler installed).
-    func inject(path: String, flags: FSEventStreamEventFlags) {
+    public func inject(path: String, flags: FSEventStreamEventFlags) {
         guard isRunning else { return }
         handler?([(path: path, flags: flags)])
     }

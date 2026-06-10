@@ -1,4 +1,5 @@
 import Foundation
+import DeepFinderIndex
 
 // MARK: - QueryTerm
 
@@ -18,7 +19,7 @@ import Foundation
 ///
 /// Default behavior: space-separated terms are ANDed. `|` produces OR.
 /// `!` prefix negates. Parentheses group sub-expressions.
-indirect enum QueryTerm: Equatable, Sendable {
+public indirect enum QueryTerm: Equatable, Sendable {
     /// Plain text search term (case-insensitive substring match).
     case text(String)
     /// Logical AND of sub-terms (implicit for space-separated terms).
@@ -41,11 +42,11 @@ indirect enum QueryTerm: Equatable, Sendable {
 // MARK: - ParsedQuery
 
 /// The result of parsing a user query string.
-struct ParsedQuery: Equatable, Sendable {
+public struct ParsedQuery: Equatable, Sendable {
     /// Parsed query terms forming an AST.
-    var terms: [QueryTerm]
+    public var terms: [QueryTerm]
     /// Original user input, unmodified.
-    var rawQuery: String
+    public var rawQuery: String
 }
 
 // MARK: - ParsedQuery Modifier Extraction
@@ -57,7 +58,7 @@ extension ParsedQuery {
     /// Walks the term tree recursively; only ``QueryTerm/modifier(key:value:)``
     /// nodes are collected. Nested modifiers inside `and`/`or`/`not` groups
     /// are also extracted so that `(report | memo) size:>10mb` works as expected.
-    var modifierPairs: [(key: String, value: String)] {
+    public var modifierPairs: [(key: String, value: String)] {
         var pairs: [(key: String, value: String)] = []
         collectModifiers(terms, into: &pairs)
         return pairs
@@ -69,7 +70,7 @@ extension ParsedQuery {
     /// Modifiers are stripped; text, wildcard, regex, and path-qualifier terms
     /// are preserved. Boolean structure (and/or/not) is flattened into a
     /// space-joined string for maximal search recall.
-    var textOnlyQuery: String {
+    public var textOnlyQuery: String {
         rebuildWithoutModifiers(terms)
             .trimmingCharacters(in: .whitespaces)
     }
@@ -136,13 +137,13 @@ extension ParsedQuery {
 /// Default behavior: space-separated terms are ANDed. `|` produces OR.
 /// `!` prefix negates. Parentheses group sub-expressions.
 /// No cases exist — this enum is used only as a namespace for static methods.
-enum QueryParser {
+public enum QueryParser {
 
     /// Parse a raw query string into a structured `ParsedQuery` AST.
     ///
     /// - Parameter input: The raw query string typed by the user.
     /// - Returns: A `ParsedQuery` with the parsed AST and original query.
-    static func parse(_ input: String) -> ParsedQuery {
+    public static func parse(_ input: String) -> ParsedQuery {
         let tokens = tokenize(input)
         var parser = _Parser(tokens: tokens)
         var terms = parser.parseQuery()
@@ -311,7 +312,7 @@ private struct _Parser {
     private let tokens: [_Token]
     private var index: Int = 0
 
-    init(tokens: [_Token]) {
+    public init(tokens: [_Token]) {
         self.tokens = tokens
     }
 

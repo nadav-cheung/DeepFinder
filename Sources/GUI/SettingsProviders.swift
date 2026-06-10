@@ -1,5 +1,11 @@
 import ServiceManagement
 import SwiftUI
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - LaunchAtLoginProvider
 
@@ -7,18 +13,19 @@ import SwiftUI
 ///
 /// In production, ``SystemLaunchAtLoginProvider`` wraps `SMAppService`.
 /// In tests, a mock stores the enabled state in memory.
-protocol LaunchAtLoginProvider: Sendable {
+public protocol LaunchAtLoginProvider: Sendable {
     func isEnabled() async -> Bool
     func setEnabled(_ enabled: Bool) async -> Bool
 }
 
 /// Production implementation using `SMAppService` (macOS 13+).
-struct SystemLaunchAtLoginProvider: LaunchAtLoginProvider {
-    func isEnabled() async -> Bool {
+public struct SystemLaunchAtLoginProvider: LaunchAtLoginProvider {
+    public init() {}
+    public func isEnabled() async -> Bool {
         SMAppService.mainApp.status == .enabled
     }
 
-    func setEnabled(_ enabled: Bool) async -> Bool {
+    public func setEnabled(_ enabled: Bool) async -> Bool {
         do {
             if enabled {
                 try await SMAppService.mainApp.register()
@@ -38,7 +45,7 @@ struct SystemLaunchAtLoginProvider: LaunchAtLoginProvider {
 ///
 /// In production, this is backed by IPC calls to the daemon's ConfigStore.
 /// In tests, this is replaced by a mock that stores state in memory.
-protocol SettingsConfigProvider: Sendable {
+public protocol SettingsConfigProvider: Sendable {
     func getExcludedPaths() async -> [String]
     func addExcludedPath(_ path: String) async
     func removeExcludedPath(_ path: String) async
@@ -53,7 +60,7 @@ protocol SettingsConfigProvider: Sendable {
 /// Decouples the view model from SecretsStore and ConfigStore so AI settings
 /// can be tested without real file storage or IPC. In production, the implementation
 /// reads/writes through IPC configSet/configGet and SecretsStore for API keys.
-protocol SettingsAIProvider: Sendable {
+public protocol SettingsAIProvider: Sendable {
     /// Whether AI assist is enabled.
     func isEnabled() async -> Bool
     /// Set AI assist enabled state.
@@ -85,16 +92,16 @@ protocol SettingsAIProvider: Sendable {
 // MARK: - SettingsIndexStats
 
 /// Index statistics displayed in the Settings Index tab.
-struct SettingsIndexStats: Sendable, Equatable {
-    let state: String
-    let filesIndexed: Int
-    let lastScanDate: Date?
+public struct SettingsIndexStats: Sendable, Equatable {
+    public let state: String
+    public let filesIndexed: Int
+    public let lastScanDate: Date?
 }
 
 // MARK: - SettingsTab
 
 /// Tabs in the Settings window.
-enum SettingsTab: String, CaseIterable, Sendable {
+public enum SettingsTab: String, CaseIterable, Sendable {
     case general
     case index
     case ai
@@ -104,12 +111,12 @@ enum SettingsTab: String, CaseIterable, Sendable {
 // MARK: - AIModelOption
 
 /// Options for the AI model picker in Settings.
-enum AIModelOption: String, CaseIterable, Sendable {
+public enum AIModelOption: String, CaseIterable, Sendable {
     case off
     case deepseek
     case qwen
 
-    var displayName: String {
+    public var displayName: String {
         switch self {
         case .off: return "Off"
         case .deepseek: return "DeepSeek"

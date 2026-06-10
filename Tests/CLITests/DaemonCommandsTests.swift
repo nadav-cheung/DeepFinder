@@ -1,6 +1,8 @@
 import Testing
 import Foundation
-@testable import DeepFinder
+import DeepFinderDaemon
+import DeepFinderSearch
+@testable import DeepFinderCLILib
 
 @Suite("DaemonCommands")
 struct DaemonCommandsTests {

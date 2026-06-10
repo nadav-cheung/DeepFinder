@@ -4,13 +4,16 @@
 /// time. Operations require user confirmation and are recorded for undo. Only move, copy,
 /// and rename are permitted -- delete is never allowed.
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderPersist
 
 // MARK: - FileManagerProvider
 
 /// Abstraction over FileManager for testability.
 ///
 /// REQ-3.0-14: Actual file operation execution
-protocol FileManagerProvider: Sendable {
+public protocol FileManagerProvider: Sendable {
     func moveItem(at src: URL, to dst: URL) throws
     func copyItem(at src: URL, to dst: URL) throws
     func createDirectory(at url: URL, withIntermediateDirectories createIntermediates: Bool) throws
@@ -22,26 +25,27 @@ protocol FileManagerProvider: Sendable {
 ///
 /// Marked `@unchecked Sendable` because `FileManager.default` is a
 /// thread-safe singleton, but the type system cannot prove it.
-struct SystemFileManagerProvider: FileManagerProvider, @unchecked Sendable {
+public struct SystemFileManagerProvider: FileManagerProvider, @unchecked Sendable {
+    public init() {}
     nonisolated(unsafe) private let fm = FileManager.default
 
-    func moveItem(at src: URL, to dst: URL) throws {
+    public func moveItem(at src: URL, to dst: URL) throws {
         try fm.moveItem(at: src, to: dst)
     }
 
-    func copyItem(at src: URL, to dst: URL) throws {
+    public func copyItem(at src: URL, to dst: URL) throws {
         try fm.copyItem(at: src, to: dst)
     }
 
-    func createDirectory(at url: URL, withIntermediateDirectories createIntermediates: Bool) throws {
+    public func createDirectory(at url: URL, withIntermediateDirectories createIntermediates: Bool) throws {
         try fm.createDirectory(at: url, withIntermediateDirectories: createIntermediates)
     }
 
-    func fileExists(atPath path: String) -> Bool {
+    public func fileExists(atPath path: String) -> Bool {
         fm.fileExists(atPath: path)
     }
 
-    func removeItem(at url: URL) throws {
+    public func removeItem(at url: URL) throws {
         try fm.removeItem(at: url)
     }
 }
@@ -55,7 +59,7 @@ struct SystemFileManagerProvider: FileManagerProvider, @unchecked Sendable {
 /// these via Finder or Terminal.
 ///
 /// REQ-3.0-14: Natural Language Operations
-enum NLOperationType: String, Sendable, Codable, CaseIterable, Equatable {
+public enum NLOperationType: String, Sendable, Codable, CaseIterable, Equatable {
     case move
     case copy
     case rename
@@ -69,11 +73,18 @@ enum NLOperationType: String, Sendable, Codable, CaseIterable, Equatable {
 /// extracted from freeform text but not yet executed. The `preview` field
 /// lists the file paths that would be affected, so the user can confirm
 /// before any filesystem changes occur.
-struct NLOperation: Sendable, Equatable {
-    let type: NLOperationType
-    let sourcePattern: String
-    let destination: String
-    let preview: [String]
+public struct NLOperation: Sendable, Equatable {
+    public let type: NLOperationType
+    public let sourcePattern: String
+    public let destination: String
+    public let preview: [String]
+
+    public init(type: NLOperationType, sourcePattern: String, destination: String, preview: [String]) {
+        self.type = type
+        self.sourcePattern = sourcePattern
+        self.destination = destination
+        self.preview = preview
+    }
 }
 
 // MARK: - NLOperationRecord
@@ -84,12 +95,12 @@ struct NLOperation: Sendable, Equatable {
 /// the operation ran, enabling undo (move back, remove copy, rename back).
 ///
 /// REQ-3.0-14: Undo support
-struct NLOperationRecord: Sendable, Equatable {
-    let operation: NLOperation
-    let timestamp: Date
-    let reversed: Bool
+public struct NLOperationRecord: Sendable, Equatable {
+    public let operation: NLOperation
+    public let timestamp: Date
+    public let reversed: Bool
     /// Maps destination path -> original source path for undo.
-    let originalPaths: [String: String]
+    public let originalPaths: [String: String]
 }
 
 // MARK: - NLOperationHistory
@@ -100,15 +111,17 @@ struct NLOperationRecord: Sendable, Equatable {
 /// dropped first when the limit is exceeded.
 ///
 /// REQ-3.0-14: Undo support
-actor NLOperationHistory {
+public actor NLOperationHistory {
+
+    public init() {}
 
     private var stack: [NLOperationRecord] = []
 
     /// Maximum number of records retained. Oldest are dropped first.
-    static let maxItems = 20
+    public static let maxItems = 20
 
     /// Record an executed operation so it can be undone later.
-    func record(_ operation: NLOperation, reversed: Bool = false, originalPaths: [String: String] = [:]) {
+    public func record(_ operation: NLOperation, reversed: Bool = false, originalPaths: [String: String] = [:]) {
         let record = NLOperationRecord(
             operation: operation,
             timestamp: Date(),
@@ -123,17 +136,17 @@ actor NLOperationHistory {
     }
 
     /// Pop the most recent operation record for undo, if any.
-    func popLast() -> NLOperationRecord? {
+    public func popLast() -> NLOperationRecord? {
         return stack.popLast()
     }
 
     /// Whether there is an operation available to undo.
-    var canUndo: Bool {
+    public var canUndo: Bool {
         return !stack.isEmpty
     }
 
     /// Remove all history.
-    func clear() {
+    public func clear() {
         stack.removeAll()
     }
 }
@@ -141,10 +154,10 @@ actor NLOperationHistory {
 // MARK: - NLOperationError
 
 /// Errors thrown during natural-language operation execution.
-enum NLOperationError: Error, Equatable, LocalizedError {
+public enum NLOperationError: Error, Equatable, LocalizedError {
     case invalidDestination(String)
 
-    var errorDescription: String? {
+    public var errorDescription: String? {
         switch self {
         case .invalidDestination(let reason):
             return "Invalid destination: \(reason)"
@@ -155,16 +168,16 @@ enum NLOperationError: Error, Equatable, LocalizedError {
 // MARK: - NLOperationResult
 
 /// Result of executing an operation through the executor.
-struct NLOperationResult: Sendable, Equatable {
-    let success: Bool
-    let affectedCount: Int
-    let status: NLOperationStatus
+public struct NLOperationResult: Sendable, Equatable {
+    public let success: Bool
+    public let affectedCount: Int
+    public let status: NLOperationStatus
     /// Per-file errors collected during execution (non-fatal).
-    let errors: [String]
+    public let errors: [String]
 }
 
 /// Execution status for an operation.
-enum NLOperationStatus: String, Sendable, Equatable {
+public enum NLOperationStatus: String, Sendable, Equatable {
     case confirmed
     case rejected
     case rejectedDestructive
@@ -185,15 +198,15 @@ enum NLOperationStatus: String, Sendable, Equatable {
 /// so it can be undone via `undoLast()`.
 ///
 /// REQ-3.0-14: Operation execution with confirmation + undo
-struct NLOperationExecutor: @unchecked Sendable {
+public struct NLOperationExecutor: @unchecked Sendable {
 
     /// Safe operation types that are permitted for execution.
-    static let safeOperationTypes: Set<NLOperationType> = [.move, .copy, .rename]
+    public static let safeOperationTypes: Set<NLOperationType> = [.move, .copy, .rename]
 
-    let fileManager: any FileManagerProvider
-    let history: NLOperationHistory
+    public let fileManager: any FileManagerProvider
+    public let history: NLOperationHistory
 
-    init(
+    public init(
         fileManager: any FileManagerProvider = SystemFileManagerProvider(),
         history: NLOperationHistory = NLOperationHistory()
     ) {
@@ -211,7 +224,7 @@ struct NLOperationExecutor: @unchecked Sendable {
     ///     typically produced by `generatePreview()`.
     /// - Returns: An `NLOperationResult` with the affected file count and status,
     ///   or `nil` if the operation type is not safe.
-    func execute(
+    public func execute(
         _ operation: NLOperation,
         confirm: () -> Bool,
         availableFiles: [String]
@@ -318,7 +331,7 @@ struct NLOperationExecutor: @unchecked Sendable {
     /// - Move/rename: moves the file back to its original location.
     /// - Copy: removes the copied file from the destination.
     /// - Returns: the undone `NLOperationRecord`, or `nil` if nothing to undo.
-    func undoLast() async -> NLOperationRecord? {
+    public func undoLast() async -> NLOperationRecord? {
         guard let record = await history.popLast() else { return nil }
 
         for (destPath, originalPath) in record.originalPaths {
@@ -362,12 +375,12 @@ struct NLOperationExecutor: @unchecked Sendable {
 /// **No AI required**: Uses simple pattern matching, no cloud or local AI provider.
 ///
 /// REQ-3.0-14: Natural Language Operations
-struct NLOperations: Sendable {
+public struct NLOperations: Sendable {
 
     /// Words that signal a destructive intent. If any of these appear at the
     /// start of the command, `parse()` returns `nil` immediately.
     /// This is a denylist approach -- only known-safe verbs are accepted.
-    static let destructiveVerbs: Set<String> = [
+    public static let destructiveVerbs: Set<String> = [
         "delete", "remove", "rm", "erase", "trash", "shred", "unlink",
     ]
 
@@ -378,14 +391,14 @@ struct NLOperations: Sendable {
     /// - Empty or whitespace-only input
     /// - Destructive commands (delete, remove, rm, ...)
     /// - Unrecognized sentence structure
-    func parse(_ input: String) -> NLOperation? {
+    public func parse(_ input: String) -> NLOperation? {
         return parseNLCommand(input)
     }
 
     /// Generate a preview of files matching the operation's source pattern.
     ///
     /// Performs case-insensitive substring matching against the file paths.
-    func preview(operation: NLOperation, availableFiles: [String]) -> [String] {
+    public func preview(operation: NLOperation, availableFiles: [String]) -> [String] {
         return generatePreview(operation: operation, availableFiles: availableFiles)
     }
 }
@@ -400,7 +413,7 @@ struct NLOperations: Sendable {
 ///   "rename <pattern> to <destination>"
 ///
 /// Returns `nil` for destructive verbs, empty input, or unrecognized syntax.
-func parseNLCommand(_ input: String) -> NLOperation? {
+public func parseNLCommand(_ input: String) -> NLOperation? {
     let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return nil }
 
@@ -450,7 +463,7 @@ func parseNLCommand(_ input: String) -> NLOperation? {
 ///
 /// Used to generate a preview of which files would be affected before the
 /// user confirms the operation.
-func generatePreview(operation: NLOperation, availableFiles: [String]) -> [String] {
+public func generatePreview(operation: NLOperation, availableFiles: [String]) -> [String] {
     let pattern = operation.sourcePattern.lowercased()
     return availableFiles.filter { $0.lowercased().contains(pattern) }
 }

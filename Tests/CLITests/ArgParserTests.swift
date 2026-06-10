@@ -1,5 +1,5 @@
 import Testing
-@testable import DeepFinder
+@testable import DeepFinderCLILib
 
 @Suite("ArgParser")
 struct ArgParserTests {

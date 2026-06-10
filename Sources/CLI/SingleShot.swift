@@ -1,4 +1,9 @@
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderServices
 
 // MARK: - SingleShot
 
@@ -10,7 +15,7 @@ import Foundation
 ///
 /// Error messages are returned in `CLIOutput.stderr` so the caller
 /// can route them correctly (terminal stderr, not stdout).
-struct SingleShot {
+public struct SingleShot {
 
     /// Execute a single query against the daemon.
     ///
@@ -19,7 +24,7 @@ struct SingleShot {
     ///   - options: Parsed CLI options (limit, sort, output format, etc.).
     ///   - client: IPC client to communicate with the daemon.
     /// - Returns: Tuple of (collected output with stdout/stderr separation, exit code).
-    static func execute(
+    public static func execute(
         query: String,
         options: CLIOptions,
         client: any IPCClientProtocol

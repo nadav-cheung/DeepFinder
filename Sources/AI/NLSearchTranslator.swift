@@ -4,6 +4,9 @@
 /// Gracefully degrades: returns the input unchanged when AI is off, the input already
 /// contains search syntax, or the translation call fails.
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderPersist
 
 // MARK: - NLSearchTranslator
 
@@ -21,10 +24,10 @@ import Foundation
 /// In all cases, the caller receives a valid search string.
 ///
 /// REQ-3.0-05: Natural Language Search
-struct NLSearchTranslator: Sendable {
+public struct NLSearchTranslator: Sendable {
 
     /// The AI provider used for translation. `nil` means AI is disabled.
-    let provider: (any AIModelProvider)?
+    public let provider: (any AIModelProvider)?
 
     /// Known search modifier keys extracted from FilterPipeline.parse().
     private static let searchModifierKeys: Set<String> = [
@@ -34,7 +37,7 @@ struct NLSearchTranslator: Sendable {
         "file", "folder", "case", "path",
     ]
 
-    init(provider: (any AIModelProvider)?) {
+    public init(provider: (any AIModelProvider)?) {
         self.provider = provider
     }
 
@@ -44,7 +47,7 @@ struct NLSearchTranslator: Sendable {
     /// - If the input already looks like search syntax, returns it unchanged.
     /// - Otherwise, calls the provider to translate.
     /// - On any error or timeout, returns the input unchanged (graceful fallback).
-    func translate(_ naturalLanguage: String) async -> String {
+    public func translate(_ naturalLanguage: String) async -> String {
         // Empty input: nothing to translate
         guard !naturalLanguage.isEmpty else { return "" }
 

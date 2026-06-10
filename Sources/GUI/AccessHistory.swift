@@ -1,4 +1,10 @@
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - AccessRecord
 
@@ -6,13 +12,13 @@ import Foundation
 ///
 /// Used by ``AccessHistoryStore`` to compute a weighted ranking that blends
 /// frequency (how many times opened) with recency (when last opened).
-struct AccessRecord: Codable, Equatable {
+public struct AccessRecord: Codable, Equatable {
     /// Absolute file path.
-    let filePath: String
+    public let filePath: String
     /// Number of times this file was opened from DeepFinder.
-    var openCount: Int
+    public var openCount: Int
     /// The most recent time this file was opened.
-    var lastOpened: Date
+    public var lastOpened: Date
 }
 
 // MARK: - AccessHistoryStore
@@ -26,12 +32,12 @@ struct AccessRecord: Codable, Equatable {
 /// Ranking formula: `openCount * 0.4 + recencyScore * 0.6`
 /// where `recencyScore` is normalized to `[0, 1]` based on the newest entry.
 @Observable
-final class AccessHistoryStore {
+public final class AccessHistoryStore {
 
     // MARK: - Constants
 
     /// Maximum number of access records retained.
-    static let maxEntries = 1000
+    public static let maxEntries = 1000
 
     /// File name for the persisted history.
     private static let fileName = "access-history.json"
@@ -66,7 +72,7 @@ final class AccessHistoryStore {
     // MARK: - Init
 
     /// Creates the store and loads any existing history from disk.
-    init() {
+    public init() {
         self.cacheDir = NSString(string: Product.cacheDir).expandingTildeInPath
         loadFromDisk()
     }
@@ -77,7 +83,7 @@ final class AccessHistoryStore {
     ///
     /// After recording, if the record count exceeds ``maxEntries``, the least-valued
     /// entries (by weighted score) are evicted. Changes are persisted immediately.
-    func recordAccess(_ path: String) {
+    public func recordAccess(_ path: String) {
         let now = Date()
 
         if var existing = recordsByPath[path] {
@@ -105,7 +111,7 @@ final class AccessHistoryStore {
     ///
     /// Recency is normalized relative to the most recent access timestamp
     /// across all records. Paths with no records return unsorted.
-    func sortedPaths() -> [String] {
+    public func sortedPaths() -> [String] {
         guard !allRecords.isEmpty else { return [] }
 
         let maxOpenCount = allRecords.map(\.openCount).max() ?? 1

@@ -1,6 +1,10 @@
 import Testing
 import Foundation
-@testable import DeepFinder
+import DeepFinderDaemon
+import DeepFinderSearch
+import DeepFinderIndex
+import DeepFinderAI
+@testable import DeepFinderCLILib
 
 @Suite("REPL")
 struct REPLTests {

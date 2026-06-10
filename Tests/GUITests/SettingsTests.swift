@@ -1,6 +1,10 @@
 import Testing
 import SwiftUI
-@testable import DeepFinder
+import DeepFinderIndex
+import DeepFinderDaemon
+import DeepFinderSearch
+import DeepFinderAI
+@testable import DeepFinderGUILib
 
 struct SettingsTests {
 

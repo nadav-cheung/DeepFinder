@@ -1,5 +1,11 @@
 import AppKit
 import SwiftUI
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - SearchPanel
 
@@ -10,7 +16,7 @@ import SwiftUI
 /// Only `canBecomeKey` is overridden — `canBecomeMain` stays `false` so
 /// the panel doesn't appear in the Cmd+` window cycle.
 private final class SearchPanel: NSPanel {
-    override var canBecomeKey: Bool { true }
+    public override var canBecomeKey: Bool { true }
 }
 
 // MARK: - SearchPanelHostingController
@@ -32,7 +38,7 @@ public final class SearchPanelHostingController {
 
     /// The view model driving the search panel. Exposed so that external events
     /// (e.g., URL scheme deep links) can trigger searches through it.
-    let viewModel: SearchViewModel
+    public let viewModel: SearchViewModel
 
     /// Fixed search bar height (padding + text field).
     private static let searchBarHeight: CGFloat = 48
@@ -46,7 +52,7 @@ public final class SearchPanelHostingController {
     /// Bottom margin.
     private static let bottomMargin: CGFloat = 20
 
-    init(viewModel: SearchViewModel) {
+    public init(viewModel: SearchViewModel) {
         self.viewModel = viewModel
     }
 
@@ -55,7 +61,7 @@ public final class SearchPanelHostingController {
     /// Show the search panel, centering on the screen where the mouse is located.
     ///
     /// REQ-3.2-19: panel animates from search-bar-only height to full height.
-    func show() {
+    public func show() {
         if let existingPanel = panel, existingPanel.isVisible {
             existingPanel.makeKeyAndOrderFront(nil)
             existingPanel.makeFirstResponder(existingPanel.contentView)
@@ -118,7 +124,7 @@ public final class SearchPanelHostingController {
 
     /// Hide the panel without destroying it (preserves search text).
     /// REQ-3.2-19: animated collapse to search-bar height before ordering out.
-    func hide() {
+    public func hide() {
         guard let panel else { return }
         let currentFrame = panel.frame
         let collapsedFrame = NSRect(
@@ -136,7 +142,7 @@ public final class SearchPanelHostingController {
     }
 
     /// Toggle panel visibility.
-    func toggle() {
+    public func toggle() {
         if let p = panel, p.isVisible {
             hide()
         } else {

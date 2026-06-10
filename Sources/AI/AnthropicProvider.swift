@@ -3,6 +3,9 @@
 /// Handles Anthropic-specific protocol differences: x-api-key header, anthropic-version
 /// header, top-level system field, and content_block_delta event parsing.
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderPersist
 
 /// Provider for Anthropic's Claude models via the Messages API.
 ///
@@ -13,13 +16,13 @@ import Foundation
 /// - System prompt: top-level `system` field, not a message role
 ///
 /// REQ-3.1-Anthropic.
-struct AnthropicProvider: AIModelProvider, Sendable {
-    let name = "anthropic"
-    let displayName = "Claude (Anthropic)"
-    let capabilities: Set<AICapability> = [.textToSearch, .resultSummary, .querySuggestion, .intentAnalysis]
-    let supportsOnDevice = false
-    let contextLimit = 200_000
-    let hasEmbeddingAPI = false
+public struct AnthropicProvider: AIModelProvider, Sendable {
+    public let name = "anthropic"
+    public let displayName = "Claude (Anthropic)"
+    public let capabilities: Set<AICapability> = [.textToSearch, .resultSummary, .querySuggestion, .intentAnalysis]
+    public let supportsOnDevice = false
+    public let contextLimit = 200_000
+    public let hasEmbeddingAPI = false
 
     private let apiKey: String
     private let model: String
@@ -28,7 +31,7 @@ struct AnthropicProvider: AIModelProvider, Sendable {
 
     private static let maxOutputTokens = Constants.AI.maxOutputTokens
 
-    init(apiKey: String, model: String, httpClient: any HTTPClient = URLSessionHTTPClient()) {
+    public init(apiKey: String, model: String, httpClient: any HTTPClient = URLSessionHTTPClient()) {
         self.apiKey = apiKey
         self.model = model
         self.httpClient = httpClient
@@ -43,7 +46,7 @@ struct AnthropicProvider: AIModelProvider, Sendable {
 
     // MARK: - complete()
 
-    func complete(prompt: String, context: AIContext?) -> AsyncThrowingStream<String, Error> {
+    public func complete(prompt: String, context: AIContext?) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             let task = Task {
                 do {
@@ -70,7 +73,7 @@ struct AnthropicProvider: AIModelProvider, Sendable {
 
     // MARK: - translateToSearchSyntax()
 
-    func translateToSearchSyntax(naturalLanguage: String) async throws -> String {
+    public func translateToSearchSyntax(naturalLanguage: String) async throws -> String {
         let prompt = Self.searchTranslationPrompt.replacingOccurrences(
             of: "{{query}}", with: naturalLanguage
         )

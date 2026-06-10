@@ -1,5 +1,11 @@
 import AppKit
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - ContextMenuActions
 
@@ -12,7 +18,7 @@ import Foundation
 /// `@MainActor` because AppKit operations (NSWorkspace, NSPasteboard) must
 /// run on the main thread.
 @MainActor
-protocol ContextMenuActions: Sendable {
+public protocol ContextMenuActions: Sendable {
     func open(_ path: String) -> Bool
     func reveal(_ path: String) -> Bool
     func copyPath(_ path: String) -> Bool
@@ -28,21 +34,21 @@ protocol ContextMenuActions: Sendable {
 @MainActor
 final class ResultContextMenuHandler: ContextMenuActions {
 
-    func open(_ path: String) -> Bool {
+    public func open(_ path: String) -> Bool {
         NSWorkspace.shared.open(URL(fileURLWithPath: path))
     }
 
-    func reveal(_ path: String) -> Bool {
+    public func reveal(_ path: String) -> Bool {
         NSWorkspace.shared.selectFile(path, inFileViewerRootedAtPath: "")
     }
 
-    func copyPath(_ path: String) -> Bool {
+    public func copyPath(_ path: String) -> Bool {
         let pb = NSPasteboard.general
         pb.clearContents()
         return pb.setString(path, forType: .fileURL)
     }
 
-    func getInfo(_ path: String) -> Bool {
+    public func getInfo(_ path: String) -> Bool {
         let url = URL(fileURLWithPath: path)
         // Activate Finder first so the Get Info window is visible
         let finderURL = URL(fileURLWithPath: "/System/Library/CoreServices/Finder.app")
@@ -68,19 +74,19 @@ final class ResultContextMenuHandler: ContextMenuActions {
 /// ```swift
 /// let menu = ResultContextMenu.buildMenu(path: path, actions: handler)
 /// ```
-enum ResultContextMenu {
+public enum ResultContextMenu {
 
     // MARK: - Menu Item Identifiers
 
     /// Identifiers for context menu items, used for testing and accessibility.
-    enum MenuItem: String, Sendable, CaseIterable {
+    public enum MenuItem: String, Sendable, CaseIterable {
         case open
         case reveal
         case copyPath
         case getInfo
 
         /// Localized display title.
-        var title: String {
+        public var title: String {
             switch self {
             case .open: "Open"
             case .reveal: "Reveal in Finder"
@@ -99,7 +105,7 @@ enum ResultContextMenu {
     ///   - actions: Handler that executes each action.
     /// - Returns: A configured `NSMenu`.
     @MainActor
-    static func buildMenu(path: String, actions: ContextMenuActions) -> NSMenu {
+    public static func buildMenu(path: String, actions: ContextMenuActions) -> NSMenu {
         let menu = NSMenu()
         menu.title = "File Actions"
 
@@ -141,7 +147,7 @@ enum ResultContextMenu {
     ///   - actions: Handler that executes each action.
     /// - Returns: An array of closures that produce SwiftUI Buttons.
     @MainActor
-    static func menuItems(
+    public static func menuItems(
         for path: String,
         actions: ContextMenuActions
     ) -> [(label: String, id: String, action: () -> Void)] {
@@ -159,7 +165,7 @@ enum ResultContextMenu {
     /// Exposed internally for testability — tests can call this directly
     /// with a mock handler and verify the correct method was invoked.
     @MainActor
-    static func perform(
+    public static func perform(
         item: MenuItem,
         path: String,
         actions: ContextMenuActions
@@ -186,11 +192,11 @@ enum ResultContextMenu {
 @MainActor
 final class ContextMenuTarget: NSObject {
 
-    let item: ResultContextMenu.MenuItem
-    let path: String
-    let actions: ContextMenuActions
+    public let item: ResultContextMenu.MenuItem
+    public let path: String
+    public let actions: ContextMenuActions
 
-    init(item: ResultContextMenu.MenuItem, path: String, actions: ContextMenuActions) {
+    public init(item: ResultContextMenu.MenuItem, path: String, actions: ContextMenuActions) {
         self.item = item
         self.path = path
         self.actions = actions

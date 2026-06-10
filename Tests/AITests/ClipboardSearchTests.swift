@@ -1,7 +1,7 @@
 // Tests/AITests/ClipboardSearchTests.swift
 import Testing
 import AppKit
-@testable import DeepFinder
+@testable import DeepFinderAI
 
 @Suite("ClipboardSearch")
 struct ClipboardSearchTests {

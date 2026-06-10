@@ -33,6 +33,11 @@
 /// - 2: daemon error
 /// - 3: query error
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderServices
 
 // MARK: - CLIExitCode
 
@@ -110,7 +115,7 @@ public struct CLIMain {
     ///   - clientProvider: IPC client to use. Defaults to a real `IPCClient`.
     ///     Inject a `MockIPCClient` in tests to avoid needing a live daemon.
     /// - Returns: Tuple of (collected output, exit code).
-    static func run(
+    public static func run(
         args: [String],
         clientProvider: (any IPCClientProtocol)? = nil
     ) async -> (output: CLIOutput, exitCode: CLIExitCode) {
@@ -379,15 +384,15 @@ private final class CapturingOutputWriter: CLIOutputWriter, @unchecked Sendable 
     private var stdout = ""
     private var stderr = ""
 
-    func write(_ text: String) {
+    public func write(_ text: String) {
         stdout += text
     }
 
-    func writeError(_ text: String) {
+    public func writeError(_ text: String) {
         stderr += text
     }
 
-    func toCLIOutput() -> CLIOutput {
+    public func toCLIOutput() -> CLIOutput {
         CLIOutput(stdout: stdout, stderr: stderr)
     }
 }

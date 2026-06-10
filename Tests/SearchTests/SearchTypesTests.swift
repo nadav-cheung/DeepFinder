@@ -1,7 +1,10 @@
 import Testing
 import Foundation
 
-@testable import DeepFinder
+import DeepFinderAI
+import DeepFinderPersist
+import DeepFinderIndex
+@testable import DeepFinderSearch
 
 @Suite("SearchTypes")
 struct SearchTypesTests {

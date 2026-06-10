@@ -1,4 +1,9 @@
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderServices
 
 // MARK: - InstallCommandRunner
 
@@ -6,7 +11,7 @@ import Foundation
 ///
 /// Manages the LaunchAgent plist for auto-starting the daemon on login.
 /// Delegates file operations to `LaunchAgent`.
-struct InstallCommandRunner {
+public struct InstallCommandRunner {
 
     // MARK: - install
 
@@ -19,7 +24,7 @@ struct InstallCommandRunner {
     ///   - plistPath: File system path for the plist. Defaults to `LaunchAgent.defaultPlistPath`.
     ///   - output: Output writer for display. Defaults to `StdoutWriter`.
     /// - Returns: Exit code (0 = success, non-zero = error).
-    static func install(
+    public static func install(
         plistPath: String = LaunchAgent.defaultPlistPath,
         output: any CLIOutputWriter = StdoutWriter()
     ) throws -> Int32 {
@@ -53,7 +58,7 @@ struct InstallCommandRunner {
     ///   - plistPath: File system path for the plist. Defaults to `LaunchAgent.defaultPlistPath`.
     ///   - output: Output writer for display. Defaults to `StdoutWriter`.
     /// - Returns: Exit code (0 = success, non-zero = error).
-    static func uninstall(
+    public static func uninstall(
         plistPath: String = LaunchAgent.defaultPlistPath,
         output: any CLIOutputWriter = StdoutWriter()
     ) throws -> Int32 {

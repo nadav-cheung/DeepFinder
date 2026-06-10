@@ -1,7 +1,7 @@
 import Testing
 import Foundation
 import CryptoKit
-@testable import DeepFinder
+@testable import DeepFinderPersist
 
 @Suite("PathEncryption", .serialized)
 struct PathEncryptionTests {

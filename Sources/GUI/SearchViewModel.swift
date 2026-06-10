@@ -2,6 +2,12 @@ import SwiftUI
 import AppKit
 import Foundation
 import Combine
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - SearchErrorState
 
@@ -9,7 +15,7 @@ import Combine
 ///
 /// Distinguishes between an empty result set (successful search, nothing found),
 /// a daemon connectivity issue, and a processing error from the daemon.
-enum SearchErrorState: Sendable, Equatable {
+public enum SearchErrorState: Sendable, Equatable {
     /// No results found for the given query. This is a valid search outcome,
     /// not a failure — the query completed successfully but matched nothing.
     case noResults
@@ -31,7 +37,7 @@ enum SearchErrorState: Sendable, Equatable {
 /// which require synchronous access to published properties in the view body.
 /// IPC calls are still async; all state mutations happen on the main actor.
 @MainActor
-final class SearchViewModel: ObservableObject {
+public final class SearchViewModel: ObservableObject {
 
     // MARK: - Published State
 
@@ -54,7 +60,7 @@ final class SearchViewModel: ObservableObject {
 
     /// Validates the current search query syntax and returns an error description
     /// if the query is malformed (e.g., unbalanced quotes, incomplete operators).
-    var syntaxError: String? {
+    public var syntaxError: String? {
         let query = searchText.trimmingCharacters(in: .whitespaces)
         guard !query.isEmpty else { return nil }
 
@@ -79,21 +85,21 @@ final class SearchViewModel: ObservableObject {
     // MARK: - History & Access Stores
 
     /// Search query history for the history dropdown. REQ-3.2-02.
-    let searchHistory = SearchHistoryStore()
+    public let searchHistory = SearchHistoryStore()
 
     /// File access frequency tracker for ranking boost. REQ-3.2-33.
-    let accessHistory = AccessHistoryStore()
+    public let accessHistory = AccessHistoryStore()
 
     // MARK: - Dependencies
 
     private let ipcClient: IPCClientProtocol
-    let workspace: WorkspaceProtocol
+    public let workspace: WorkspaceProtocol
 
     /// Index health monitor for displaying banners and progress in the search panel.
-    weak var indexHealthMonitor: IndexHealthMonitor?
+    public weak var indexHealthMonitor: IndexHealthMonitor?
 
     /// Whether Full Disk Access is currently granted.
-    var fdaGranted: Bool { PermissionChecker.isFDAGranted() }
+    public var fdaGranted: Bool { PermissionChecker.isFDAGranted() }
 
     /// Whether a software update is available. Synced to views for update banners.
     @Published var updateAvailable: Bool = false
@@ -110,7 +116,7 @@ final class SearchViewModel: ObservableObject {
 
     // MARK: - Init
 
-    init(
+    public init(
         ipcClient: IPCClientProtocol,
         workspace: WorkspaceProtocol? = nil
     ) {
@@ -127,7 +133,7 @@ final class SearchViewModel: ObservableObject {
     /// (`.searchError`). On success with results, `errorState` stays `nil`.
     ///
     /// REQ-3.2-02: Records the query in search history when results are found.
-    func search() async {
+    public func search() async {
         let query = searchText
         guard !query.isEmpty else {
             results = []
@@ -218,7 +224,7 @@ final class SearchViewModel: ObservableObject {
     /// Returns `true` if a file was opened, `false` if nothing was selected.
     ///
     /// REQ-3.2-33: records the file access for ranking boost.
-    func openSelected() -> Bool {
+    public func openSelected() -> Bool {
         guard let idx = selectedIndex, idx >= 0, idx < results.count else {
             return false
         }
@@ -232,7 +238,7 @@ final class SearchViewModel: ObservableObject {
 
     /// Reveal the currently selected file in Finder.
     /// Returns `true` if a file was revealed, `false` if nothing was selected.
-    func revealSelected() -> Bool {
+    public func revealSelected() -> Bool {
         guard let idx = selectedIndex, idx >= 0, idx < results.count else {
             return false
         }
@@ -243,14 +249,14 @@ final class SearchViewModel: ObservableObject {
     // MARK: - Search from History (REQ-3.2-02)
 
     /// Sets the search text to a history query and triggers a search immediately.
-    func searchFromHistory(_ query: String) {
+    public func searchFromHistory(_ query: String) {
         searchText = query
         historySearchTask?.cancel()
         historySearchTask = Task { await search() }
     }
 
     /// Toggle history dropdown visibility. Only activates when search is empty.
-    func toggleHistoryDropdown() {
+    public func toggleHistoryDropdown() {
         if showHistoryDropdown {
             showHistoryDropdown = false
         } else if searchText.isEmpty {
@@ -261,7 +267,7 @@ final class SearchViewModel: ObservableObject {
     // MARK: - Toast (REQ-3.2-27)
 
     /// Shows a transient toast message that auto-dismisses after 1.5 seconds.
-    func showToast(_ message: String) {
+    public func showToast(_ message: String) {
         toastMessage = message
         toastDismissTask?.cancel()
         toastDismissTask = Task {
@@ -272,7 +278,7 @@ final class SearchViewModel: ObservableObject {
     }
 
     /// Cancel all stored tasks. Call when the view model is no longer needed.
-    func cancelAllTasks() {
+    public func cancelAllTasks() {
         historySearchTask?.cancel()
         toastDismissTask?.cancel()
     }

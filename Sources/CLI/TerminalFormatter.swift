@@ -1,4 +1,9 @@
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderServices
 
 // MARK: - TerminalFormatter
 
@@ -8,7 +13,7 @@ import Foundation
 /// - **JSON** (`--json`): JSON array of `SearchResult`.
 /// - **NUL** (`--0`): file paths separated by `\\0` for scripting.
 /// - **ANSI** (default): human-readable with optional colors and match highlights.
-enum TerminalFormatter {
+public enum TerminalFormatter {
 
     // MARK: - Public API
 
@@ -19,7 +24,7 @@ enum TerminalFormatter {
     ///   - options: Parsed CLI options controlling output mode.
     ///   - isTerminal: Whether stdout is a terminal. Defaults to `isatty()`.
     /// - Returns: Formatted string ready to write to stdout.
-    static func format(
+    public static func format(
         _ results: [SearchResult],
         options: CLIOptions,
         isTerminal: Bool = isatty()
@@ -34,7 +39,7 @@ enum TerminalFormatter {
     }
 
     /// Returns `true` if stdout is attached to a terminal.
-    static func isatty() -> Bool {
+    public static func isatty() -> Bool {
         Foundation.isatty(STDOUT_FILENO) != 0
     }
 
@@ -46,7 +51,7 @@ enum TerminalFormatter {
     ///   - query: Substring to highlight.
     ///   - colorCode: ANSI color code (default yellow "33").
     /// - Returns: Text with ANSI escape sequences wrapping each match.
-    static func highlightMatches(
+    public static func highlightMatches(
         in text: String,
         query: String,
         colorCode: String = "33"
@@ -119,7 +124,7 @@ enum TerminalFormatter {
     }
 
     /// Replaces the user's home directory prefix with `~/`.
-    static func shortenPath(_ path: String) -> String {
+    public static func shortenPath(_ path: String) -> String {
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         guard path.hasPrefix(home) else { return path }
         let relative = path.dropFirst(home.count)
@@ -131,7 +136,7 @@ enum TerminalFormatter {
     }
 
     /// Formats a byte count as a human-readable string (B / KB / MB / GB).
-    static func formatFileSize(_ bytes: Int64) -> String {
+    public static func formatFileSize(_ bytes: Int64) -> String {
         let gb: Int64 = 1_073_741_824
         let mb: Int64 = 1_048_576
         let kb: Int64 = 1024

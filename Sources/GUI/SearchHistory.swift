@@ -1,4 +1,10 @@
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - SearchHistoryEntry
 
@@ -6,11 +12,11 @@ import Foundation
 ///
 /// Deduplication is by query string — re-running the same query
 /// updates the timestamp rather than adding a duplicate entry.
-struct SearchHistoryEntry: Codable, Equatable {
+public struct SearchHistoryEntry: Codable, Equatable {
     /// The search query text entered by the user.
-    let query: String
+    public let query: String
     /// When this query was last submitted.
-    var timestamp: Date
+    public var timestamp: Date
 }
 
 // MARK: - SearchHistoryStore
@@ -20,12 +26,12 @@ struct SearchHistoryEntry: Codable, Equatable {
 /// Stores up to ``maxEntries`` entries in a JSON file under the DeepFinder cache directory.
 /// Re-submitting an existing query moves it to the top by updating its timestamp.
 @Observable
-final class SearchHistoryStore {
+public final class SearchHistoryStore {
 
     // MARK: - Constants
 
     /// Maximum number of history entries retained.
-    static let maxEntries = 100
+    public static let maxEntries = 100
 
     /// File name for the persisted history.
     private static let fileName = "search-history.json"
@@ -52,7 +58,7 @@ final class SearchHistoryStore {
 
     /// Creates the store and loads any existing history from disk.
     /// Call on `@MainActor` since mutations trigger SwiftUI view updates.
-    init() {
+    public init() {
         self.cacheDir = NSString(string: Product.cacheDir).expandingTildeInPath
         loadFromDisk()
     }
@@ -63,7 +69,7 @@ final class SearchHistoryStore {
     ///
     /// After recording, entries are sorted newest-first and truncated to ``maxEntries``.
     /// The result is persisted to disk immediately.
-    func addEntry(_ query: String) {
+    public func addEntry(_ query: String) {
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
@@ -84,19 +90,19 @@ final class SearchHistoryStore {
     }
 
     /// Returns the most recent history entries, sorted by timestamp descending.
-    func recentEntries(limit: Int = 10) -> [SearchHistoryEntry] {
+    public func recentEntries(limit: Int = 10) -> [SearchHistoryEntry] {
         Array(entries.prefix(limit))
     }
 
     /// Removes the entry at the given index.
-    func removeEntry(at index: Int) {
+    public func removeEntry(at index: Int) {
         guard entries.indices.contains(index) else { return }
         entries.remove(at: index)
         debounceSave()
     }
 
     /// Removes all history entries and deletes the backing file.
-    func clearAll() {
+    public func clearAll() {
         entries.removeAll()
         debounceSave()
     }

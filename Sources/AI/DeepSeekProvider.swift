@@ -4,6 +4,9 @@
 /// Handles SSE line parsing, exponential backoff on 429/transport errors, and context
 /// serialization that sends only file names (never paths or contents).
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderPersist
 
 // MARK: - OpenAI-Compatible Protocol Layer
 //
@@ -42,16 +45,16 @@ import Foundation
 /// constructing the system message. See module-level docs for the full privacy model.
 ///
 /// REQ-3.0-03 (DeepSeek) and REQ-3.0-04 (Qwen) both use this base.
-struct OpenAICompatibleProvider: AIModelProvider, Sendable {
-    let name: String
-    let capabilities: Set<AICapability>
-    let apiKey: String
-    let model: String
-    let httpClient: any HTTPClient
-    let timeout: TimeInterval
+public struct OpenAICompatibleProvider: AIModelProvider, Sendable {
+    public let name: String
+    public let capabilities: Set<AICapability>
+    public let apiKey: String
+    public let model: String
+    public let httpClient: any HTTPClient
+    public let timeout: TimeInterval
     private let endpoint: URL
 
-    init(
+    public init(
         name: String,
         endpoint: URL,
         apiKey: String,
@@ -86,7 +89,7 @@ struct OpenAICompatibleProvider: AIModelProvider, Sendable {
     /// If the consuming `Task` is cancelled, `AsyncThrowingStream` handles
     /// cancellation by terminating iteration -- the continuation may yield a few
     /// more chunks before the task's cooperative cancellation takes effect.
-    func complete(prompt: String, context: AIContext?) -> AsyncThrowingStream<String, Error> {
+    public func complete(prompt: String, context: AIContext?) -> AsyncThrowingStream<String, Error> {
         AsyncThrowingStream { continuation in
             Task {
                 do {
@@ -118,7 +121,7 @@ struct OpenAICompatibleProvider: AIModelProvider, Sendable {
     /// Unlike `complete()`, this collects the full response before returning.
     /// Throws on HTTP errors and transport failures -- callers should `catch`
     /// and fall back to returning the input unchanged (see `NLSearchTranslator`).
-    func translateToSearchSyntax(naturalLanguage: String) async throws -> String {
+    public func translateToSearchSyntax(naturalLanguage: String) async throws -> String {
         let request = try buildRequest(
             systemPrompt: Self.searchTranslationSystemPrompt,
             userMessage: naturalLanguage
@@ -310,10 +313,10 @@ struct OpenAICompatibleProvider: AIModelProvider, Sendable {
 // MARK: - Convenience Type Aliases
 
 /// DeepSeek API provider. REQ-3.0-03.
-typealias DeepSeekProvider = OpenAICompatibleProvider
+public typealias DeepSeekProvider = OpenAICompatibleProvider
 
 extension DeepSeekProvider {
-    static func deepSeek(apiKey: String, httpClient: any HTTPClient = URLSessionHTTPClient()) -> DeepSeekProvider? {
+    public static func deepSeek(apiKey: String, httpClient: any HTTPClient = URLSessionHTTPClient()) -> DeepSeekProvider? {
         guard let info = ProviderRegistry.allProviders.first(where: { $0.name == "deepseek" }),
               let endpoint = info.defaultEndpoint,
               let url = URL(string: endpoint + "/chat/completions") else {
@@ -330,10 +333,10 @@ extension DeepSeekProvider {
 }
 
 /// Qwen (Tongyi Qianwen) API provider. REQ-3.0-04.
-typealias QwenProvider = OpenAICompatibleProvider
+public typealias QwenProvider = OpenAICompatibleProvider
 
 extension QwenProvider {
-    static func qwen(apiKey: String, httpClient: any HTTPClient = URLSessionHTTPClient()) -> QwenProvider? {
+    public static func qwen(apiKey: String, httpClient: any HTTPClient = URLSessionHTTPClient()) -> QwenProvider? {
         guard let info = ProviderRegistry.allProviders.first(where: { $0.name == "qwen" }),
               let endpoint = info.defaultEndpoint,
               let url = URL(string: endpoint + "/chat/completions") else {

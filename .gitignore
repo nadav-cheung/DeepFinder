@@ -33,3 +33,4 @@ Package.resolved
 .idea/
 *.swp
 *~
+.claude/worktrees/

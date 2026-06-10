@@ -1,7 +1,12 @@
 import Foundation
 import Testing
 import AppIntents
-@testable import DeepFinder
+import DeepFinderSearch
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderPersist
+import DeepFinderIndex
+@testable import DeepFinderServices
 
 @Suite("SearchFilesIntent")
 struct SearchFilesIntentTests {

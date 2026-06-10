@@ -22,25 +22,27 @@
 /// - After max retries: degrade to polling mode (30s interval)
 /// - Dropped events (user/kernel): restart stream; burst protection degrades to polling
 import Foundation
+import DeepFinderIndex
+import DeepFinderPersist
 
 // MARK: - Configuration
 
 /// Configuration for a filesystem scan.
-struct ScanConfiguration: Sendable {
+public struct ScanConfiguration: Sendable {
     /// Path suffixes to skip entirely (e.g. "/.git", "/node_modules").
     /// Matched against path components during enumeration.
-    var skipPaths: Set<String>
+    public var skipPaths: Set<String>
 
     /// Privacy-sensitive path suffixes to skip (e.g. "/Library/Caches").
-    var privacySkipPaths: Set<String>
+    public var privacySkipPaths: Set<String>
 
     /// Optional maximum directory depth limit. `nil` means no limit.
-    var maxDepth: Int?
+    public var maxDepth: Int?
 
     /// Whether to follow symbolic links. Default is `false`.
-    var followSymlinks: Bool
+    public var followSymlinks: Bool
 
-    init(
+    public init(
         skipPaths: Set<String> = Set(Constants.Scan.alwaysSkippedNames.map { "/" + $0 })
             .union(Constants.Scan.alwaysExcludedPrefixes),
         privacySkipPaths: Set<String> = Constants.Scan.alwaysExcludedPaths,
@@ -57,7 +59,7 @@ struct ScanConfiguration: Sendable {
 // MARK: - Scan Event
 
 /// Events emitted during a filesystem scan.
-enum ScanEvent: Sendable {
+public enum ScanEvent: Sendable {
     case fileFound(FileRecord)
     case directoryFound(FileRecord)
     case scanComplete(ScanStats)
@@ -68,20 +70,20 @@ enum ScanEvent: Sendable {
 // MARK: - Scan Stats
 
 /// Statistics collected during a scan.
-struct ScanStats: Sendable {
-    let filesScanned: Int
-    let directoriesScanned: Int
-    let skippedCount: Int
-    let errorCount: Int
-    let duration: TimeInterval
+public struct ScanStats: Sendable {
+    public let filesScanned: Int
+    public let directoriesScanned: Int
+    public let skippedCount: Int
+    public let errorCount: Int
+    public let duration: TimeInterval
 }
 
 // MARK: - Scan Error
 
 /// An error encountered during scanning.
-struct ScanError: Sendable {
-    let path: String
-    let reason: String
+public struct ScanError: Sendable {
+    public let path: String
+    public let reason: String
 }
 
 // MARK: - FileScanner
@@ -100,7 +102,14 @@ struct ScanError: Sendable {
 ///     switch event { ... }
 /// }
 /// ```
-actor FileScanner {
+public actor FileScanner {
+
+    /// Configuration for scanning behavior.
+    public var config: ScanConfiguration
+
+    public init(config: ScanConfiguration = ScanConfiguration()) {
+        self.config = config
+    }
 
     // MARK: - ID Assignment
 
@@ -117,7 +126,7 @@ actor FileScanner {
     }
 
     /// Reset the scanning guard. Called when a scan stream terminates.
-    func resetScanGuard() {
+    public func resetScanGuard() {
         isScanning = false
     }
 
@@ -130,7 +139,7 @@ actor FileScanner {
     ///   - config: Scan configuration controlling skip behavior, depth, symlinks.
     /// - Returns: An `AsyncStream<ScanEvent>` that produces events until the scan completes.
     ///   Returns an empty stream if a scan is already in progress.
-    func scan(rootPaths: [String], config: ScanConfiguration) -> AsyncStream<ScanEvent> {
+    public func scan(rootPaths: [String], config: ScanConfiguration) -> AsyncStream<ScanEvent> {
         // Enforce single-scan-at-a-time to prevent overlapping ID ranges.
         guard !isScanning else {
             return AsyncStream { $0.finish() }
@@ -310,7 +319,7 @@ actor FileScanner {
     /// A suffix like "/.git" matches:
     /// - Paths ending in "/.git" at a component boundary
     /// - Paths containing "/.git/" (mid-path component)
-    static func pathMatchesSkip(path: String, suffixes: Set<String>) -> Bool {
+    public static func pathMatchesSkip(path: String, suffixes: Set<String>) -> Bool {
         for suffix in suffixes {
             if path.hasSuffix(suffix) {
                 let suffixStart = path.index(path.endIndex, offsetBy: -suffix.count)
@@ -326,7 +335,7 @@ actor FileScanner {
     }
 
     /// Calculate directory depth of a path relative to a root path.
-    static func depthOf(path: String, relativeTo root: String) -> Int {
+    public static func depthOf(path: String, relativeTo root: String) -> Int {
         let rootStd = root.hasSuffix("/") ? String(root.dropLast()) : root
         guard path.hasPrefix(rootStd) else { return 0 }
         let relative = String(path.dropFirst(rootStd.count))

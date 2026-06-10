@@ -2,7 +2,7 @@
 import Testing
 import Foundation
 import PDFKit
-@testable import DeepFinder
+@testable import DeepFinderMedia
 
 @Suite("PDFMetadataExtractor")
 struct PDFMetadataExtractorTests {

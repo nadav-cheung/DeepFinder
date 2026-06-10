@@ -1,6 +1,8 @@
 import Testing
 import Foundation
-@testable import DeepFinder
+import DeepFinderIndex
+import DeepFinderPersist
+@testable import DeepFinderFS
 
 @Suite("FSEventWatcher")
 struct FSEventWatcherTests {

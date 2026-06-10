@@ -1,5 +1,8 @@
 import Testing
-@testable import DeepFinder
+import DeepFinderAI
+import DeepFinderPersist
+import DeepFinderIndex
+@testable import DeepFinderSearch
 
 @Suite("SearchProvider / FileIndexProvider")
 struct SearchProviderTests {

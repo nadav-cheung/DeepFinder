@@ -1,4 +1,9 @@
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderServices
 
 // MARK: - REPLHistory
 
@@ -9,7 +14,7 @@ import Foundation
 /// - Configurable maximum entry count
 /// - Atomic file saves (write to .tmp, then rename)
 /// - File permissions restricted to owner-only (0600)
-actor REPLHistory {
+public actor REPLHistory {
 
     // MARK: - Properties
 
@@ -29,7 +34,7 @@ actor REPLHistory {
     /// - Parameters:
     ///   - filePath: Absolute path to the history file.
     ///   - maxEntries: Maximum entries to retain. Defaults to 1000.
-    init(filePath: String, maxEntries: Int = Constants.REPL.maxHistoryEntries) {
+    public init(filePath: String, maxEntries: Int = Constants.REPL.maxHistoryEntries) {
         self.filePath = filePath
         self.maxEntries = maxEntries
     }
@@ -37,7 +42,7 @@ actor REPLHistory {
     // MARK: - Public API
 
     /// Number of history entries currently held.
-    var count: Int {
+    public var count: Int {
         entries.count
     }
 
@@ -45,7 +50,7 @@ actor REPLHistory {
     ///
     /// Skips empty strings and consecutive duplicates.
     /// Trims to `maxEntries` if exceeded.
-    func add(_ entry: String) {
+    public func add(_ entry: String) {
         guard !entry.isEmpty else { return }
         // Skip consecutive duplicate
         if entries.last == entry { return }
@@ -57,7 +62,7 @@ actor REPLHistory {
     ///
     /// Replaces any in-memory entries. If the file does not exist,
     /// results in an empty history (no error thrown).
-    func load() throws {
+    public func load() throws {
         guard FileManager.default.fileExists(atPath: filePath) else {
             entries = []
             return
@@ -77,7 +82,7 @@ actor REPLHistory {
     ///
     /// Uses atomic save: writes to a `.tmp` file, then renames.
     /// Sets file permissions to 0600 (owner read/write only).
-    func save() throws {
+    public func save() throws {
         let content = entries.joined(separator: "\n")
 
         // Ensure parent directory exists
@@ -99,19 +104,19 @@ actor REPLHistory {
     }
 
     /// Return the last `count` entries (or all if fewer than `count`).
-    func recent(_ count: Int) -> [String] {
+    public func recent(_ count: Int) -> [String] {
         let start = Swift.max(0, entries.count - count)
         return Array(entries[start...])
     }
 
     /// Return all entries that start with the given prefix.
-    func search(prefix: String) -> [String] {
+    public func search(prefix: String) -> [String] {
         entries.filter { $0.hasPrefix(prefix) }
     }
 
     /// Clear all history entries from memory.
     /// Does not affect the on-disk file until `save()` is called.
-    func clear() {
+    public func clear() {
         entries.removeAll()
     }
 

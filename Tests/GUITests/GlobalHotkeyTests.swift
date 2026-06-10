@@ -2,7 +2,7 @@ import Testing
 import Foundation
 import Carbon
 import CoreGraphics
-@testable import DeepFinder
+@testable import DeepFinderGUILib
 
 @Suite("GlobalHotkey")
 struct GlobalHotkeyTests {

@@ -1,7 +1,10 @@
 import Testing
 import Foundation
 import AppKit
-@testable import DeepFinder
+import DeepFinderIndex
+import DeepFinderCLILib
+import DeepFinderDaemon
+@testable import DeepFinderGUILib
 
 // MARK: - Shared Test Mocks (file-level for cross-struct access)
 

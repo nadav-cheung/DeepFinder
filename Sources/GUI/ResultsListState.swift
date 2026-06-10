@@ -1,4 +1,10 @@
 import SwiftUI
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - ResultsListState
 
@@ -10,16 +16,16 @@ final class ResultsListState {
 
     // MARK: - Constants
 
-    static let pageSize = 100
-    static let maxResults = Constants.GUI.maxResults
+    public static let pageSize = 100
+    public static let maxResults = Constants.GUI.maxResults
 
     /// Minimum number of rows the list should display.
     /// REQ-3.2-07: ensures at least 20 rows are visible.
-    static let minVisibleRows = 20
+    public static let minVisibleRows = 20
 
     /// Fixed row height in points.
     /// REQ-3.2-14: constant height enables virtual scroll offset calculation.
-    static let rowHeight: CGFloat = 40
+    public static let rowHeight: CGFloat = 40
 
     // MARK: - Stored properties
 
@@ -33,7 +39,7 @@ final class ResultsListState {
     private(set) var selectedIndex: Int? = nil
 
     /// Sets the selected index directly (e.g. from mouse click).
-    func setSelectedIndex(_ index: Int?) {
+    public func setSelectedIndex(_ index: Int?) {
         selectedIndex = index
     }
 
@@ -41,37 +47,37 @@ final class ResultsListState {
     private(set) var wasCapped: Bool = false
 
     /// Current search query (for match highlighting in rows).
-    var currentQuery: String = ""
+    public var currentQuery: String = ""
 
     /// Total result count as reported by the input layer.
     /// May differ from `allResults.count` when results are capped.
-    var totalResultCount: Int = 0
+    public var totalResultCount: Int = 0
 
     // MARK: - Derived
 
     /// Results currently visible in the list.
-    var visibleResults: [SearchResult] {
+    public var visibleResults: [SearchResult] {
         let end = min(visibleCount, allResults.count)
         return Array(allResults[..<end])
     }
 
     /// Whether there are more results beyond the visible window.
-    var hasMoreResults: Bool {
+    public var hasMoreResults: Bool {
         visibleCount < allResults.count
     }
 
     /// Whether the result list is empty.
-    var isEmpty: Bool {
+    public var isEmpty: Bool {
         allResults.isEmpty
     }
 
     /// Whether results were capped at maxResults.
-    var isCapped: Bool {
+    public var isCapped: Bool {
         wasCapped
     }
 
     /// Status text shown below the list.
-    var statusText: String {
+    public var statusText: String {
         if wasCapped {
             return "结果过多，请缩小搜索范围"
         }
@@ -83,13 +89,13 @@ final class ResultsListState {
     }
 
     /// Remaining count beyond visible window.
-    var remainingCount: Int {
+    public var remainingCount: Int {
         allResults.count - visibleCount
     }
 
     /// Formatted total count with thousands separator.
     /// REQ-3.2-13: "1,234" format for the result count footer.
-    var formattedResultCount: String {
+    public var formattedResultCount: String {
         let count = totalResultCount > 0 ? totalResultCount : allResults.count
         let formatter = NumberFormatter()
         formatter.numberStyle = .decimal
@@ -99,7 +105,7 @@ final class ResultsListState {
     // MARK: - Mutation
 
     /// Set a new result set (new query). Resets pagination and selection.
-    func setResults(_ results: [SearchResult]) {
+    public func setResults(_ results: [SearchResult]) {
         wasCapped = results.count > Self.maxResults
         allResults = Array(results.prefix(Self.maxResults))
         totalResultCount = results.count
@@ -108,13 +114,13 @@ final class ResultsListState {
     }
 
     /// Show the next page of results.
-    func loadMore() {
+    public func loadMore() {
         guard hasMoreResults else { return }
         visibleCount = min(visibleCount + Self.pageSize, allResults.count)
     }
 
     /// Move the selection up or down, wrapping at boundaries.
-    func moveSelection(down: Bool) {
+    public func moveSelection(down: Bool) {
         let count = min(visibleCount, allResults.count)
         guard count > 0 else { return }
 
@@ -134,7 +140,7 @@ final class ResultsListState {
 
     /// Move selection by a full page (minVisibleRows rows).
     /// REQ-3.2-10: no wrap at boundaries — clamps to first/last row.
-    func moveSelectionPage(down: Bool) {
+    public func moveSelectionPage(down: Bool) {
         let count = min(visibleCount, allResults.count)
         guard count > 0 else { return }
 
@@ -155,7 +161,7 @@ final class ResultsListState {
     /// Move selection to the next/previous category group boundary.
     /// REQ-3.2-11: jumps between ResultCategory groups. When no categories
     /// are provided (empty array), jumps to first/last row instead.
-    func moveSelectionToGroup(categories: [ResultCategory], down: Bool) {
+    public func moveSelectionToGroup(categories: [ResultCategory], down: Bool) {
         let count = min(visibleCount, allResults.count)
         guard count > 0 else { return }
 

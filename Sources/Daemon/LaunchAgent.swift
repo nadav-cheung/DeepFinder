@@ -4,11 +4,15 @@
 /// `~/Library/LaunchAgents/cn.com.nadav.deepfinder.daemon.plist`. The plist configures
 /// `RunAtLoad` and `KeepAlive` so launchd starts the daemon at login and restarts it on crash.
 import Foundation
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderFS
+import DeepFinderPersist
 
 // MARK: - LaunchAgentError
 
 /// Errors thrown by ``LaunchAgent`` during plist management.
-enum LaunchAgentError: Error, CustomStringConvertible, Equatable {
+public enum LaunchAgentError: Error, CustomStringConvertible, Equatable {
     /// The LaunchAgent plist could not be written to disk.
     case plistWriteFailed(String)
     /// The LaunchAgent plist exists but could not be removed.
@@ -16,7 +20,7 @@ enum LaunchAgentError: Error, CustomStringConvertible, Equatable {
     /// No LaunchAgent plist was found at the expected path.
     case plistNotFound(String)
 
-    var description: String {
+    public var description: String {
         switch self {
         case .plistWriteFailed(let path):
             return "Failed to write LaunchAgent plist to: \(path)"
@@ -41,15 +45,15 @@ enum LaunchAgentError: Error, CustomStringConvertible, Equatable {
 /// **Platform note**: LaunchAgents are macOS-specific (launchd). The plist uses
 /// `RunAtLoad` to start on login and `KeepAlive` to restart on crash. Per-user
 /// agents run in the user's security session, which is required for Full Disk Access.
-enum LaunchAgent {
+public enum LaunchAgent {
 
     // MARK: - Properties
 
     /// The LaunchAgent label (matches the bundle identifier).
-    static let label = "\(Product.identifier).daemon"
+    public static let label = "\(Product.identifier).daemon"
 
     /// Default install path for the plist.
-    static var defaultPlistPath: String {
+    public static var defaultPlistPath: String {
         let home = NSString(string: "~").expandingTildeInPath
         return "\(home)/Library/LaunchAgents/\(label).plist"
     }
@@ -67,7 +71,7 @@ enum LaunchAgent {
     /// - StandardOutPath / StandardErrorPath: log files in `~/.deep-finder/logs/`
     ///
     /// - Returns: A complete XML plist string.
-    static func generatePlist() -> String {
+    public static func generatePlist() -> String {
         let binaryPath = "\(Product.defaultBinDir)/\(Product.daemonCommand)"
         let logOut = "\(Product.logsDir)/daemon-stdout.log"
         let logErr = "\(Product.logsDir)/daemon-stderr.log"
@@ -107,7 +111,7 @@ enum LaunchAgent {
     /// - Parameter path: File system path to write the plist.
     ///   Defaults to `~/Library/LaunchAgents/cn.com.nadav.deepfinder.daemon.plist`.
     /// - Throws: `LaunchAgentError.plistWriteFailed` if the file cannot be written.
-    static func installPlist(at path: String = defaultPlistPath) throws {
+    public static func installPlist(at path: String = defaultPlistPath) throws {
         let plistContent = generatePlist()
 
         guard let data = plistContent.data(using: .utf8) else {
@@ -134,7 +138,7 @@ enum LaunchAgent {
     ///   Defaults to `~/Library/LaunchAgents/cn.com.nadav.deepfinder.daemon.plist`.
     /// - Throws: `LaunchAgentError.plistRemoveFailed` if the file exists but cannot be removed.
     /// - Throws: `LaunchAgentError.plistNotFound` if the file does not exist.
-    static func uninstallPlist(at path: String = defaultPlistPath) throws {
+    public static func uninstallPlist(at path: String = defaultPlistPath) throws {
         let fm = FileManager.default
         guard fm.fileExists(atPath: path) else {
             throw LaunchAgentError.plistNotFound(path)

@@ -45,7 +45,7 @@ import Foundation
 /// 5. Query PinyinIndex for pinyin matches
 /// 6. Merge all result IDs, deduplicate
 /// 7. Look up FileRecords, return sorted by ID
-actor InMemoryIndex {
+public actor InMemoryIndex {
 
     // MARK: - Internal Storage
 
@@ -71,20 +71,24 @@ actor InMemoryIndex {
     /// Pinyin index for Chinese filename search.
     private var pinyinIndex = PinyinIndex()
 
+    // MARK: - Init
+
+    public init() {}
+
     // MARK: - Properties
 
     /// Number of indexed files.
-    var count: Int { records.count }
+    public var count: Int { records.count }
 
     /// Whether the index is empty.
-    var isEmpty: Bool { records.isEmpty }
+    public var isEmpty: Bool { records.isEmpty }
 
     // MARK: - Insert
 
     /// Insert a pre-built FileRecord into all index structures.
     /// If a record with the same ID already exists, the old record is removed
     /// from all sub-indices before the new one is inserted (upsert semantics).
-    func insert(_ record: FileRecord) {
+    public func insert(_ record: FileRecord) {
         let id = record.id
         let name = record.name
 
@@ -122,14 +126,14 @@ actor InMemoryIndex {
 
     /// Batch-insert multiple records in a single actor hop.
     /// Much faster than individual inserts during startup reindexing.
-    func insertBatch(_ newRecords: [FileRecord]) {
+    public func insertBatch(_ newRecords: [FileRecord]) {
         for record in newRecords {
             insert(record)
         }
     }
 
     /// Convenience: insert by name and path, creating a FileRecord with auto-ID.
-    func insert(
+    public func insert(
         name: String,
         path: String,
         parentPath: String,
@@ -160,7 +164,7 @@ actor InMemoryIndex {
     // MARK: - Remove
 
     /// Remove a file by ID from all index structures.
-    func remove(id: UInt32) {
+    public func remove(id: UInt32) {
         guard let record = records.removeValue(forKey: id) else { return }
         pathToID.removeValue(forKey: record.path)
         removeFromSubindices(record)
@@ -169,7 +173,7 @@ actor InMemoryIndex {
     /// Remove a file by its absolute path. Returns `true` if a record was found and removed.
     ///
     /// O(1) path-based lookup — avoids the costly name-search approach.
-    func removeByPath(_ path: String) -> Bool {
+    public func removeByPath(_ path: String) -> Bool {
         guard let id = pathToID[path] else { return false }
         remove(id: id)
         return true
@@ -215,7 +219,7 @@ actor InMemoryIndex {
     ///
     /// - Parameter volumePath: The mount point path of the volume (e.g. "/Volumes/USB Drive").
     /// - Returns: Array of removed record IDs.
-    func removeRecordsForVolume(volumePath: String) -> [UInt32] {
+    public func removeRecordsForVolume(volumePath: String) -> [UInt32] {
         let prefix = volumePath.hasSuffix("/") ? volumePath : volumePath + "/"
         // Also match the volume path itself (in case a record has path == volumePath)
         let exactMatch = volumePath
@@ -238,7 +242,7 @@ actor InMemoryIndex {
     // MARK: - Search
 
     /// Unified search across all index structures. Returns deduplicated, sorted results.
-    func search(query: String) -> [FileRecord] {
+    public func search(query: String) -> [FileRecord] {
         let normalized = query.precomposedStringWithCanonicalMapping
         let lowered = normalized.lowercased()
 
@@ -274,7 +278,7 @@ actor InMemoryIndex {
 
     /// Search with a limit on the number of results.
     /// Short-circuits after finding `limit` results to avoid full materialization.
-    func search(query: String, limit: Int) -> [FileRecord] {
+    public func search(query: String, limit: Int) -> [FileRecord] {
         let normalized = query.precomposedStringWithCanonicalMapping
         let lowered = normalized.lowercased()
         guard !lowered.isEmpty else { return [] }
@@ -314,7 +318,7 @@ actor InMemoryIndex {
 
     /// Return all indexed records. Useful for operations that need the full
     /// dataset (e.g. autocomplete with empty prefix).
-    func allRecords() -> [FileRecord] {
+    public func allRecords() -> [FileRecord] {
         Array(records.values)
     }
 }

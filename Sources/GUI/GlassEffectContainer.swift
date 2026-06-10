@@ -1,4 +1,10 @@
 import SwiftUI
+import DeepFinderIndex
+import DeepFinderSearch
+import DeepFinderDaemon
+import DeepFinderAI
+import DeepFinderFS
+import DeepFinderCLILib
 
 // MARK: - GlassIntensity
 
@@ -8,7 +14,7 @@ import SwiftUI
 /// - `regular`: standard Liquid Glass appearance (default).
 /// - `clear`: more translucent, minimal glass frosting.
 /// - `identity`: no glass effect — content is rendered unmodified.
-enum GlassIntensity {
+public enum GlassIntensity {
     case regular
     case clear
     case identity
@@ -32,7 +38,7 @@ enum GlassIntensity {
 ///     Text("Hello")
 /// }
 /// ```
-struct GlassEffectContainer<Content: View>: View {
+public struct GlassEffectContainer<Content: View>: View {
 
     /// Glass material intensity.
     private let intensity: GlassIntensity
@@ -67,7 +73,7 @@ struct GlassEffectContainer<Content: View>: View {
     ///   - showTexture: Whether to add a subtle vignette overlay. Defaults to `false`.
     ///   - innerShadow: Whether to add inner shadow depth (light edge + top highlight). Defaults to `false`.
     ///   - content: The view content to wrap.
-    init(
+    public init(
         intensity: GlassIntensity = .regular,
         cornerRadius: CGFloat = 24,
         borderWidth: CGFloat? = 2,
@@ -85,7 +91,7 @@ struct GlassEffectContainer<Content: View>: View {
         self.content = content
     }
 
-    var body: some View {
+    public var body: some View {
         content()
             .glassEffect(glassVariant, in: .rect(cornerRadius: cornerRadius))
             .shadow(color: .black.opacity(0.04), radius: 8, y: 4)

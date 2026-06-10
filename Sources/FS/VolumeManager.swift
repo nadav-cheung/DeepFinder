@@ -1,5 +1,7 @@
 import Foundation
 import AppKit
+import DeepFinderIndex
+import DeepFinderPersist
 
 // MARK: - VolumeInfo
 
@@ -8,33 +10,33 @@ import AppKit
 /// Categorized into local (internal SSD), external (USB/Thunderbolt), and
 /// network (SMB/AFP/NFS) volumes. Used by VolumeManager to decide indexing
 /// policy and by the daemon to manage volume lifecycle events.
-struct VolumeInfo: Sendable, Equatable {
+public struct VolumeInfo: Sendable, Equatable {
     /// Mount point path (e.g. "/", "/Volumes/USB Drive").
-    let path: String
+    public let path: String
 
     /// Display name of the volume (e.g. "Macintosh HD", "USB Drive").
-    let name: String
+    public let name: String
 
     /// True for removable volumes connected via USB or Thunderbolt.
-    let isExternal: Bool
+    public let isExternal: Bool
 
     /// True for network-mounted volumes (SMB, AFP, NFS, etc.).
-    let isNetwork: Bool
+    public let isNetwork: Bool
 
     /// True if the volume can be ejected by the user.
-    let isEjectable: Bool
+    public let isEjectable: Bool
 
     /// Total storage capacity in bytes.
-    let totalSize: Int64
+    public let totalSize: Int64
 
     /// Available storage in bytes.
-    let availableSize: Int64
+    public let availableSize: Int64
 }
 
 // MARK: - VolumeEvent
 
 /// Events emitted by VolumeManager when volumes are mounted or unmounted.
-enum VolumeEvent: Sendable, Equatable {
+public enum VolumeEvent: Sendable, Equatable {
     /// A new volume has appeared in the filesystem.
     case mounted(VolumeInfo)
     /// A volume has been removed from the filesystem.
@@ -49,7 +51,7 @@ enum VolumeEvent: Sendable, Equatable {
 ///
 /// Apple platforms only — relies on `FileManager.mountedVolumeURLs` and
 /// `NSWorkspace` mount/unmount notifications which are not available on Linux.
-protocol VolumeMonitor: Sendable {
+public protocol VolumeMonitor: Sendable {
     /// Return the current list of mounted volumes.
     func mountedVolumes() -> [VolumeInfo]
 
@@ -69,7 +71,7 @@ protocol VolumeMonitor: Sendable {
 ///
 /// The actor uses a `VolumeMonitor` protocol for testability. Production
 /// uses `SystemVolumeMonitor`; tests use `MockVolumeMonitor`.
-actor VolumeManager {
+public actor VolumeManager {
 
     // MARK: - Dependencies
 
@@ -81,19 +83,19 @@ actor VolumeManager {
     ///
     /// - Parameter monitor: The volume monitor to use for enumerating and
     ///   watching volumes. Defaults to `SystemVolumeMonitor`.
-    init(monitor: VolumeMonitor = SystemVolumeMonitor()) {
+    public init(monitor: VolumeMonitor = SystemVolumeMonitor()) {
         self.monitor = monitor
     }
 
     // MARK: - Public API
 
     /// Return the current list of mounted volumes from the underlying monitor.
-    func mountedVolumes() -> [VolumeInfo] {
+    public func mountedVolumes() -> [VolumeInfo] {
         monitor.mountedVolumes()
     }
 
     /// Return an async stream of volume mount/unmount events.
-    func monitorVolumes() -> AsyncStream<VolumeEvent> {
+    public func monitorVolumes() -> AsyncStream<VolumeEvent> {
         monitor.monitorVolumes()
     }
 
@@ -101,7 +103,7 @@ actor VolumeManager {
     ///
     /// Policy: all volumes are indexed unless their path appears in `excludedVolumes`.
     /// External and network volumes are indexed by default (consistent with v2.0 behavior).
-    func shouldIndex(volume: VolumeInfo, excludedVolumes: Set<String>) -> Bool {
+    public func shouldIndex(volume: VolumeInfo, excludedVolumes: Set<String>) -> Bool {
         !excludedVolumes.contains(volume.path)
     }
 }
@@ -113,11 +115,13 @@ actor VolumeManager {
 /// Uses `FileManager.mountedVolumeURLs` to enumerate volumes and
 /// `URLResourceValues` to categorize each volume. Volume events are
 /// monitored via NSWorkspace notifications.
-final class SystemVolumeMonitor: VolumeMonitor {
+public final class SystemVolumeMonitor: VolumeMonitor {
+
+    public init() {}
 
     // MARK: - VolumeMonitor Conformance
 
-    func mountedVolumes() -> [VolumeInfo] {
+    public func mountedVolumes() -> [VolumeInfo] {
         guard let urls = FileManager.default.mountedVolumeURLs(
             includingResourceValuesForKeys: [
                 .volumeNameKey,
@@ -139,7 +143,7 @@ final class SystemVolumeMonitor: VolumeMonitor {
         }
     }
 
-    func monitorVolumes() -> AsyncStream<VolumeEvent> {
+    public func monitorVolumes() -> AsyncStream<VolumeEvent> {
         AsyncStream { continuation in
             // Store mounted volumes snapshot for diffing.
             // Both `nonisolated(unsafe)` variables are only mutated from NotificationCenter
