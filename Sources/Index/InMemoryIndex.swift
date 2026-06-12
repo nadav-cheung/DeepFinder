@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// # Index Module
 ///
 /// Core data structures for in-memory file indexing, optimized for sub-millisecond
@@ -318,6 +321,80 @@ public actor InMemoryIndex {
 
     /// Return all indexed records. Useful for operations that need the full
     /// dataset (e.g. autocomplete with empty prefix).
+    public func allRecords() -> [FileRecord] {
+        Array(records.values)
+    }
+
+    // MARK: - Snapshot
+
+    /// Capture an immutable snapshot of the entire index state.
+    ///
+    /// The snapshot is a value-type copy of all internal data structures.
+    /// Because the sub-indices (Trie, FullSubstringMap, TrigramIndex, PinyinIndex)
+    /// are value types, the snapshot is fully independent — mutations to the
+    /// live index after `snapshot()` returns do not affect the snapshot.
+    ///
+    /// Use this when you need a consistent view of the index across multiple
+    /// queries (e.g. SearchCoordinator batching) without holding the actor lock.
+    ///
+    /// - Returns: An ``IndexSnapshot`` capturing all records and index structures.
+    public func snapshot() -> IndexSnapshot {
+        IndexSnapshot(
+            records: records,
+            pathToID: pathToID,
+            trie: trie,
+            substringMap: substringMap,
+            trigramIndex: trigramIndex,
+            pinyinIndex: pinyinIndex
+        )
+    }
+}
+
+/// Immutable snapshot of the in-memory index state.
+///
+/// Captured atomically via ``InMemoryIndex/snapshot()``. Because all
+/// sub-indices are value types (structs), the snapshot is a fully independent
+/// copy — concurrent mutations to the live index do not affect it.
+///
+/// Provides the same search API as ``InMemoryIndex`` for convenience,
+/// but runs outside actor isolation (no synchronization overhead).
+///
+/// `@unchecked Sendable` is safe because the snapshot is captured atomically
+/// inside ``InMemoryIndex/snapshot()`` (a single actor hop). All sub-indices
+/// are value types — once copied out of the actor, they are effectively immutable.
+public struct IndexSnapshot: @unchecked Sendable {
+
+    /// Records by ID.
+    public let records: [UInt32: FileRecord]
+
+    /// Path-to-ID lookup.
+    public let pathToID: [String: UInt32]
+
+    /// Prefix index.
+    public let trie: Trie<UnicodeScalar, Set<UInt32>>
+
+    /// Substring index (names ≤ 64 chars).
+    public let substringMap: FullSubstringMap
+
+    /// Trigram index (names > 64 chars).
+    public let trigramIndex: TrigramIndex
+
+    /// Pinyin index (CJK filenames).
+    public let pinyinIndex: PinyinIndex
+
+    /// Number of indexed files in this snapshot.
+    public var count: Int { records.count }
+
+    /// Whether the snapshot is empty.
+    public var isEmpty: Bool { records.isEmpty }
+
+    /// Look up a record by its path.
+    public func record(atPath path: String) -> FileRecord? {
+        guard let id = pathToID[path] else { return nil }
+        return records[id]
+    }
+
+    /// Return all indexed records.
     public func allRecords() -> [FileRecord] {
         Array(records.values)
     }

@@ -306,4 +306,67 @@ struct InMemoryIndexTests {
         #expect(results.count == 1)
         #expect(results[0].path == "/Users/test/Documents/report.pdf")
     }
+
+    // MARK: - 16. Snapshot API
+
+    @Test("snapshot 捕获当前索引状态")
+    func snapshotCapturesCurrentState() async {
+        let index = InMemoryIndex()
+        await index.insert(makeRecord(id: 1, name: "alpha.txt"))
+        await index.insert(makeRecord(id: 2, name: "beta.pdf"))
+
+        let snapshot = await index.snapshot()
+        #expect(snapshot.count == 2)
+        #expect(!snapshot.isEmpty)
+    }
+
+    @Test("snapshot 不受后续修改影响（快照隔离）")
+    func snapshotIsolation() async {
+        let index = InMemoryIndex()
+        await index.insert(makeRecord(id: 1, name: "report.pdf"))
+
+        let snapshot = await index.snapshot()
+        #expect(snapshot.count == 1)
+
+        // Mutate the live index after taking snapshot
+        await index.insert(makeRecord(id: 2, name: "memo.txt"))
+        #expect(await index.count == 2)
+
+        // Snapshot should still see only the original record
+        #expect(snapshot.count == 1)
+    }
+
+    @Test("snapshot 的 allRecords 返回所有记录")
+    func snapshotAllRecords() async {
+        let index = InMemoryIndex()
+        await index.insert(makeRecord(id: 1, name: "first.txt"))
+        await index.insert(makeRecord(id: 2, name: "second.pdf"))
+
+        let snapshot = await index.snapshot()
+        let records = snapshot.allRecords()
+        #expect(records.count == 2)
+    }
+
+    @Test("snapshot 的 recordAtPath 查找记录")
+    func snapshotRecordAtPath() async {
+        let index = InMemoryIndex()
+        await index.insert(makeRecord(id: 1, name: "report.pdf", path: "/docs/report.pdf"))
+
+        let snapshot = await index.snapshot()
+        let found = snapshot.record(atPath: "/docs/report.pdf")
+        #expect(found != nil)
+        #expect(found?.name == "report.pdf")
+
+        let missing = snapshot.record(atPath: "/nonexistent")
+        #expect(missing == nil)
+    }
+
+    @Test("空索引的 snapshot")
+    func emptySnapshot() async {
+        let index = InMemoryIndex()
+        let snapshot = await index.snapshot()
+        #expect(snapshot.count == 0)
+        #expect(snapshot.isEmpty)
+        #expect(snapshot.allRecords().isEmpty)
+    }
 }
