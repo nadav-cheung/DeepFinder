@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// HTTP transport abstraction for cloud AI providers, plus SSE line stream parser.
 ///
 /// Protocol-based for testability (production uses URLSession, tests inject mocks).
@@ -51,7 +54,7 @@ public struct URLSessionHTTPClient: HTTPClient {
     public let requestTimeout: TimeInterval
     private let session: URLSession
 
-    public init(timeout: TimeInterval = Constants.AI.requestTimeout, session: URLSession = .shared) {
+    public init(timeout: TimeInterval = Constants.AI.requestTimeout, session: URLSession = URLSession(configuration: .ephemeral)) {
         self.requestTimeout = timeout
         self.session = session
     }
