@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// # Vector Store Protocol
 ///
 /// Abstraction layer for dense vector storage and similarity search, part of the

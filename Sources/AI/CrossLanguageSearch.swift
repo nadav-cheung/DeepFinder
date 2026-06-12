@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// Expands queries with cross-language synonyms (Chinese to English and vice versa).
 ///
 /// Enables finding "mockup_final.fig" when searching for "设计稿". Results are

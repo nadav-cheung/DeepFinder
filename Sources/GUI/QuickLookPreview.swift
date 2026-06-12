@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// # Quick Look Preview Module
 ///
 /// Integrates macOS Quick Look (QLPreviewPanel) for file previewing in the

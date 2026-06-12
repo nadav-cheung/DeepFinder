@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// Shared OpenAI-compatible chat completions provider with SSE streaming and retry logic.
 ///
 /// Single implementation serving DeepSeek, Qwen, and any future OpenAI-format APIs.

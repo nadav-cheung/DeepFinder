@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// Local, rule-based explanation of why a search result matched a query.
 ///
 /// Purely heuristic (no AI required): inspects MatchType, file name, query text, and

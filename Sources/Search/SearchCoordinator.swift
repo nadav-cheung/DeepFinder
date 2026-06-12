@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// # Search Module
 ///
 /// The query processing pipeline: parsing, filtering, sorting, and result delivery.

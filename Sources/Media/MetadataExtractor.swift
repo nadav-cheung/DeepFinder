@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// # Media Module
 ///
 /// Extracts, stores, and indexes metadata from media files (images, audio, video, PDFs).

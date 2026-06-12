@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 // Sources/Index/ExtractedMetadata.swift
 import Foundation
 

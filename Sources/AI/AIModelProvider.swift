@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// # AI Module
 ///
 /// Privacy-first AI features that enhance search without compromising file privacy.

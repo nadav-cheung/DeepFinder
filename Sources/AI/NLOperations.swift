@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// Safe natural-language file operations: parsing, execution, confirmation, and undo.
 ///
 /// Recognizes "move/copy/rename X to Y" patterns and rejects destructive verbs at parse

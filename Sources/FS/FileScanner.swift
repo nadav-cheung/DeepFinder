@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// # Filesystem Module
 ///
 /// Handles filesystem scanning, real-time event monitoring, and volume management.

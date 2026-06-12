@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// # Persist Module
 ///
 /// Durable storage layer for FileRecords and metadata using SQLite in WAL mode.

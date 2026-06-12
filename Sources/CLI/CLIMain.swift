@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// # CLI Module
 ///
 /// The user-facing command-line interface for DeepFinder. Parses arguments,

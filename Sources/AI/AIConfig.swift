@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// Central configuration hub for all AI features.
 ///
 /// Defines config keys, privacy-first defaults (cloud OFF, local ON), and typed

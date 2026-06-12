@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// Compile-time product configuration constants.
 ///
 /// Centralizes all product names, paths, and identifiers in one place.

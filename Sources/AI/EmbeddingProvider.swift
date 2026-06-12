@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// # Embedding Provider Protocol
 ///
 /// Protocol for generating vector embeddings from text. Embeddings power

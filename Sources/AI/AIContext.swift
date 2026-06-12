@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// The compile-time privacy boundary between the search engine and AI providers.
 ///
 /// Carries only file metadata (via FileMetadataSummary), never contents or thumbnails.

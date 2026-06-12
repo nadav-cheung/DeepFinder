@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 import AppIntents
 import DeepFinderIndex
 import DeepFinderDaemon

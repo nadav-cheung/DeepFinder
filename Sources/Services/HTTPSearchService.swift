@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// # Services Module
 ///
 /// External integration layer exposing DeepFinder search through HTTP, URL schemes,

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// Trigram-based substring index for filenames too long for FullSubstringMap (>64 chars).
 ///
 /// Breaks filenames into 3-Unicode-scalar trigrams and maps each trigram to a posting

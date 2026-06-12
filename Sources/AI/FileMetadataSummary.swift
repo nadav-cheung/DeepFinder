@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// Privacy-safe file metadata summary for AI consumption.
 ///
 /// Strips file contents and optionally anonymizes paths (/Users/name/ -> ~/) so that

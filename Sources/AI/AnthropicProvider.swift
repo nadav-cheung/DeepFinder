@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// Claude (Anthropic) provider using the Messages API with SSE streaming.
 ///
 /// Handles Anthropic-specific protocol differences: x-api-key header, anthropic-version

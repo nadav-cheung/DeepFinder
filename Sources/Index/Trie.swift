@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// A generic Trie (prefix tree) for O(k) prefix lookup, where k is the query length.
 ///
 /// Used for filename indexing as `Trie<UnicodeScalar, Set<UInt32>>` where the value is

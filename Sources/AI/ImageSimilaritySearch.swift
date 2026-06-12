@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// On-device image similarity search using Vision framework feature vectors.
 ///
 /// Extracts VNFeaturePrintObservation embeddings from images, computes cosine similarity,

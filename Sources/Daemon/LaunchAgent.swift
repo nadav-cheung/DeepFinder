@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// Manages the macOS LaunchAgent plist for auto-starting the DeepFinder daemon on login.
 ///
 /// Generates, installs, and uninstalls the launchd plist at

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// On-device text embedding using NLContextualEmbedding (NaturalLanguage framework).
 ///
 /// Routes CJK text to the Simplified Chinese model and Latin text to the Latin model,

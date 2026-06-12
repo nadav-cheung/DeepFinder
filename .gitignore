@@ -29,6 +29,9 @@ Package.resolved
 # Claude Code local overrides
 .claude.local.md
 
+# Codegraph (runtime index)
+.codegraph/
+
 # IDE
 .idea/
 *.swp

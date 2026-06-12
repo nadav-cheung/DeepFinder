@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// Daemon-side IPC listener that accepts client connections over a Unix domain socket.
 ///
 /// Each connection is handled in its own Task: reads one framed `IPCRequest`, dispatches

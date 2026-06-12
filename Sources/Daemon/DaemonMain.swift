@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// # Daemon Module
 ///
 /// The background daemon that holds the in-memory index and serves search queries

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// Client-side IPC connector used by CLI and GUI to talk to the daemon.
 ///
 /// Connects over a Unix domain socket, sends framed `IPCRequest` messages, and reads

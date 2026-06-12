@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// Translates natural language queries into DeepFinder search syntax via an AI provider.
 ///
 /// Converts freeform input like "find big PDFs from last week" into "ext:pdf dm:lastweek size:>1mb".

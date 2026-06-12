@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 import Foundation
 
 /// An immutable record representing a single file or directory in the index.

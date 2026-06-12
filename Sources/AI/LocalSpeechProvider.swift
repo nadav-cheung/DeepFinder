@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// On-device speech recognition using Apple's Speech framework.
 ///
 /// Streams partial transcription results for real-time display, then a final result

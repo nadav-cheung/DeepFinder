@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// Maps ALL substrings of a filename to sets of `FileRecord.ID` values.
 ///
 /// For filenames <= 64 characters, this provides O(1) substring lookup by

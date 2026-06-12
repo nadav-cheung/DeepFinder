@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// Google Gemini provider using the generateContent API with SSE streaming.
 ///
 /// Handles Gemini-specific protocol: x-goog-api-key auth, candidates/parts/text

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// Persistent daemon configuration stored as JSON at `~/.deep-finder/settings.json`.
 ///
 /// Provides atomic reads and writes (temp-file + rename) so the config file never

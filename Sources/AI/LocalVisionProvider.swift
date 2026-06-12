@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// On-device image classification using Vision framework's VNClassifyImageRequest.
 ///
 /// Produces text labels (scene/object tags) for indexing, running on the Neural Engine/GPU.

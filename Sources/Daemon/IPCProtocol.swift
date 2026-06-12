@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// Codable message types that define the daemon IPC contract.
 ///
 /// Every request (`IPCRequest`) and response (`IPCResponse`) is a Codable enum with a

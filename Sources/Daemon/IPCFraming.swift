@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: MIT
+// SPDX-FileCopyrightText: 2026 nadav.com.cn
+
 /// Wire-framing protocol for the daemon IPC layer: 4-byte big-endian length prefix + JSON payload.
 ///
 /// Splits framing concerns into two halves — `IPCFraming` handles encode/decode of Codable
