@@ -33,8 +33,10 @@ jobs:
       - name: Build
         run: swift build
 
-      - name: Test with coverage
-        run: swift test --enable-code-coverage
+      - name: Test (batched per-suite)
+        # Swift Testing SIGSEGV workaround: run suites individually to avoid
+        # memory pressure from concurrent @MainActor test execution.
+        run: ./scripts/run-tests.sh
 
       - name: Report coverage
         run: |
