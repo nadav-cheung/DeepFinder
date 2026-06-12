@@ -1,6 +1,6 @@
 # REQ Status Tracking Matrix
 
-**Last updated**: 2026-06-10
+**Last updated**: 2026-06-12
 **Total REQs**: 158 across 19 version modules
 
 ---
@@ -9,8 +9,8 @@
 
 | Status | Count | Modules |
 |--------|-------|---------|
-| Done | 145 | v0.3, v0.4, v0.5, v0.6, v0.7, v1.1, v1.2, v1.4, v1.5, v2.0, v2.1, v3.0, v3.2 |
-| In Progress | 6 | v0.1 (2), v0.2 (1), v1.0 (1), v1.3 (1), v2.2 (1) |
+| Done | 151 | v0.1, v0.2, v0.3, v0.4, v0.5, v0.6, v0.7, v1.0, v1.1, v1.2, v1.3, v1.4, v1.5, v2.0, v2.1, v2.2, v3.0, v3.2 |
+| In Progress | 0 | — |
 | Not Started | 7 | v3.1 (Local RAG 7) |
 | **Total** | **158** | |
 
@@ -18,22 +18,22 @@
 
 | Version | REQs | Done | In Progress | Not Started |
 |---------|------|------|-------------|-------------|
-| v0.1 Index Core | 7 | 5 | 2 | 0 |
-| v0.2 File System | 5 | 4 | 1 | 0 |
+| v0.1 Index Core | 7 | 7 | 0 | 0 |
+| v0.2 File System | 5 | 5 | 0 | 0 |
 | v0.3 Search | 5 | 5 | 0 | 0 |
 | v0.4 Daemon + IPC | 5 | 5 | 0 | 0 |
 | v0.5 CLI Single-Shot | 4 | 4 | 0 | 0 |
 | v0.6 Interactive REPL | 3 | 3 | 0 | 0 |
 | v0.7 Daemon Management | 3 | 3 | 0 | 0 |
-| v1.0 CLI Release | 4 | 3 | 1 | 0 |
+| v1.0 CLI Release | 4 | 4 | 0 | 0 |
 | v1.1 Advanced Syntax | 7 | 7 | 0 | 0 |
 | v1.2 Metadata Filter | 8 | 8 | 0 | 0 |
-| v1.3 Search Experience | 7 | 6 | 1 | 0 |
+| v1.3 Search Experience | 7 | 7 | 0 | 0 |
 | v1.4 Content Search | 4 | 4 | 0 | 0 |
 | v1.5 Duplicate Finder | 6 | 6 | 0 | 0 |
 | v2.0 GUI | 18 | 18 | 0 | 0 |
 | v2.1 Media Metadata | 7 | 7 | 0 | 0 |
-| v2.2 Service Integration | 5 | 4 | 1 | 0 |
+| v2.2 Service Integration | 5 | 5 | 0 | 0 |
 | v3.0 AI Semantic | 16 | 16 | 0 | 0 |
 | v3.1 Local RAG | 7 | 0 | 0 | 7 |
 | v3.2 Search UI | 37 | 37 | 0 | 0 |
@@ -42,8 +42,8 @@
 
 | Priority | Total | Done | In Progress | Not Started |
 |----------|-------|------|-------------|-------------|
-| P0 | 92 | 84 | 3 | 5 |
-| P1 | 46 | 41 | 3 | 2 |
+| P0 | 92 | 87 | 0 | 5 |
+| P1 | 46 | 44 | 0 | 2 |
 | P2 | 20 | 20 | 0 | 0 |
 
 ---
@@ -57,8 +57,8 @@
 | REQ-0.1-03 | FullSubstringMap | done | `Sources/Index/FullSubstringMap.swift` | `Tests/IndexTests/FullSubstringMapTests.swift` | O(1) substring lookup for names <= 64 chars |
 | REQ-0.1-04 | TrigramIndex fallback | done | `Sources/Index/TrigramIndex.swift` | `Tests/IndexTests/TrigramIndexTests.swift` | Fallback for names > 64 chars |
 | REQ-0.1-05 | PinyinIndex | done | `Sources/Index/PinyinIndex.swift` | `Tests/IndexTests/PinyinIndexTests.swift` | CFStringTokenizer, full-pinyin + initials Trie |
-| REQ-0.1-06 | InMemoryIndex actor | 🔨 in progress | `Sources/Index/InMemoryIndex.swift` | `Tests/IndexTests/InMemoryIndexTests.swift` | **Missing: snapshot() API not implemented.** Actor isolation and batch mutations done. |
-| REQ-0.1-07 | Test fixtures | 🔨 in progress | -- | -- | **Missing: FileRecordGenerator, EdgeCaseFixtures, PerformanceFixtures not implemented.** Tests use inline ad-hoc data instead. |
+| REQ-0.1-06 | InMemoryIndex actor | done | `Sources/Index/InMemoryIndex.swift` | `Tests/IndexTests/InMemoryIndexTests.swift` | snapshot() API implemented. Actor isolation, batch mutations, snapshot isolation with IndexSnapshot struct. |
+| REQ-0.1-07 | Test fixtures | done | `Tests/IndexTests/TestFixtures.swift` | `Tests/IndexTests/TestFixtures.swift` | FileRecordGenerator, EdgeCaseFixtures (10 edge cases), PerformanceFixtures (10K/100K/1M). |
 
 ---
 
@@ -70,7 +70,7 @@
 | REQ-0.2-02 | FileScanner full scan | done | `Sources/FS/FileScanner.swift`, `Sources/FS/VolumeManager.swift` | `Tests/FSTests/FileScannerTests.swift`, `Tests/FSTests/VolumeManagerTests.swift` | TaskGroup per-volume parallel scan, configurable exclusions |
 | REQ-0.2-03 | FSEventWatcher | done | `Sources/FS/FSEventWatcher.swift` | `Tests/FSTests/FSEventWatcherTests.swift` | Index state machine: stale->verifying->live |
 | REQ-0.2-04 | IndexPersistence (SQLite WAL) | done | `Sources/Persist/IndexPersistence.swift` | `Tests/PersistTests/IndexPersistenceTests.swift` | Batch writes, schema versioning, integrity check |
-| REQ-0.2-05 | Index recovery | 🔨 in progress | -- | -- | **Being implemented.** Source and test files do not exist yet on main branch. |
+| REQ-0.2-05 | Index recovery | done | `Sources/Persist/IndexRecovery.swift` | `Tests/PersistTests/IndexRecoveryTests.swift` | runStartupRecovery, verifyIntegrity, detectStaleLock, cleanupWALFiles, schema compat check. 15 tests. |
 
 ---
 
@@ -136,7 +136,7 @@
 | REQ-1.0-01 | CLI integration tests | done | -- | `Tests/CLITests/IntegrationTests.swift` | End-to-end single-shot, exit codes, pipe mode |
 | REQ-1.0-02 | Release packaging | done | `packaging/homebrew/deepfinder.rb`, `packaging/deepfinder.1`, `packaging/completions/` | -- | Homebrew formula (67 lines), man page (230 lines), shell completions (bash/zsh/fish) |
 | REQ-1.0-03 | Fuzzy correction | done | `Sources/CLI/FuzzyCorrection.swift` | `Tests/CLITests/FuzzyCorrectionTests.swift` | Edit distance <= 2, suggestions to stderr |
-| REQ-1.0-04 | ANSI highlighting (enhanced) | 🔨 in progress | `Sources/CLI/TerminalFormatter.swift` | `Tests/CLITests/TerminalFormatterTests.swift` | **Missing: pinyin highlight (search "bg" → highlight "报告").** Multi-match highlight and pipe detection done. Being fixed. |
+| REQ-1.0-04 | ANSI highlighting (enhanced) | done | `Sources/CLI/TerminalFormatter.swift` | `Tests/CLITests/TerminalFormatterTests.swift` | Pinyin fallback highlight in highlightMatches() (lines 73-77). Multi-match highlight, pipe detection, ANSI codes. |
 
 ---
 
@@ -179,7 +179,7 @@
 | REQ-1.3-02 | Custom filter macros | done | `Sources/Search/SearchFilter.swift` | `Tests/SearchTests/SearchFilterTests.swift` | :filter save/list/delete, :name expansion |
 | REQ-1.3-03 | Multi-dimensional result sorting | done | `Sources/Search/SearchSorter.swift` | `Tests/SearchTests/SearchSorterTests.swift`, `Tests/SearchTests/NaturalSortTests.swift` | 6 sort keys, natural sort, :sort command |
 | REQ-1.3-04 | Sort preference persistence | done | `Sources/Daemon/ConfigStore.swift` | `Tests/DaemonTests/ConfigStoreTests.swift` | config.json sort field, CLI flag override |
-| REQ-1.3-05 | Query autocomplete | 🔨 in progress | `Sources/Search/AutocompleteProvider.swift` | `Tests/SearchTests/AutocompleteTests.swift` | **Missing: REPL Tab completion not wired.** AutocompleteProvider exists but readline integration incomplete. Being fixed. |
+| REQ-1.3-05 | Query autocomplete | done | `Sources/Search/AutocompleteProvider.swift`, `Sources/CLI/REPL.swift` | `Tests/SearchTests/AutocompleteTests.swift` | AutocompleteProvider + CompletionEngine + CompletionContext wired to readline via _completionEntryGenerator. Tab completion functional. |
 | REQ-1.3-06 | Bookmark & filter IPC protocol | done | `Sources/Daemon/IPCProtocol.swift` | `Tests/DaemonTests/IPCProtocolTests.swift` | IPCBookmarkRequest/Response, IPCFilterRequest/Response |
 | REQ-1.3-07 | Search suggestions (empty query) | done | `Sources/CLI/REPL.swift` (suggestions panel) | `Tests/CLITests/REPLTests.swift` | Recent searches, syntax tips |
 
@@ -256,7 +256,7 @@
 |--------|-------------|--------|-------------|------------|-------|
 | REQ-2.2-01 | HTTPSearchService | done | `Sources/Services/HTTPSearchService.swift` | `Tests/ServicesTests/HTTPSearchServiceTests.swift` | Network.framework, localhost:7654, CORS |
 | REQ-2.2-02 | URL Scheme (deepfinder://) | done | `Sources/Services/URLSchemeHandler.swift` | `Tests/ServicesTests/URLSchemeHandlerTests.swift` | deepfinder://search?q=keyword |
-| REQ-2.2-03 | AppIntents (Shortcuts) | 🔨 in progress | `Sources/Services/SearchIntent.swift` | `Tests/ServicesTests/SearchIntentTests.swift` | **Missing: GetFileInfoIntent not on main.** SearchFilesIntent done. GetFileInfoIntent being implemented. |
+| REQ-2.2-03 | AppIntents (Shortcuts) | done | `Sources/Services/SearchIntent.swift` | `Tests/ServicesTests/SearchIntentTests.swift` | SearchFilesIntent + GetFileInfoIntent both implemented with metadataJSON, metadataDict helpers. |
 | REQ-2.2-04 | AppleScript support | done | `Sources/Services/SearchScriptCommand.swift` | `Tests/ServicesTests/SearchScriptCommandTests.swift` | NSScriptCommand, sdef dictionary |
 | REQ-2.2-05 | CLI --serve mode | done | `Sources/CLI/ServeMode.swift` | `Tests/ServicesTests/ServeModeTests.swift` | Daemon + HTTP without GUI |
 
@@ -368,3 +368,4 @@ Scope: `Sources/GUI/` only. Design doc: `../design/2026-06-03-v3.2-search-ui-des
 | 2026-06-02 | REQ-1.0-02 (Release packaging) changed from partial to done: Homebrew formula, man page, and shell completions now exist in packaging/. All v1.0 REQs done. |
 | 2026-06-03 | Added v3.2 Search UI Refinement (37 REQs). Total 121→158 REQs. Specs/ reorganized: design/, ux/ subdirectories, requirements.md merged into 00-overview.md, research/ directory created. |
 | 2026-06-10 | Corrected 6 REQs from done→in progress after implementation audit. REQ-0.1-06 (P0, snapshot API not implemented), REQ-0.1-07 (P0, test fixtures not implemented), REQ-0.2-05 (P1, IndexRecovery being implemented), REQ-1.0-04 (P1, pinyin highlight missing), REQ-1.3-05 (P0, REPL Tab completion not wired), REQ-2.2-03 (P1, GetFileInfoIntent not on main). Done: 151→145, in progress: 0→6. P0: 84 done + 3 in progress + 5 not started. P1: 41 done + 3 in progress + 2 not started. |
+| 2026-06-12 | All 6 in-progress REQs resolved. REQ-0.1-06: snapshot() API + IndexSnapshot implemented. REQ-0.1-07: FileRecordGenerator, EdgeCaseFixtures, PerformanceFixtures created. REQ-0.2-05: IndexRecovery confirmed complete (code + 15 tests). REQ-1.0-04: Pinyin highlight confirmed in TerminalFormatter. REQ-1.3-05: REPL Tab completion confirmed wired. REQ-2.2-03: GetFileInfoIntent confirmed implemented. Done: 145→151, in progress: 6→0. Also: MIT license headers added to all 136 source files. |
