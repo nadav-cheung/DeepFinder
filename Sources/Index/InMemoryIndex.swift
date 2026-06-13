@@ -322,12 +322,15 @@ public actor InMemoryIndex {
             matchedIDs.formUnion(pinyinResults)
         }
 
-        // Sort by ID and take up to `limit`
+        // Sort the (cheap) UInt32 IDs and select only `limit` *before* fetching the
+        // (larger) FileRecord values. A broad prefix match can collect many IDs; this
+        // avoids materializing a FileRecord for every match just to discard most of
+        // them. Output is identical to fetch-all-then-sort-then-truncate because IDs
+        // are unique and present in `records`.
         return matchedIDs
-            .compactMap { id in records[id] }
-            .sorted { $0.id < $1.id }
+            .sorted()
             .prefix(limit)
-            .map { $0 }
+            .compactMap { id in records[id] }
     }
 
     /// Return all indexed records. Useful for operations that need the full

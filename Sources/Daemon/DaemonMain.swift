@@ -512,15 +512,12 @@ public actor DaemonMain {
             if let key {
                 return await configStore.get(key: key)
             }
-            // nil key = list all config as JSON
+            // nil key = list all config as JSON. Field→string serialization lives on
+            // DaemonConfig (serializedDictionary), shared with ConfigStore.get(key:),
+            // so the two callers cannot drift apart.
             let config = await configStore.get()
-            return (try? JSONEncoder().encode([
-                "excludedPaths": (try? JSONEncoder().encode(config.excludedPaths)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]",
-                "excludedVolumes": (try? JSONEncoder().encode(config.excludedVolumes)).flatMap { String(data: $0, encoding: .utf8) } ?? "[]",
-                "indexBatchSize": String(config.indexBatchSize),
-                "maxResults": String(config.maxResults),
-                "configVersion": String(config.configVersion),
-            ] as [String: String])).flatMap { String(data: $0, encoding: .utf8) }
+            return (try? JSONEncoder().encode(config.serializedDictionary()))
+                .flatMap { String(data: $0, encoding: .utf8) }
         }
         let configSetProvider: @Sendable (String, String) async -> Void = { key, value in
             // The provider returns Void (the IPC configSet handler acks unconditionally),

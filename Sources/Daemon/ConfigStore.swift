@@ -45,6 +45,27 @@ public struct DaemonConfig: Codable, Sendable, Equatable {
         maxResults: Constants.Daemon.maxResults,
         configVersion: 1
     )
+
+    /// Serialize every field to its string form for the IPC `config_get` wire format.
+    ///
+    /// Single source of truth for the field→string mapping — used by both
+    /// ``ConfigStore/get(key:)`` and the daemon's `configGetProvider`, so the set of
+    /// keys and their serialization cannot drift between the two callers. Array fields
+    /// are JSON-encoded (e.g. `["/a","/b"]`); scalar fields are plain integers.
+    public func serializedDictionary() -> [String: String] {
+        func jsonString<T: Encodable>(_ value: T) -> String {
+            guard let data = try? JSONEncoder().encode(value),
+                  let str = String(data: data, encoding: .utf8) else { return "[]" }
+            return str
+        }
+        return [
+            "excludedPaths": jsonString(excludedPaths),
+            "excludedVolumes": jsonString(excludedVolumes),
+            "indexBatchSize": String(indexBatchSize),
+            "maxResults": String(maxResults),
+            "configVersion": String(configVersion),
+        ]
+    }
 }
 
 // MARK: - ConfigStoreError
@@ -94,22 +115,10 @@ public actor ConfigStore {
     }
 
     /// Return a single config value by key name, as a String.
-    /// Returns nil for unknown keys.
+    /// Returns nil for unknown keys. Delegates to ``DaemonConfig/serializedDictionary()``
+    /// so the key set and serialization are shared with the daemon's `configGetProvider`.
     public func get(key: String) -> String? {
-        switch key {
-        case "excludedPaths":
-            return (try? JSONEncoder().encode(config.excludedPaths)).flatMap { String(data: $0, encoding: .utf8) }
-        case "excludedVolumes":
-            return (try? JSONEncoder().encode(config.excludedVolumes)).flatMap { String(data: $0, encoding: .utf8) }
-        case "indexBatchSize":
-            return String(config.indexBatchSize)
-        case "maxResults":
-            return String(config.maxResults)
-        case "configVersion":
-            return String(config.configVersion)
-        default:
-            return nil
-        }
+        config.serializedDictionary()[key]
     }
 
     /// Set a single config key and persist atomically.

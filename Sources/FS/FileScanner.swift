@@ -258,28 +258,12 @@ public actor FileScanner {
 
                         guard isRegularFile || isDirectory else { continue }
 
-                        let fileName = url.lastPathComponent
-                        let nfcName = fileName.precomposedStringWithCanonicalMapping
-                        let parentPath = url.deletingLastPathComponent().path
-                        let fileSize = isRegularFile ? Int64(resourceValues.fileSize ?? 0) : Int64(0)
-                        let createdAt = resourceValues.creationDate ?? Date()
-                        let modifiedAt = resourceValues.contentModificationDate ?? Date()
-                        let rawExt: String? = isRegularFile ? url.pathExtension : nil
-                        // Collapse an absent or empty extension (directories, extensionless
-                        // files) to nil, avoiding the force-unwrap on the optional.
-                        let fileExtension: String? = (rawExt?.isEmpty == false) ? rawExt : nil
-
-                        let record = FileRecord(
-                            id: assignID(),
-                            name: nfcName,
-                            originalName: fileName,
-                            path: pathString,
-                            parentPath: parentPath,
+                        let record = Self.makeRecord(
+                            url: url,
+                            resourceValues: resourceValues,
                             isDirectory: isDirectory,
-                            size: fileSize,
-                            createdAt: createdAt,
-                            modifiedAt: modifiedAt,
-                            extension: fileExtension
+                            isRegularFile: isRegularFile,
+                            id: assignID()
                         )
 
                         if isDirectory {
@@ -347,5 +331,37 @@ public actor FileScanner {
         guard !relative.isEmpty else { return 0 }
         let trimmed = relative.hasPrefix("/") ? String(relative.dropFirst()) : relative
         return trimmed.components(separatedBy: "/").filter { !$0.isEmpty }.count
+    }
+
+    /// Build a `FileRecord` from a scanned URL and its resource values.
+    ///
+    /// The stored name is NFC-normalized; the extension collapses to nil when absent or
+    /// empty (directories and extensionless files). Size is forced to 0 for directories.
+    /// Extracted from the scan loop so the loop body reads as enumeration + dispatch,
+    /// and the record-shaping logic has one definition.
+    static func makeRecord(
+        url: URL,
+        resourceValues: URLResourceValues,
+        isDirectory: Bool,
+        isRegularFile: Bool,
+        id: UInt32
+    ) -> FileRecord {
+        let fileName = url.lastPathComponent
+        let rawExt: String? = isRegularFile ? url.pathExtension : nil
+        // Collapse an absent or empty extension (directories, extensionless files)
+        // to nil, avoiding the force-unwrap on the optional.
+        let fileExtension: String? = (rawExt?.isEmpty == false) ? rawExt : nil
+        return FileRecord(
+            id: id,
+            name: fileName.precomposedStringWithCanonicalMapping,
+            originalName: fileName,
+            path: url.path,
+            parentPath: url.deletingLastPathComponent().path,
+            isDirectory: isDirectory,
+            size: isRegularFile ? Int64(resourceValues.fileSize ?? 0) : Int64(0),
+            createdAt: resourceValues.creationDate ?? Date(),
+            modifiedAt: resourceValues.contentModificationDate ?? Date(),
+            extension: fileExtension
+        )
     }
 }
