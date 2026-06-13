@@ -6,10 +6,10 @@ We release patches for security vulnerabilities in the following versions:
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 3.0.x   | :white_check_mark: |
+| 3.x.x   | :white_check_mark: |
 | < 3.0   | :x:                |
 
-Only the latest major version (v3.0) receives security updates. If you are running an older version, please upgrade before reporting a vulnerability.
+Only the latest major version (v3) receives security updates. If you are running an older version, please upgrade before reporting a vulnerability.
 
 ## Reporting a Vulnerability
 

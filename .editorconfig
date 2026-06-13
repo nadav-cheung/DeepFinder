@@ -1,0 +1,35 @@
+# EditorConfig — https://editorconfig.org
+# Keeps indentation and line endings consistent across editors and platforms.
+# Most editors apply these automatically; install the EditorConfig plugin if not.
+
+root = true
+
+[*]
+charset = utf-8
+end_of_line = lf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+
+# Swift sources — 4-space indent (matches swift-format default).
+[*.swift]
+indent_size = 4
+max_line_length = 120
+
+# Structured data — 2-space indent.
+[*.{json,yml,yaml,toml}]
+indent_size = 2
+
+# Markdown — preserve trailing whitespace (two trailing spaces force a <br>),
+# and do not hard-wrap prose.
+[*.md]
+trim_trailing_whitespace = false
+max_line_length = off
+
+# Makefiles require hard tabs.
+[Makefile]
+indent_style = tab
+
+# Shell scripts — 2-space indent (matches repo scripts/).
+[*.sh]
+indent_size = 2

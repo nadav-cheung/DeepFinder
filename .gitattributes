@@ -1,0 +1,25 @@
+# Git attributes — line-ending normalization and binary detection.
+# See: https://git-scm.com/docs/gitattributes
+
+# Normalize all text files to LF in the repository. Checkouts use the
+# platform default (LF on macOS/Linux). This keeps diffs clean and avoids
+# CRLF noise from contributors on other platforms.
+* text=auto eol=lf
+
+# Explicitly mark binary assets so Git never attempts line-ending
+# normalization, merging, or textual diffs on them.
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.icns binary
+*.svg  text
+*.pdf  binary
+*.zip  binary
+*.gz   binary
+*.mov  binary
+*.mp4  binary
+*.m4a  binary
+
+# Linguist / GitHub language detection helpers — Swift is the primary language.
+*.swift linguist-language=Swift

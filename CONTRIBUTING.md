@@ -20,8 +20,11 @@ cd DeepFinder
 # Build all targets
 swift build
 
-# Run all tests
-swift test
+# Run the full suite via the batched runner. Swift Testing crashes (SIGSEGV)
+# when too many @MainActor suites run in a single process, so each suite runs
+# as a separate invocation. Every suite passes individually.
+./scripts/run-tests.sh
+./scripts/run-tests.sh --quick   # Skip daemon/CLI integration suites
 
 # Run a specific test suite
 swift test --filter TrieTests
@@ -35,22 +38,26 @@ swift build -c release
 
 ### Project Structure
 
+The package is split into ten library targets with a one-way dependency graph (no cycles). The Index layer has zero UI/CLI dependencies and is testable in isolation.
+
 ```
 Sources/
-  Index/          # Core data structures: FileRecord, Trie, FullSubstringMap, etc.
-  Search/         # Query parsing, filtering, sorting, provider orchestration
-  FS/             # Filesystem scanning, FSEvent monitoring, volume management
-  Persist/        # SQLite persistence layer
-  Daemon/         # Background daemon: IPC server, config, lifecycle
-  CLI/            # Command-line interface: REPL, single-shot, terminal formatting
-  GUI/            # SwiftUI search panel, global hotkey, settings
-  Media/          # Media metadata extraction (image, audio, video, PDF)
-  Services/       # HTTP API, URL schemes, AppleScript integration
-  AI/             # AI features: NLP translation, vision, speech, providers
+  Index/      # Core data structures: FileRecord, Trie, FullSubstringMap, etc.
+  Search/     # Query parsing, filtering, sorting, provider orchestration
+  FS/         # Filesystem scanning, FSEvent monitoring, volume management
+  Persist/    # SQLite persistence layer
+  Daemon/     # Background daemon: IPC server, config, lifecycle
+  CLI/        # Command-line interface: REPL, single-shot, terminal formatting
+  GUI/        # SwiftUI search panel, global hotkey, settings
+  Media/      # Media metadata extraction (image, audio, video, PDF)
+  Services/   # HTTP API, URL schemes, AppleScript integration
+  AI/         # AI features: NLP translation, vision, speech, providers
+  *Entry/     # Thin executable wrappers (CLI, daemon, GUI app)
 Tests/
-  DeepFinderTests/  # Unit and integration tests
+  IndexTests/ SearchTests/ FSTests/ PersistTests/ DaemonTests/
+  CLITests/ GUITests/ AITests/ MediaTests/ ServicesTests/
 docs/
-  superpowers/specs/  # Design specifications and requirements
+  superpowers/specs/  # Design specifications and per-version requirements
 ```
 
 ## Development Workflow
@@ -126,10 +133,19 @@ Trigger code review after:
 
 ### Concurrency
 
-- `InMemoryIndex`: actor -- all read/write via actor isolation
-- `IndexingEngine`: actor -- coordinates FileScanner + FSEventWatcher
-- `SearchCoordinator`: plain actor (NOT `@MainActor`) -- works in both daemon and GUI contexts
+- `InMemoryIndex`: actor — all read/write via actor isolation; `snapshot()` returns an atomically-captured point-in-time read
+- `FileScanner` + `FSEventWatcher` coordination is handled directly by `DaemonMain` (there is no separate `IndexingEngine` actor)
+- `SearchCoordinator`: plain actor (NOT `@MainActor`) — works in both daemon and GUI contexts
 - All cross-actor calls use `await`; never force-unlock or bypass actor isolation
+
+### Linting and Formatting
+
+```bash
+swiftlint                        # Enforces style/convention rules (.swiftlint.yml)
+swift-format lint -r Sources/    # Apple's formatter, configured in .swift-format
+```
+
+Both are expected to be clean before submitting a pull request. SwiftLint is system-installed (not an SPM dependency); `swift-format` is the Apple tool. Fixes from these tools do not count as your logical change — keep them in a separate commit.
 
 ### Error Handling
 

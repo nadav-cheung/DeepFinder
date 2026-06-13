@@ -7,6 +7,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [3.2.0] — 2026-06-04
+
+Search UI refinement — 36 deliverable REQs across three phases, GUI-only
+(no daemon or IPC changes). Full reference: `docs/superpowers/specs/reqs/v3.2-search-ui.md`.
+
+### Added
+
+#### Phase 1 — Core Speed (keyboard-first navigation)
+- REQ-3.2-04: Spinner shown only for AI queries; hidden for local queries (<50ms).
+- REQ-3.2-07: Adaptive panel height (`min(screenH - box - margins, 800pt)`).
+- REQ-3.2-08: ↑/↓ selection with Ctrl+N/P Emacs aliases and type-to-select.
+- REQ-3.2-09: ScrollViewReader auto-scroll with `.easeOut(0.15s)`.
+- REQ-3.2-10: ⌥↑/⌥↓ page navigation (~20 rows).
+- REQ-3.2-12: Background-thread AttributedString highlight computation.
+- REQ-3.2-14: LazyVStack + `.equatable()` virtualization (≥55 FPS at 10k results).
+- REQ-3.2-17: Selection animation skipping on rapid key presses.
+- REQ-3.2-19: Panel open (spring 0.25s) / close (easeOut 0.2s) animations.
+- REQ-3.2-24: Enter opens file and auto-closes panel.
+- REQ-3.2-25: ⌘Enter reveals file in Finder (panel stays open).
+- REQ-3.2-26: Space / ⌘Y Quick Look preview synced with selection.
+- REQ-3.2-27: ⌘C copy path with inline toast confirmation.
+- REQ-3.2-30: Context-aware Esc (Quick Look → detail → clear text → close).
+- REQ-3.2-36: CJK IME stability (no search during marked-text composition).
+
+#### Phase 2 — Richness
+- REQ-3.2-01: Rotating dynamic placeholder.
+- REQ-3.2-02: Search history dropdown (↑ on empty query, last 100, JSON-persisted).
+- REQ-3.2-05: Clear-button opacity animation.
+- REQ-3.2-13: Result-count footer with pagination.
+- REQ-3.2-18: Staggered fade-in + slide-down result animation.
+- REQ-3.2-31: ⌘K action panel with fuzzy operation search.
+- REQ-3.2-32: UTI grouping with sticky, collapsible headers.
+- REQ-3.2-34: Friendly zero-results state with suggested next steps.
+- REQ-3.2-37: Fixed bottom action bar with shortcut hints (absorbs REQ-3.2-06).
+
+#### Phase 3 — Polish
+- REQ-3.2-03: Voice-input button in search bar.
+- REQ-3.2-11: ⌘↑/⌘↓ jump between type groups.
+- REQ-3.2-15: 20×20pt file icons with directory child-count badges.
+- REQ-3.2-16: PathShortener middle-truncation with full-path tooltip.
+- REQ-3.2-20: Search-field focus border glow.
+- REQ-3.2-21: IntelligenceGlow 4-layer upgrade (8-color palette, ≥55 FPS).
+- REQ-3.2-22: Empty-state breathing scale animation.
+- REQ-3.2-23: 0.15s hover effect (independent of keyboard selection).
+- REQ-3.2-28: ⌘I file detail side panel (300pt).
+- REQ-3.2-29: Tab path autocomplete into search field.
+- REQ-3.2-33: Access-history weighted sorting (frequency × 0.4 + recency × 0.6).
+- REQ-3.2-35: Clickable filter chips with two-way syntax sync.
+- REQ-3.2-06: Merged into REQ-3.2-37 (ID retained for numbering continuity).
+
+### Changed
+- Trust LazyVStack built-in recycling over manual virtualization (`.equatable()` + fixed 40pt row height + background highlight).
+- `.glassEffect()` restricted to navigation chrome per WWDC25 guidance; result rows use standard list styling.
+
+## [3.1.0] — Deferred
+
+Local RAG (retrieval-augmented generation) — **not released**. The 7 REQs
+(REQ-3.1-01 … 07: content chunking, on-device CoreML embeddings, vector index,
+semantic retrieval, local generation) require human decisions on CoreML model
+selection, training/quantization, and embedding architecture, and are
+therefore deferred. Version number skipped on the release line; the search-UI
+work shipped directly as v3.2.0. Reference: `docs/superpowers/specs/reqs/v3.1-rag.md`.
+
 ## [3.0.0] — 2026-05-30
 
 ### Added

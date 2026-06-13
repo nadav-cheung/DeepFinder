@@ -48,7 +48,7 @@
 
 ---
 
-## v0.1 -- Index Core (7 REQs, 5 done + 2 in progress)
+## v0.1 -- Index Core (7 REQs, done)
 
 | REQ ID | Description | Status | Source Files | Test Files | Notes |
 |--------|-------------|--------|-------------|------------|-------|
@@ -62,7 +62,7 @@
 
 ---
 
-## v0.2 -- File System (5 REQs, 4 done + 1 in progress)
+## v0.2 -- File System (5 REQs, done)
 
 | REQ ID | Description | Status | Source Files | Test Files | Notes |
 |--------|-------------|--------|-------------|------------|-------|
@@ -129,7 +129,7 @@
 
 ---
 
-## v1.0 -- CLI Release (4 REQs, 3 done + 1 in progress)
+## v1.0 -- CLI Release (4 REQs, done)
 
 | REQ ID | Description | Status | Source Files | Test Files | Notes |
 |--------|-------------|--------|-------------|------------|-------|
@@ -171,7 +171,7 @@
 
 ---
 
-## v1.3 -- Search Experience (7 REQs, 6 done + 1 in progress)
+## v1.3 -- Search Experience (7 REQs, done)
 
 | REQ ID | Description | Status | Source Files | Test Files | Notes |
 |--------|-------------|--------|-------------|------------|-------|
@@ -250,7 +250,7 @@
 
 ---
 
-## v2.2 -- Service Integration (5 REQs, 4 done + 1 in progress)
+## v2.2 -- Service Integration (5 REQs, done)
 
 | REQ ID | Description | Status | Source Files | Test Files | Notes |
 |--------|-------------|--------|-------------|------------|-------|

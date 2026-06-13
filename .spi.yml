@@ -3,4 +3,14 @@ builder:
   configs:
     - platform: macos
       swift_version: '6.2'
-      documentation_targets: [DeepFinder]
+      # Document the reusable library targets (public API surface). Application
+      # layers (Daemon/CLI/GUI) are intentionally excluded — they are thin
+      # orchestration over these core libraries and add no reusable API.
+      documentation_targets:
+        - DeepFinderIndex
+        - DeepFinderSearch
+        - DeepFinderPersist
+        - DeepFinderFS
+        - DeepFinderMedia
+        - DeepFinderAI
+        - DeepFinderServices

@@ -9,10 +9,11 @@ Brief description of changes.
 - [ ] Test
 
 ## Checklist
-- [ ] Tests pass (`swift test`)
 - [ ] Build passes (`swift build`)
+- [ ] Tests pass (`./scripts/run-tests.sh`)
 - [ ] No external dependencies added
-- [ ] Spec updated (if behavior changed)
+- [ ] Public APIs have `///` doc comments
+- [ ] Spec / requirement docs updated (if behavior changed)
 
 ## Testing
 Describe how you tested these changes.

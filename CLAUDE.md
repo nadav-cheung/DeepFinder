@@ -10,7 +10,7 @@ DeepFinder — a macOS file search app rivaling Windows Everything. **v1.0 = CLI
 
 **产品名配置**：`PRODUCT.toml` 是产品名的唯一来源。代码中通过 `Product` enum（`Sources/Index/ProductConfig.swift`）引用。改产品名只改 `PRODUCT.toml` + `ProductConfig.swift`，不散落到其他文件。文档中用显示名 "DeepFinder" 即可。
 
-**Status**: `v3.2.0` ✅ **完成** — CLI + daemon + GUI + AI semantic search + media metadata + services. Full roadmap v0.1 through v3.2 complete. Spec: `docs/superpowers/specs/`. OSS readiness assessment: `docs/superpowers/plans/2026-05-31-oss-readiness-assessment.md`.
+**Status**: `v3.2.0` ✅ **完成** — CLI + daemon + GUI + AI semantic search + media metadata + services. Roadmap v0.1→v3.0 and v3.2 complete; **v3.1 本地 RAG 延期**（规划阶段，需人工 CoreML 决策，未打标签）. Spec: `docs/superpowers/specs/`. OSS readiness assessment: `docs/superpowers/plans/2026-05-31-oss-readiness-assessment.md`.
 
 Zero external dependencies — pure Swift + Apple frameworks only (Foundation, CoreServices, Carbon, SQLite3). CLI via Darwin.readline + ANSI escape codes.
 
@@ -39,7 +39,7 @@ swift run deepfinder                     # CLI interactive REPL (after v0.6)
 | `v2.1` | 媒体元数据 | ✅ 完成并打标签 |
 | `v2.2` | 服务集成 | ✅ 完成并打标签 |
 | **`v3.0`** | **AI 语义** | ✅ 完成并打标签 |
-| `v3.1` | Search UI refinement | ✅ 完成并打标签 |
+| `v3.1` | 本地 RAG（检索增强生成） | ⏸ 延期（规划阶段，未打标签；需人工 CoreML 决策） |
 | `v3.2` | Search UI refinement | ✅ 完成并打标签 |
 
 **Workflow**: Each version develops on its `dev/vX.Y` branch. When deliverables pass all tests and review, merge to `main` and tag `vX.Y.Z`. Next version branches from `main`.

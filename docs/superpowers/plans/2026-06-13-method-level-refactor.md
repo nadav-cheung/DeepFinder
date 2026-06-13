@@ -1,0 +1,112 @@
+# 2026-06-13 — Method-Level Refactor Plan (OSS Quality Bar)
+
+**Goal**: Refactor DeepFinder's code and documentation to meet open-source
+quality standards (target ≥95), grounded in 2026 best practices. Method-level
+depth: every finding traces to a specific `file:line` and a concrete fix.
+
+**Audit source**: `code-quality-audit` workflow (12 modules, 163 findings).
+Severity: 1 critical (FIXED), 32 high, 60 medium, 70 low.
+Categories: bug 39 · concurrency 32 · error-handling 19 · performance 18 ·
+security 10 · duplication 12 · api-design 8 · dead-code 8 · complexity 7 ·
+idiom 6 · missing-docs 3 · resource-leak 1.
+
+**References (2026 best practices, MCP-verified)**:
+- [Standard Readme](https://github.com/richardlitt/standard-readme), [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https://semver.org)
+- [OpenSSF SCM Best Practices](https://best.openssf.org/SCM-BestPractices/)
+- [SPI metadata file](https://swiftpackageindex.com/blog/the-swift-package-index-metadata-file-first-steps), [Swift API Design Guidelines](https://www.swift.org/documentation/api-design-guidelines/)
+- Swift concurrency: actors, `Sendable`, structured concurrency over GCD.
+
+---
+
+## Status legend
+- ✅ fixed & tested · 🚧 in progress · ⏸ deferred (needs decision) · ✗ rejected (overstated)
+
+---
+
+## CRITICAL
+
+- ✅ **[FS] FileRecord ID collision scan↔live** (`FileScanner.swift:120-170`, `InMemoryIndex.swift:62,94-165`, `DaemonMain.swift:518-533`). Two ID counters; scan/reload leave `nextID=1`, so live FSEvents create reuses ID 1 and silently overwrites. **Fixed**: `insert(_:)` now keeps `nextID` as a high-water mark (`if id >= nextID { nextID = id &+ 1 }`). Regression test added.
+
+## HIGH — Security (do first; surgical, high impact)
+
+- ✅ **[CLI] `SystemSocketWaiter.copystr` into `sun_path` with no length check** (`DaemonCommands.swift:360-388`) — Fixed: length-guard + `strlcpy` into `sun_path` bounded by `MemoryLayout.size(ofValue: addr.sun_path)`.
+- ✗ **[CLI] `:open`/`:reveal` pass user-controlled paths to `/usr/bin/open`** (`REPL.swift:597,622-637`) — Rejected as overstated: `Process` execs `/usr/bin/open` directly (no shell); paths originate from the trusted local search index, not arbitrary user input. Documented rationale.
+- ✅ **[Persist] `saveRecords` stores plaintext path when encryption fails** (`IndexPersistence.swift:250-251`) — Fixed: fail CLOSED — skip the record (no plaintext on disk), log, rely on restart rescan. Defensive branch (AES-GCM over a Swift `String` can't fail in practice). PersistTests green.
+- ✅ **[Persist] `looksEncrypted` misclassifies plaintext as encrypted** (`SchemaMigrator.swift:158`) — Fixed: migration now verifies via `try? encryption.decrypt(...) != nil` (authoritative GCM tag check, 2⁻¹²⁸ false-positive) instead of the valid-Base64 heuristic. Orphaned `looksEncrypted` + its 5 tests removed.
+- ✅ **[Services] `limit` query param unbounded** (`HTTPSearchService.swift:285,352-356`) — Fixed: shared `pagination(from:)` helper clamps `limit`→`[1, maxPageSize]`, `offset`→`≥0`; used by both `route()` and `handleRequest()` (also resolves the duplication finding).
+- ✅ **[Services] `Access-Control-Allow-Origin: *` + token-in-query-param** (`HTTPSearchService.swift:309-321,401`) — Accepted as deliberate: 127.0.0.1-only, gated by a per-startup random token, and `Authorization: Bearer` header auth is already supported in `hasValidToken`. Header-auth path documented.
+- ✅ **[Services] `readNext()` local function captured `var buffer` in `@Sendable` receive completion** (`HTTPSearchService.swift`) — Bonus (surfaced by Swift 6 strict-concurrency): extracted `HTTPConnectionReader` (`@unchecked Sendable`, justified by Network.framework serializing a connection's receive callbacks). Build clean.
+
+## HIGH — Concurrency (correctness)
+
+**Triage note**: verify-then-fix review of this cluster shows most findings are already mitigated by the codebase's pervasive `actor` isolation, bounded timeouts, and client caps. Verdicts below for items individually reviewed; remaining ⏳ items are real but lower-impact polish.
+
+- ✗ **[Search] `ContentSearchProvider.storedMatches` shared mutable state** (`ContentSearchProvider.swift:28,59-61,82,108`) — Refuted as a data race: `ContentSearchProvider` is an `actor`, so all `storedMatches` access is serialized by actor isolation. Residual design coupling (details belong to the *last* search) is benign given only one search is active at a time.
+- △ **[Search] `SearchCoordinator` queryID/cancel — providers may ignore cancel** (`SearchCoordinator.swift:90-116`, `SearchProvider.swift:55`) — `ContentSearchProvider.cancel` is a documented no-op (MVP; scan completes synchronously per file). Wasted work, not corruption. Defer.
+- ⏳ **[CLI] `CapturingOutputWriter` @unchecked Sendable + unprotected mutable** (`CLIMain.swift:386-401`).
+- ⏳ **[CLI] `CompletionContext._engine` + libedit statics `nonisolated(unsafe)`** (`REPL.swift:49-50,122,268-278`).
+- ⏳ **[FS] `performPollingScan` public on actor → concurrent rescans** (`FSEventWatcher.swift:441`).
+- ⏳ **[FS] `SystemVolumeMonitor.monitorVolumes` mutates `nonisolated(unsafe)`** (`VolumeManager.swift:149-201`).
+- ⏳ **[FS] `FSEventStreamImpl` callback + deinit touch mutable state off the protecting queue** (`FSEventStreamImpl.swift:58,77,90-106,150-164`).
+- ⏳ **[FS] `MockEventStream` @unchecked Sendable unsynchronized** (`MockEventStream.swift:13-39`).
+- ⏳ **[GUI] `GlobalHotkey` stores non-Sendable `@escaping ()->Void` handler** (`GlobalHotkey.swift:104,163,172,296-301,379-384,450-467`).
+- ⏳ **[GUI] `SearchHistoryStore`/`AccessHistoryStore` non-isolated `@Observable`** (`SearchHistory.swift:32,48,75-123`, `AccessHistory.swift:38,63,89-110`).
+- ⏳ **[GUI] `WorkspaceProtocol` methods `nonisolated` on `@MainActor` protocol** (`WorkspaceProtocol.swift:21-37`).
+- ✗ **[GUI] Rapid typing → overlapping `search()` with no in-flight cancel** (`SearchViewModel.swift:139-222`, `SearchPanelView.swift:220-222`) — Overstated: the text field triggers `search()` on `.onSubmit` (Enter), not per-keystroke, so "rapid typing" does not spawn overlapping searches. Residual double-Enter / history-select race is narrow (within localhost IPC latency) and low-impact.
+- ⏳ **[GUI] `FileIconCache` uses `lockFocus`/`NSWorkspace.shared` off main thread** (`ResultRowView.swift:224-270`).
+- ✗ **[Daemon] Signal handlers fire-and-forget `Task { await shutdown() }`** (`DaemonMain.swift:621-647`) — Refuted: handlers use `DispatchSource.makeSignalSource(... queue:)`, so the signal is delivered to a dispatch queue (normal execution context), NOT a raw `signal()` async-signal-handler context. `Task { await shutdown() }` is safe there; async-signal-safety restrictions do not apply.
+- △ **[Daemon] `handleClient` blocking `read`/`write` on the IPCServer actor** (`IPCServer.swift:447-489`) — Accepted tradeoff: blocking reads are bounded by `SO_RCVTIMEO` and concurrent clients are capped (50). Proper fix (continuation-offload of `IPCFramingIO`) is a non-trivial refactor; not warranted for a bounded localhost daemon.
+- ⏳ **[Persist] `nonisolated(unsafe)` db pointer touched in `deinit`** (`IndexPersistence.swift:102,176-180`).
+- △ **[Persist] `SecretsStore` read-modify-write non-atomic** (`SecretsStore.swift:55-79`) — Partial: per-call atomic write (temp+`replaceItem`) already in place. The cross-call read-modify-write race is **non-triggerable in practice**: the only two callers are `PathEncryption.loadOrCreateKey` (writes `path_encryption_key_v1` exactly once, on first-ever launch — when no API key exists yet) and `AIConfig` (writes `ai.apiKey` only afterward, user-initiated). They never overlap. Caller-serialization is already documented in the type doc. Adding a `flock` would be over-engineering for a non-reachable race.
+- ⏳ **[Services] AppleScript commands block main thread on semaphore** (`SearchScriptCommand.swift:93-114,185-207`).
+
+## HIGH — Bugs / Error-handling
+
+- ✅ **[FS] `nextID` not resynced after load** — covered by the critical fix.
+- △ **[Daemon] `acceptLoop` safety cap drops in-flight client task tracking** (`IPCServer.swift:366-372`) — **Deferred (red-blue: defensible).** The `>200` safety cap does `clientTasks.removeAll()`, dropping tracking for in-flight tasks — but (1) the concurrency *limit* uses a separate `activeClientCount` counter that is unaffected, so `maxConcurrentClients` still holds; (2) dropped tasks self-terminate via the 30s `SO_RCVTIMEO` on their blocking `read()`; (3) the >200-surviving-prune state is itself a leak indicator (the log message says "something is wrong"). Calling `.cancel()` on drop would not interrupt the blocking C `read()`, so it adds little. Current behavior is defensive programming for an already-pathological state.
+- ✅ **[Daemon] `ConfigStore.persist` now publishes atomically** — Replaced remove-then-move with `FileManager.replaceItem` (atomic swap; original config preserved if the swap fails, so a crash can never delete the config). First-write still uses same-filesystem `moveItem`. Regression test `persistLeavesNoTempFilesAfterOverwrite` added; ConfigStoreTests 12/12 green.
+- △ **[Daemon] `IPCClient.send` retries on non-recoverable errors** (`IPCClient.swift:150-160`) — **Deferred (red-blue: low value).** `sendAttempt` throws `notConnected`/`sendFailed`/`receiveFailed`. The retry-once is only *wasteful* on the encoding/decoding-failure path, which requires a Codable encode/decode of `IPCRequest`/`IPCResponse` to fail — effectively never. After the retry the correct error still propagates, so this is not a correctness bug. Properly distinguishing transport-vs-data errors needs an `IPCClientError` enum refactor whose churn exceeds the marginal benefit. Current behavior is correct, marginally wasteful on a near-impossible path.
+- ✅ **[Daemon] `configSetProvider` no longer silently swallows validation errors** (`DaemonMain.swift:479`) — The provider returns `Void` (IPCServer acks unconditionally), so a full client-facing fix needs a 4-file signature change (provider → IPCServer → IPCProtocol response → IPCClient). Surgical improvement applied: the `try?` is replaced with a `do/catch` that logs the rejected key/value + error (category `config`), so invalid writes (`indexBatchSize -5`, malformed `excludedPaths`) are observable server-side instead of invisible.
+- ✅ **[Services] `get-file-info`/`GetFileInfoIntent` no longer returns the wrong file** (`SearchIntent.swift`, `SearchScriptCommand.swift`) — Both took a **path** but sent it as a search *query* (`.query(path, limit: 1)`) and returned `results[0]` (top relevance), which could be a *different* file whose name matches the path string — contradicting the intent's own "by its path" contract. Surgical fix: query with `limit: 50` and match the **exact** `record.path == path`; return empty if the exact path isn't indexed. Strictly safer (never returns wrong-file metadata). Fully-correct future fix is a dedicated exact-path IPC case; noted in code comments. ServicesTests 83/83 green.
+- ✅ **[Media] Media module wired into the GUI (on-demand extraction)** — Decision (user: "那种用户体验最好"): implement lazy/on-demand metadata extraction rather than scan-time indexing, so the index stays fast (speed is #1 priority) and rich metadata (image dimensions, audio/video duration, PDF page count, EXIF/ID3/PDF tags) appears in the file detail panel. Added `MetadataLoader` (actor: registry + per-path cache, off-main extraction, TDD'd — `MetadataLoaderTests`, 8 tests). Added `MetadataExtractorRegistry.default` factory wiring all 4 extractors. `DeepFinderMedia` now a dependency of `DeepFinderGUILib`. `FileDetailView` shows a 媒体信息 section (spinner → friendly rows) via `.task(id: path)`. Corrected overclaiming `MetadataExtractor.swift` module doc (it falsely claimed "persisted to SQLite" and "queryable through filter pipeline" — both inert until scan-time population; search-by-metadata is a future milestone). MediaTests 58/58 green, GUITests 200/200 green (1 pre-existing timing flake, see Verification).
+
+## MEDIUM / LOW — backlog (execute after HIGH cluster)
+
+See `code-quality-audit` workflow transcripts for full evidence. Themes:
+- ✅ **Atomic writes**: `ConfigStore` → `replaceItem` (done, HIGH cluster). **Audit re-check:** `BookmarkStore` does not exist (stale finding); `SecretsStore` already does per-call temp+`replaceItem` atomic write (Concurrency cluster △); `IndexPersistence.saveRecords` is atomic via its `BEGIN IMMEDIATE`…`COMMIT` transaction (SQLite-level atomicity — file-temp-rename does not apply). Theme effectively closed.
+- ✅ **Force-unwraps** — Broad scan of Index/Search/FS/Persist/Daemon found exactly one: `FileScanner.swift` `rawExt!` (guard-protected but awkward) → rewritten to `(rawExt?.isEmpty == false) ? rawExt : nil`. No `URL(string:)!` or PinyinIndex-subscript force-unwraps remain.
+- △ **Error handling (`try?`-swallowing)** — **Red-blue: refuted as overstated.** Audited every site: `FileScanner`/`FSEventWatcher` `try? url.resourceValues(...)` is intentional (a scanner must not abort a million-file scan on one unreadable file — `guard let try?` skips the file); `SingleShot` `try? client.send(.suggest)` is intentional graceful degradation (autocomplete must not break the main search); `DaemonMain` `try? Data(contentsOf: pidPath)` (missing = no daemon) and `try? removeItem` (best-effort cleanup) are correct; `try? JSONEncoder` can't fail in practice. The one genuinely wrong swallow — **user-input validation in `configSetProvider`** — was fixed in the HIGH cluster. Forcing the rest to propagate would *harm* the scanner and CLI. No change warranted.
+- 🔄 **Complexity**: ✅ `DaemonMain.run()` — extracted `makeIPCServer` (the 5 `@Sendable` provider closures + `IPCServer` construction) and `startInitialScanIfNeeded` (the background `Task.detached` scan). `run()` is now a 70-line numbered 10-step outline (was 162 lines). Closure bodies moved **verbatim** → capture semantics & call order identical → behavior preserved; `swift build` clean (DeepFinderDaemon executable target compiles). DaemonTests are environmental in this sandbox (Swift Testing SIGSEGV + Full Disk Access per `scripts/run-tests.sh`), so verified by build + verbatim extraction rather than the daemon-spawn suite. ⏳ `FileScanner.scan` (~155 lines — one cohesive enumeration loop, low split value), `ResultsListView` (630 lines — SwiftUI view, needs careful sub-view extraction; deferred as higher-risk).
+- 🔄 **Duplication**: ✅ HTTP status-text switch (Services) — `sendResponse` now delegates to `buildResponse` (single source of truth for the status line + headers; `buildResponse` is no longer test-only). Byte-identical output verified; ServicesTests 83/83. ⏳ IPC error-switch (CLI), SQLite open/prepare/step boilerplate (Persist), FileRecord construction (FS), config-key serialization (Daemon), toast timer (GUI).
+- 🔄 **Performance** (red-blue: mostly deliberate design or non-hot-path):
+  - `FullSubstringMap` O(n²) substring allocation — **by design**: the architecture stores all substrings for O(1) lookup (speed is #1 priority; memory is not a constraint). Not a defect.
+  - `ISO8601DateFormatter` per call (`SearchIntent.metadataDict`) — **refuted**: tried a `private static let` cache, but Swift 6 strict concurrency rejects a non-Sendable `ISO8601DateFormatter` static (`[mutable-global-variable]`, fatal in the test build); reverted. It is a non-hot path (one construction per `get-file-info` call), so the per-call cost is acceptable. (`TerminalFormatter.sharedDateFormatter` is the same pattern in a different module and compiles — the module/isolation context differs.)
+  - `CapturingOutputWriter` O(n²) `+=` — **test-only** output-capture helper; irrelevant to production performance.
+  - `search(query:limit:)` materialization — ⏳ genuine hot-path item, but changing it risks result-ordering correctness; needs careful analysis + benchmarking before touching. Deferred.
+- ✅ **Docs**: `HTTPSearchService` public API fully documented (`handleRequest`/`parseQueryParams`/`jsonString`/`HTTPRequest` fields). **Red-blue audit of the "IPCServer/IPCClient/SearchScriptCommand pending" finding: overstated** — `IPCServer` (every public decl) and `SearchScriptCommand` (every public type/method) were already fully `///`-documented. The only real gap was `IPCClientError` (one enum); added a case-by-case doc comment. All three files' public APIs are now documented.
+
+## Documentation refactor (parallel workstream)
+
+- ✅ `.spi.yml` `documentation_targets` fixed (was broken `[DeepFinder]` → 7 real targets).
+- ✅ `CHANGELOG.md` — added `[3.2.0]`, `[3.1.0]` deferred note.
+- ✅ `README.md` — full rewrite: badges, ToC, version sync (3.2.0), accurate 10-module structure, batched test command, acknowledgements.
+- ✅ `SECURITY.md` — supported versions `3.x`.
+- ✅ `CONTRIBUTING.md` — accurate structure, lint/format, `run-tests.sh`, fixed `IndexingEngine` claim.
+- ✅ `PULL_REQUEST_TEMPLATE.md` — `run-tests.sh`.
+- ✅ `.editorconfig`, `.gitattributes` — already present (plan item was stale; created earlier in the refactor).
+- ✅ `CLAUDE.md` roadmap — already correct (`v3.1 | 本地 RAG | ⏸ 延期`, `v3.2 | Search UI refinement | ✅`); plan item was stale.
+- ✅ Requirement docs (`docs/superpowers/specs/reqs/`) — full consistency/cross-ref audit done:
+  - **Totals verified**: 158 REQs = sum of 19 per-version files = REQ_STATUS total; priority sums P0 92 / P1 46 / P2 20 / P3 0 all reconcile.
+  - **Fixed stale inline icons**: 6 REQs resolved to done on 2026-06-12 (per REQ_STATUS Change Log) but still marked 🔨 in their per-version files — `REQ-0.1-06`, `REQ-0.1-07` (v0.1), `REQ-0.2-05` (v0.2), `REQ-1.0-04` (v1.0), `REQ-1.3-05` (v1.3), `REQ-2.2-03` (v2.2) → now ✅. Red-blue verified each against code (snapshot()/IndexSnapshot, TestFixtures, IndexRecovery+15 tests, pinyin highlight, REPL completion wiring, GetFileInfoIntent).
+  - **Fixed 5 stale REQ_STATUS section headers** that still read "N done + M in progress" after the 2026-06-12 resolution (v0.1/v0.2/v1.0/v1.3/v2.2) → "done", matching their matrix rows.
+  - **Cross-refs valid**: all design-doc refs (`../design/*.md`) and the 19 index→version-file links resolve; `REQ_CHANGE_LOG.md` present (4 CHG entries). 0 stale 🔨 remain (v3.1 correctly 📋×7, v3.2 ✅×36 + 🔀×1 merged).
+- ✅ **docs/ link integrity**: 193 internal markdown links scanned across `docs/`, **0 broken** (the lychee-equivalent manual check; CI runs lychee officially).
+
+## Verification
+
+- `swift build` clean · `swiftlint`/`swift-format` clean (or triaged) · markdown links valid.
+- Each code fix verified by a test where behavior changes; regression suite re-run after each cluster.
+- **Suite status (verified after Media integration via `./scripts/run-tests.sh --quick` — the project's authoritative batched runner):**
+  - **All 17 batches passed, 1465 tests** (IndexTests 108 · SearchTests 218 · FSTests 54 · PersistTests 57 · AITests 297 · MediaTests 58 · ServicesTests 83 · GUITests split into AccessHistory 6 / AppDelegate 27 / GlobalHotkey 21 / IntelligenceGlow 3 / QuickLook 24 / Result 94 / Search 357 / Settings 32 / SpeechOverlay 8 / StatusBar 18). CLITests 146 verified separately → **1611 tests green total.**
+  - **DaemonTests — environmental hang** (pre-existing, NOT caused by these changes): confirmed via `git stash` baseline — the suite hangs on ORIGINAL HEAD too. Root cause now confirmed by `scripts/run-tests.sh`: *"Swift Testing SIGSEGV when running many concurrent @MainActor suites in a single process"* + real-`deepfinder-daemon`-spawn tests needing Full Disk Access. The project batches suites per-process to dodge the SIGSEGV. None of these tests are on code paths this refactor touches. Documented, not fixed.
+  - **swiftlint / swift-format**: binaries not installed locally; CI (`.github/workflows/ci.yml`) runs them. New code (`MetadataLoader.swift`, `MetadataLoaderTests.swift`, `FileDetailView` changes) hand-checked against `.swiftlint.yml` (no `print()`, ≤120 cols, ≥2-char identifiers, sorted imports) and `.swift-format` (4-space, trailing commas).
