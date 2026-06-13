@@ -3,29 +3,31 @@
 
 /// # Media Module
 ///
-/// Extracts, stores, and indexes metadata from media files (images, audio, video, PDFs).
+/// Extracts metadata from media files (images, audio, video, PDFs) on demand.
 ///
 /// ## Components
 /// - ``MetadataExtractor`` -- protocol for format-specific metadata extractors
 /// - ``MetadataExtractorRegistry`` -- dispatcher that routes files to the correct extractor by extension
-/// - ``ExtractedMetadata`` / ``MetadataValue`` -- polymorphic metadata storage types
-/// - ``ImageMetadataExtractor`` -- extracts dimensions, DPI, color model via ImageIO/CGImageSource
-/// - ``AudioMetadataExtractor`` -- extracts duration, bitrate, artist, album via AVFoundation
-/// - ``VideoMetadataExtractor`` -- extracts resolution, duration, codec via AVFoundation
-/// - ``PDFMetadataExtractor`` -- extracts page count, title, author via PDFKit
+/// - ``MetadataLoader`` -- on-demand extractor with a per-path cache, for GUI/preview use
+/// - ``ExtractedMetadata`` / ``MetadataValue`` -- polymorphic metadata storage types (in DeepFinderIndex)
+/// - ``ImageMetadataExtractor`` -- dimensions, DPI, color model via ImageIO/CGImageSource
+/// - ``AudioMetadataExtractor`` -- duration, bitrate, artist, album via AVFoundation
+/// - ``VideoMetadataExtractor`` -- resolution, duration, codec via AVFoundation
+/// - ``PDFMetadataExtractor`` -- page count, title, author via PDFKit
 ///
-/// ## Design
+/// ## Extraction model
 /// Each extractor declares its supported file extensions and produces an ``ExtractedMetadata``
 /// dictionary. The registry builds an extension-to-extractor mapping at init time for O(1)
-/// dispatch. Metadata is persisted to SQLite alongside FileRecords and rebuilt on startup.
+/// dispatch. Extraction is **on-demand** (via ``MetadataLoader`` when a user inspects a file),
+/// not during scanning — this keeps the index fast.
 ///
-/// ## Filter Integration
-/// Extracted metadata fields are queryable through the search filter pipeline:
-/// ```bash
-/// deepfinder "width:>2560"          # Images wider than 2560px
-/// deepfinder "duration:>300"        # Audio/video longer than 5 minutes
-/// deepfinder "artist:Beatles"       # Audio files by artist
-/// ```
+/// ## Integration status
+/// Metadata loaded here is cached in the ``MetadataLoader`` for display (e.g. the GUI file
+/// detail panel). It is **not** persisted to SQLite and **not** queryable through the search
+/// filter pipeline, because extractors are not wired into the scan path and
+/// `FileRecord.metadata` is never populated. Search-by-metadata (`width:>2560`,
+/// `duration:>300`, `artist:Beatles`) is a future milestone requiring scan-time
+/// population and indexing.
 import Foundation
 import DeepFinderIndex
 
@@ -67,5 +69,20 @@ public struct MetadataExtractorRegistry: Sendable {
     /// All supported extensions across all extractors.
     public var allSupportedExtensions: Set<String> {
         Set(extensionMap.keys)
+    }
+}
+
+public extension MetadataExtractorRegistry {
+    /// A registry configured with all built-in extractors (image, audio, video, PDF).
+    ///
+    /// Convenience for callers (``MetadataLoader``, the GUI detail panel) that want
+    /// every extractor without assembling the list themselves.
+    static var `default`: MetadataExtractorRegistry {
+        MetadataExtractorRegistry(extractors: [
+            ImageMetadataExtractor(),
+            AudioMetadataExtractor(),
+            VideoMetadataExtractor(),
+            PDFMetadataExtractor(),
+        ])
     }
 }

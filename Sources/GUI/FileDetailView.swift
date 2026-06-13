@@ -9,6 +9,7 @@ import DeepFinderSearch
 import DeepFinderDaemon
 import DeepFinderAI
 import DeepFinderFS
+import DeepFinderMedia
 import DeepFinderCLILib
 
 // MARK: - FileDetailView
@@ -31,6 +32,13 @@ public struct FileDetailView: View {
     /// Controls the entrance animation.
     @State private var appeared: Bool = false
 
+    /// Lazily-extracted media metadata (image dimensions, audio duration, PDF page count, …).
+    /// Populated on demand via ``MetadataLoader`` when the panel is shown for a media file.
+    @State private var mediaMetadata: ExtractedMetadata?
+
+    /// True while media metadata is being extracted off the main thread.
+    @State private var isExtractingMetadata: Bool = false
+
     public var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             if !fileExists {
@@ -46,6 +54,12 @@ public struct FileDetailView: View {
             Divider()
 
             metadataGrid
+
+            if isExtractingMetadata || mediaMetadata != nil {
+                Divider()
+
+                mediaMetadataSection
+            }
         }
         .padding(16)
         .frame(minWidth: 280, idealWidth: 300, maxWidth: 320)
@@ -57,6 +71,9 @@ public struct FileDetailView: View {
         .onAppear {
             checkFileExists()
             appeared = true
+        }
+        .task(id: result.record.path) {
+            await loadMediaMetadata()
         }
     }
 
@@ -124,6 +141,123 @@ public struct FileDetailView: View {
                 }
             }
         }
+    }
+
+    // MARK: - Media Metadata Section
+
+    /// On-demand media metadata (dimensions, duration, page count, …) extracted via
+    /// ``MetadataLoader``. Shown only for media files; non-media files produce `nil`
+    /// and this section stays hidden.
+    private var mediaMetadataSection: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("媒体信息")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.secondary)
+                .padding(.bottom, 6)
+
+            if isExtractingMetadata {
+                HStack(spacing: 6) {
+                    ProgressView()
+                        .controlSize(.small)
+                    Text("正在读取…")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.vertical, 4)
+            } else if let metadata = mediaMetadata {
+                let rows = formattedMediaRows(from: metadata)
+                ForEach(Array(rows.enumerated()), id: \.offset) { index, row in
+                    metadataRow(label: row.0, value: row.1, field: "media-\(index)")
+                    if index < rows.count - 1 {
+                        Divider().opacity(0.2).padding(.vertical, 5)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Extract media metadata off the main thread when a media file is shown.
+    /// Reuses the shared ``MetadataLoader`` cache, so re-displaying a file is instant.
+    private func loadMediaMetadata() async {
+        // Directories and missing files have no media metadata.
+        guard !result.record.isDirectory,
+              FileManager.default.fileExists(atPath: result.record.path) else {
+            mediaMetadata = nil
+            isExtractingMetadata = false
+            return
+        }
+        isExtractingMetadata = true
+        let url = URL(fileURLWithPath: result.record.path)
+        mediaMetadata = await MetadataLoader.shared.metadata(
+            for: url,
+            fileExtension: result.record.extension
+        )
+        isExtractingMetadata = false
+    }
+
+    /// Render extracted metadata fields as friendly localized label/value rows.
+    /// Special-cases composite values (dimensions, duration, bit rate); everything else
+    /// maps through a fixed key → label table.
+    private func formattedMediaRows(from metadata: ExtractedMetadata) -> [(String, String)] {
+        let fields = metadata.fields
+        var rows: [(String, String)] = []
+
+        if let width = fields["width"]?.intValue, let height = fields["height"]?.intValue {
+            rows.append(("尺寸", "\(width) × \(height)"))
+        }
+        if let duration = fields["duration"]?.doubleValue {
+            rows.append(("时长", Self.formatDuration(duration)))
+        }
+        if let pages = fields["pageCount"]?.intValue {
+            rows.append(("页数", "\(pages)"))
+        }
+
+        let stringLabels: [(key: String, label: String)] = [
+            ("title", "标题"), ("artist", "艺术家"), ("album", "专辑"),
+            ("author", "作者"), ("creator", "创建者"), ("genre", "流派"),
+            ("subject", "主题"), ("codec", "编码"), ("audioCodec", "编码"),
+            ("colorSpace", "色彩空间"),
+        ]
+        for entry in stringLabels {
+            if let value = fields[entry.key]?.stringValue, !value.isEmpty {
+                rows.append((entry.label, value))
+            }
+        }
+
+        if let dpi = fields["dpi"]?.intValue { rows.append(("DPI", "\(dpi)")) }
+        if let bitRate = fields["bitRate"]?.intValue, bitRate > 0 {
+            rows.append(("比特率", "\(bitRate / 1000) kbps"))
+        }
+        if let sampleRate = fields["sampleRate"]?.intValue, sampleRate > 0 {
+            rows.append(("采样率", "\(sampleRate / 1000) kHz"))
+        }
+        if let channels = fields["channels"]?.intValue {
+            rows.append(("声道", "\(channels)"))
+        }
+        if let fps = fields["fps"]?.doubleValue {
+            rows.append(("帧率", String(format: "%.1f fps", fps)))
+        }
+        if let year = fields["year"]?.intValue {
+            rows.append(("年份", "\(year)"))
+        }
+        if let date = fields["dateTaken"]?.dateValue {
+            rows.append(("拍摄时间", date.formatted(date: .abbreviated, time: .shortened)))
+        } else if let date = fields["creationDate"]?.dateValue {
+            rows.append(("创建时间", date.formatted(date: .abbreviated, time: .shortened)))
+        }
+
+        return rows
+    }
+
+    /// Format a duration in seconds as `m:ss` or `h:mm:ss`.
+    private static func formatDuration(_ seconds: Double) -> String {
+        let total = max(0, Int(seconds.rounded()))
+        let hours = total / 3600
+        let minutes = (total % 3600) / 60
+        let secs = total % 60
+        return hours > 0
+            ? String(format: "%d:%02d:%02d", hours, minutes, secs)
+            : String(format: "%d:%02d", minutes, secs)
     }
 
     // MARK: - File Missing Banner

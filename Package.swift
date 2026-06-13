@@ -94,6 +94,7 @@ let package = Package(
                 .target(name: "DeepFinderDaemon"),
                 .target(name: "DeepFinderAI"),
                 .target(name: "DeepFinderFS"),
+                .target(name: "DeepFinderMedia"),
                 .target(name: "DeepFinderCLILib"),
                 .target(name: "DeepFinderServices"),
             ],
