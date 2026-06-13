@@ -430,6 +430,52 @@ public actor DaemonMain {
 
         // 6. Start IPCServer
         let startTime = Date()
+        let ipcServer = makeIPCServer(index: index, coordinator: coordinator, startTime: startTime)
+        try await ipcServer.start()
+        self.ipcServer = ipcServer
+
+        _state = .ready
+
+        // 7. Start FSEventWatcher (uses injected event stream)
+        let eventStream = eventStreamProvider()
+        let cursor = await persistence.loadEventCursor()
+        let watcher = FSEventWatcher(
+            eventStream: eventStream,
+            index: index,
+            persistence: persistence
+        )
+        self.watcher = watcher
+        try await watcher.startWatching(
+            paths: ["/"],
+            sinceEventID: cursor ?? 0
+        )
+
+        _state = .live
+
+        // 8. Background initial scan on first run (empty index)
+        startInitialScanIfNeeded(index: index, persistence: persistence, recordsWereEmpty: records.isEmpty)
+
+        // 9. Register signal handlers (production only)
+        if installSignals {
+            installSignalHandlers()
+        }
+
+        // 10. Suspend -- wait for shutdown signal
+        await waitForShutdown()
+    }
+
+    // MARK: - Startup helpers (extracted from run())
+
+    /// Build the ``IPCServer`` with its provider closures (step 6 of ``run()``).
+    ///
+    /// Extracted from `run()` for readability. The closures are `@Sendable` and capture
+    /// the supplied `index`, `startTime`, and a per-call ``ConfigStore``. Behavior is
+    /// identical to the previous inlined version — the closure bodies are moved verbatim.
+    private func makeIPCServer(
+        index: InMemoryIndex,
+        coordinator: SearchCoordinator,
+        startTime: Date
+    ) -> IPCServer {
         let capturedIndex = index
         let capturedState: @Sendable () async -> DaemonState = { [weak self = self] in
             await self?._state ?? .starting
@@ -477,10 +523,19 @@ public actor DaemonMain {
             ] as [String: String])).flatMap { String(data: $0, encoding: .utf8) }
         }
         let configSetProvider: @Sendable (String, String) async -> Void = { key, value in
-            try? await configStore.set(key: key, value: value)
+            // The provider returns Void (the IPC configSet handler acks unconditionally),
+            // so a validation failure cannot be surfaced to the client. Log it so an
+            // invalid write (e.g. `indexBatchSize -5`, malformed `excludedPaths` JSON)
+            // is at least observable server-side rather than silently dropped.
+            let log = Logger(subsystem: Product.daemonSubsystem, category: "config")
+            do {
+                try await configStore.set(key: key, value: value)
+            } catch {
+                log.error("configSet rejected \(key, privacy: .public)=\(value, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            }
         }
 
-        let ipcServer = IPCServer(
+        return IPCServer(
             socketPath: resolvedSocketPath,
             coordinator: coordinator,
             statsProvider: statsProvider,
@@ -489,71 +544,51 @@ public actor DaemonMain {
             configGetProvider: configGetProvider,
             configSetProvider: configSetProvider
         )
-        try await ipcServer.start()
-        self.ipcServer = ipcServer
+    }
 
-        _state = .ready
-
-        // 7. Start FSEventWatcher (uses injected event stream)
-        let eventStream = eventStreamProvider()
-        let cursor = await persistence.loadEventCursor()
-        let watcher = FSEventWatcher(
-            eventStream: eventStream,
-            index: index,
-            persistence: persistence
-        )
-        self.watcher = watcher
-        try await watcher.startWatching(
-            paths: ["/"],
-            sinceEventID: cursor ?? 0
-        )
-
-        _state = .live
-
-        // 8. Background initial scan on first run (empty index)
-        if records.isEmpty {
-            let bgIndex = index
-            let bgPersistence = persistence
-            backgroundScanTask = Task.detached {
-                let scanner = FileScanner()
-                let homeDir = NSHomeDirectory()
-                let scanStream = await scanner.scan(
-                    rootPaths: [homeDir],
-                    config: ScanConfiguration(maxDepth: Constants.Scan.defaultMaxDepth)
-                )
-                var scannedCount = 0
-                for await event in scanStream {
-                    // Respect cancellation (daemon shutting down)
-                    guard !Task.isCancelled else { return }
-                    switch event {
-                    case .fileFound(let record):
-                        await bgIndex.insert(record)
-                        scannedCount += 1
-                    case .directoryFound(let record):
-                        await bgIndex.insert(record)
-                        scannedCount += 1
-                    case .scanComplete:
-                        let allRecords = await bgIndex.allRecords()
-                        await bgPersistence.saveRecords(allRecords)
-                        let log = Logger(subsystem: Product.daemonSubsystem, category: "lifecycle")
-                        log.info("Initial scan complete: \(scannedCount) files indexed, \(allRecords.count) total")
-                    case .scanError(let error):
-                        let log = Logger(subsystem: Product.daemonSubsystem, category: "lifecycle")
-                        log.warning("Background scan error at \(error.path, privacy: .public): \(error.reason, privacy: .public)")
-                    case .progress:
-                        break
-                    }
+    /// Start a background full scan when the index is empty (first run). Step 8 of ``run()``.
+    ///
+    /// Extracted from `run()` for readability; the `Task.detached` body is moved verbatim,
+    /// so cancellation handling and persistence behavior are unchanged.
+    private func startInitialScanIfNeeded(
+        index: InMemoryIndex,
+        persistence: IndexPersistence,
+        recordsWereEmpty recordsEmpty: Bool
+    ) {
+        guard recordsEmpty else { return }
+        let bgIndex = index
+        let bgPersistence = persistence
+        backgroundScanTask = Task.detached {
+            let scanner = FileScanner()
+            let homeDir = NSHomeDirectory()
+            let scanStream = await scanner.scan(
+                rootPaths: [homeDir],
+                config: ScanConfiguration(maxDepth: Constants.Scan.defaultMaxDepth)
+            )
+            var scannedCount = 0
+            for await event in scanStream {
+                // Respect cancellation (daemon shutting down)
+                guard !Task.isCancelled else { return }
+                switch event {
+                case .fileFound(let record):
+                    await bgIndex.insert(record)
+                    scannedCount += 1
+                case .directoryFound(let record):
+                    await bgIndex.insert(record)
+                    scannedCount += 1
+                case .scanComplete:
+                    let allRecords = await bgIndex.allRecords()
+                    await bgPersistence.saveRecords(allRecords)
+                    let log = Logger(subsystem: Product.daemonSubsystem, category: "lifecycle")
+                    log.info("Initial scan complete: \(scannedCount) files indexed, \(allRecords.count) total")
+                case .scanError(let error):
+                    let log = Logger(subsystem: Product.daemonSubsystem, category: "lifecycle")
+                    log.warning("Background scan error at \(error.path, privacy: .public): \(error.reason, privacy: .public)")
+                case .progress:
+                    break
                 }
             }
         }
-
-        // 9. Register signal handlers (production only)
-        if installSignals {
-            installSignalHandlers()
-        }
-
-        // 10. Suspend -- wait for shutdown signal
-        await waitForShutdown()
     }
 
     /// Initiate graceful shutdown.

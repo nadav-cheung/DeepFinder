@@ -14,6 +14,14 @@ import DeepFinderPersist
 
 // MARK: - IPCClientError
 
+/// Errors thrown by ``IPCClient`` during connection, messaging, and daemon lifecycle.
+///
+/// - `notConnected`: an operation was attempted before `connect()` or after `disconnect()`.
+/// - `connectionFailed`: the Unix domain socket could not be reached or connected to.
+/// - `sendFailed`: writing an `IPCRequest` to the socket failed.
+/// - `receiveFailed`: reading an `IPCResponse` from the socket failed.
+/// - `daemonSpawnFailed`: the daemon binary could not be spawned.
+/// - `daemonStartupTimedOut`: the daemon was spawned but did not become ready in time.
 public enum IPCClientError: Error, CustomStringConvertible, Equatable {
     case notConnected
     case connectionFailed(String)
