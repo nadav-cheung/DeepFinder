@@ -189,11 +189,23 @@ public actor ConfigStore {
         // Set permissions before rename
         try FileManager.default.setAttributes([.posixPermissions: Product.privateFilePermissions], ofItemAtPath: tmpURL.path)
 
-        // Atomic rename: remove existing file first (moveItem refuses to overwrite)
+        // Publish atomically. `replaceItem` swaps the files with no window in which the
+        // destination is missing — if the swap fails the original config is left intact,
+        // so a crash or error can never leave the config deleted (which the previous
+        // remove-then-move sequence could). On the first write (no existing file) a
+        // same-filesystem rename is itself atomic.
         if FileManager.default.fileExists(atPath: url.path) {
-            try FileManager.default.removeItem(at: url)
+            var resultURL: NSURL?
+            try FileManager.default.replaceItem(
+                at: url,
+                withItemAt: tmpURL,
+                backupItemName: nil,
+                options: [],
+                resultingItemURL: &resultURL
+            )
+        } else {
+            try FileManager.default.moveItem(at: tmpURL, to: url)
         }
-        try FileManager.default.moveItem(at: tmpURL, to: url)
     }
 
     // MARK: - Load

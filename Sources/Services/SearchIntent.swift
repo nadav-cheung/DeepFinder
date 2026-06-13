@@ -66,7 +66,11 @@ public struct GetFileInfoIntent: AppIntent {
 
     public func perform() async throws -> some IntentResult & ReturnsValue<String> {
         let client = IPCClient(socketPath: Product.socketPath)
-        let request: IPCRequest = .query(path, limit: 1)
+        // The path is sent as a search query; match the EXACT path among results so we
+        // never return metadata for a different file whose name happens to match the
+        // path string. A larger limit gives the exact file a chance to appear; an exact
+        // path IPC case would be the fully-correct future fix.
+        let request: IPCRequest = .query(path, limit: 50)
         let response: IPCResponse
         do {
             response = try await client.send(request)
@@ -75,9 +79,10 @@ public struct GetFileInfoIntent: AppIntent {
         }
         switch response {
         case .results(let results, _) where !results.isEmpty:
-            let record = results[0].record
-            let json = Self.metadataJSON(from: record)
-            return .result(value: json)
+            guard let match = results.first(where: { $0.record.path == path }) else {
+                return .result(value: "")
+            }
+            return .result(value: Self.metadataJSON(from: match.record))
         default:
             return .result(value: "")
         }

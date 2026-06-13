@@ -180,7 +180,10 @@ public class DeepFinderGetFileInfoCommand: NSScriptCommand {
         }
 
         let client = IPCClient(socketPath: Product.socketPath)
-        let request: IPCRequest = .query(path, limit: 1)
+        // Match the EXACT path among results so we never return a different file whose
+        // name matches the path-as-query string. A larger limit gives the exact file a
+        // chance to appear; an exact-path IPC case is the fully-correct future fix.
+        let request: IPCRequest = .query(path, limit: 50)
 
         let box = LockedBox<FileInfoScriptResult>(FileInfoScriptResult(info: [:]))
         let semaphore = DispatchSemaphore(value: 0)
@@ -190,8 +193,9 @@ public class DeepFinderGetFileInfoCommand: NSScriptCommand {
                 let response = try await client.send(request)
                 switch response {
                 case .results(let results, _) where !results.isEmpty:
-                    let record = results[0].record
-                    box.value = FileInfoScriptResult(info: GetFileInfoIntent.metadataDict(from: record))
+                    if let match = results.first(where: { $0.record.path == path }) {
+                        box.value = FileInfoScriptResult(info: GetFileInfoIntent.metadataDict(from: match.record))
+                    }
                 default:
                     break
                 }

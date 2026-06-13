@@ -368,9 +368,20 @@ public struct SystemSocketWaiter: SocketWaiter, Sendable {
                 if testFD >= 0 {
                     var addr = sockaddr_un()
                     addr.sun_family = sa_family_t(AF_UNIX)
+                    // `sun_path` is a fixed-size buffer (104 bytes on macOS). The raw
+                    // `strcpy` below was an unbounded write — a socket path whose UTF-8
+                    // encoding fills or exceeds the buffer would overflow it. Guard the
+                    // length and use the bounded `strlcpy` instead. (A path this long
+                    // cannot represent a valid bound AF_UNIX address anyway.)
+                    let sunPathCapacity = MemoryLayout.size(ofValue: addr.sun_path)
+                    if path.utf8.count >= sunPathCapacity {
+                        Darwin.close(testFD)
+                        usleep(UInt32(pollInterval / 1000))
+                        continue
+                    }
                     path.withCString { pathPtr in
                         _ = withUnsafeMutablePointer(to: &addr.sun_path.0) { destPtr in
-                            strcpy(destPtr, pathPtr)
+                            strlcpy(destPtr, pathPtr, sunPathCapacity)
                         }
                     }
                     let result = withUnsafePointer(to: &addr) { ptr in

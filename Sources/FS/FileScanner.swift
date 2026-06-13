@@ -265,7 +265,9 @@ public actor FileScanner {
                         let createdAt = resourceValues.creationDate ?? Date()
                         let modifiedAt = resourceValues.contentModificationDate ?? Date()
                         let rawExt: String? = isRegularFile ? url.pathExtension : nil
-                        let fileExtension = (rawExt != nil && rawExt!.isEmpty) ? nil : rawExt
+                        // Collapse an absent or empty extension (directories, extensionless
+                        // files) to nil, avoiding the force-unwrap on the optional.
+                        let fileExtension: String? = (rawExt?.isEmpty == false) ? rawExt : nil
 
                         let record = FileRecord(
                             id: assignID(),

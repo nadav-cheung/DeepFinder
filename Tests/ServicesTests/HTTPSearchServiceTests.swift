@@ -144,8 +144,8 @@ struct HTTPSearchServiceTests {
         #expect(json?["query"] as? String == "")
     }
 
-    @Test("GET /search with invalid limit/offset uses defaults")
-    func searchRouteInvalidParams() {
+    @Test("GET /search clamps invalid limit/offset into a safe range")
+    func searchRouteClampsInvalidParams() {
         let request = HTTPRouter.HTTPRequest(
             method: "GET",
             path: "/search",
@@ -156,9 +156,27 @@ struct HTTPSearchServiceTests {
         #expect(statusCode == 200)
 
         let json = try? JSONSerialization.jsonObject(with: Data(body.utf8)) as? [String: Any]
-        // "abc" -> Int fails -> default 100; "-1" parses to -1
+        // Non-numeric limit falls back to the default (100); negative offset
+        // clamps to 0. Pagination is bounded so a client cannot request an
+        // unbounded/negative result set.
         #expect(json?["limit"] as? Int == 100)
-        #expect(json?["offset"] as? Int == -1)
+        #expect(json?["offset"] as? Int == 0)
+    }
+
+    @Test("pagination(from:) clamps limit to [1, maxPageSize] and offset to >= 0")
+    func paginationClampingBoundaries() {
+        // Non-numeric / missing → defaults.
+        #expect(HTTPRouter.pagination(from: ["limit": "abc", "offset": "xyz"]) == (100, 0))
+        #expect(HTTPRouter.pagination(from: [:]) == (100, 0))
+        // Valid values pass through unchanged.
+        #expect(HTTPRouter.pagination(from: ["limit": "50", "offset": "20"]) == (50, 20))
+        // limit clamped up to 1 (zero / negative rejected).
+        #expect(HTTPRouter.pagination(from: ["limit": "0"]).limit == 1)
+        #expect(HTTPRouter.pagination(from: ["limit": "-5"]).limit == 1)
+        // limit clamped down to maxPageSize (DoS guard).
+        #expect(HTTPRouter.pagination(from: ["limit": "999999"]).limit == Constants.HTTP.maxPageSize)
+        // offset clamped to >= 0.
+        #expect(HTTPRouter.pagination(from: ["offset": "-100"]).offset == 0)
     }
 
     @Test("GET /stats returns JSON stats")

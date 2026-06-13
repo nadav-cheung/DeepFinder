@@ -240,19 +240,38 @@ public actor IndexPersistence {
         defer { sqlite3_finalize(stmt) }
 
         for record in records {
+            // Encrypt path and parentPath for on-disk databases. Fail CLOSED:
+            // if encryption fails we must not fall back to the plaintext path,
+            // which would silently persist the user's file structure in
+            // cleartext. Skip the record instead — the in-memory index remains
+            // authoritative and the next daemon restart re-scans it. (In-memory
+            // databases with nil pathEncryption store paths unencrypted by
+            // design; they never touch disk.)
+            //
+            // This branch is defensive: AES-GCM over a Swift `String` cannot
+            // fail in practice (the only failure path needs non-UTF-8, which a
+            // `String` cannot hold), so recovery is just logging + skip.
+            let pathValue: String
+            let parentValue: String
+            if let encryption = pathEncryption {
+                guard let encPath = try? encryption.encrypt(record.path),
+                      let encParent = try? encryption.encrypt(record.parentPath) else {
+                    logger.error("Path encryption failed for record \(record.id); skipping persist to avoid plaintext on disk")
+                    continue
+                }
+                pathValue = encPath
+                parentValue = encParent
+            } else {
+                pathValue = record.path
+                parentValue = record.parentPath
+            }
+
             sqlite3_reset(stmt)
             sqlite3_bind_int64(stmt, 1, sqlite3_int64(record.id))
             sqlite3_bind_text(stmt, 2, record.name, -1, SQLTransient)
             sqlite3_bind_text(stmt, 3, record.originalName, -1, SQLTransient)
-            // Encrypt path and parentPath for on-disk databases.
-            // In-memory databases (nil pathEncryption) store paths unencrypted.
-            if let encryption = pathEncryption {
-                sqlite3_bind_text(stmt, 4, (try? encryption.encrypt(record.path)) ?? record.path, -1, SQLTransient)
-                sqlite3_bind_text(stmt, 5, (try? encryption.encrypt(record.parentPath)) ?? record.parentPath, -1, SQLTransient)
-            } else {
-                sqlite3_bind_text(stmt, 4, record.path, -1, SQLTransient)
-                sqlite3_bind_text(stmt, 5, record.parentPath, -1, SQLTransient)
-            }
+            sqlite3_bind_text(stmt, 4, pathValue, -1, SQLTransient)
+            sqlite3_bind_text(stmt, 5, parentValue, -1, SQLTransient)
             sqlite3_bind_int(stmt, 6, record.isDirectory ? 1 : 0)
             sqlite3_bind_int64(stmt, 7, sqlite3_int64(record.size))
             sqlite3_bind_double(stmt, 8, record.createdAt.timeIntervalSince1970)

@@ -168,18 +168,6 @@ public struct PathEncryption: Sendable {
         return result
     }
 
-    /// Returns `true` if the encrypted string is likely encrypted data
-    /// (valid Base64, at least 28 decoded bytes). Does NOT verify the
-    /// encryption key — only checks structural validity.
-    ///
-    /// Used during migration to detect whether paths are already encrypted.
-    public static func looksEncrypted(_ value: String) -> Bool {
-        guard let data = Data(base64Encoded: value), data.count >= 28 else {
-            return false
-        }
-        return true
-    }
-
     // MARK: - Key Management
 
     /// Load the AES-256 key from the secrets file, or generate and store a new one.

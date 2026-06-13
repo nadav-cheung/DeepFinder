@@ -155,7 +155,16 @@ public enum SchemaMigrator {
         encryptedRecords.reserveCapacity(allRecords.count)
 
         for record in allRecords {
-            if PathEncryption.looksEncrypted(record.path) && PathEncryption.looksEncrypted(record.parentPath) {
+            // Detect already-encrypted values by attempting decryption with the
+            // loaded key, rather than the structural `PathEncryption.looksEncrypted`
+            // heuristic (valid-Base64 ≥ 28 bytes). That heuristic can false-positive
+            // on plaintext paths that happen to be valid Base64, which would leave
+            // cleartext on disk behind the "path_encryption" metadata flag. A real
+            // AES-GCM tag check (via `decrypt`) has a negligible 2^-128 false-positive
+            // rate, so plaintext reliably fails to decrypt.
+            let pathAlreadyEncrypted = (try? encryption.decrypt(record.path)) != nil
+            let parentAlreadyEncrypted = (try? encryption.decrypt(record.parentPath)) != nil
+            if pathAlreadyEncrypted && parentAlreadyEncrypted {
                 encryptedRecords.append(record)
                 continue
             }

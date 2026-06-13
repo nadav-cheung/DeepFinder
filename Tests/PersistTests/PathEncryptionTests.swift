@@ -317,39 +317,6 @@ struct PathEncryptionTests {
         #expect(decoded.count > 28)
     }
 
-    // MARK: - looksEncrypted
-
-    @Test("looksEncrypted returns true for valid encrypted data")
-    func looksEncryptedTrue() throws {
-        let (enc, cleanup) = try makeEncryption()
-        defer { cleanup() }
-
-        let encrypted = try enc.encrypt("/Users/test/file.txt")
-        #expect(PathEncryption.looksEncrypted(encrypted) == true)
-    }
-
-    @Test("looksEncrypted returns false for plaintext path")
-    func looksEncryptedFalseForPlaintext() {
-        #expect(PathEncryption.looksEncrypted("/Users/test/file.txt") == false)
-    }
-
-    @Test("looksEncrypted returns false for short Base64")
-    func looksEncryptedFalseForShortBase64() {
-        // 16 bytes Base64 — less than 28 bytes when decoded
-        let short = Data(repeating: 0x00, count: 16).base64EncodedString()
-        #expect(PathEncryption.looksEncrypted(short) == false)
-    }
-
-    @Test("looksEncrypted returns false for empty string")
-    func looksEncryptedFalseForEmpty() {
-        #expect(PathEncryption.looksEncrypted("") == false)
-    }
-
-    @Test("looksEncrypted returns false for invalid Base64")
-    func looksEncryptedFalseForInvalidBase64() {
-        #expect(PathEncryption.looksEncrypted("!!!not-base64!!!") == false)
-    }
-
     // MARK: - Key Management
 
     @Test("reusing same secrets store returns same key (idempotent init)")

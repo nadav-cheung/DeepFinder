@@ -155,6 +155,42 @@ struct InMemoryIndexTests {
         #expect(ids == [1, 2, 3, 4])
     }
 
+    // MARK: - 8b. ID-counter sync after explicit-ID inserts (scan→live regression)
+
+    /// Regression: bulk inserts that supply explicit IDs (the initial-scan path via
+    /// `insert(_:)` and the SQLite reload path) must not collide with later auto-ID
+    /// convenience inserts (the live FSEvents create path). Previously `nextID`
+    /// stayed at 1 while records 1…N existed, so the next live-created file reused
+    /// ID 1 and silently overwrote the first scanned record.
+    @Test("显式 ID 插入后自动 ID 不冲突 (scan→live 回归)")
+    func explicitIDInsertsKeepAutoIDCounterAhead() async {
+        let index = InMemoryIndex()
+
+        // Simulate the initial scan / reload: records arrive with explicit IDs 1…5.
+        for i in 1...5 {
+            await index.insert(makeRecord(id: UInt32(i), name: "scanned\(i).txt",
+                                          path: "/root/scanned\(i).txt"))
+        }
+
+        // Simulate a live FSEvents file creation via the auto-ID convenience overload.
+        await index.insert(name: "live.txt",
+                           path: "/root/live.txt",
+                           parentPath: "/root",
+                           extension: "txt")
+
+        // All six records must coexist; the live file must NOT have overwritten scanned1.
+        let count = await index.count
+        #expect(count == 6, "Live-created file collided with a scanned record (ID reuse)")
+
+        let scanned1 = await index.search(query: "scanned1")
+        #expect(scanned1.count == 1, "scanned1 was silently overwritten by the live file")
+        #expect(scanned1[0].path == "/root/scanned1.txt")
+
+        let live = await index.search(query: "live")
+        #expect(live.count == 1)
+        #expect(live[0].id == 6, "Live file should receive the next free ID (6), not a colliding one")
+    }
+
     // MARK: - 9. NFC Normalization
 
     @Test("NFC 统一化")

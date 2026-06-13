@@ -140,38 +140,17 @@ public actor HTTPSearchService {
 
         listener.newConnectionHandler = { connection in
             connection.start(queue: DispatchQueue(label: "http-conn", attributes: .concurrent))
-            // Buffer incoming data until we have the full HTTP header (\r\n\r\n).
-            // A single receive() may only get a TCP fragment.
-            var buffer = Data()
-            func readNext() {
-                connection.receive(minimumIncompleteLength: 1, maximumLength: Constants.HTTP.maxReceiveSize) { data, _, _, error in
-                    guard let data, error == nil else {
-                        connection.cancel()
-                        return
-                    }
-                    buffer.append(data)
-                    // Guard against unbounded buffer growth from misbehaving clients
-                    let maxHeaderSize = Constants.HTTP.maxHeaderSize
-                    if buffer.count > maxHeaderSize {
-                        connection.cancel()
-                        return
-                    }
-                    let headerEnd = Data("\r\n\r\n".utf8)
-                    if buffer.range(of: headerEnd) != nil {
-                        // We have the full header — use everything up to and including \r\n\r\n
-                        HTTPRouter.handleRequest(
-                            data: buffer,
-                            connection: connection,
-                            searchHandler: handler,
-                            statsHandler: stats,
-                            authToken: token
-                        )
-                    } else {
-                        readNext()
-                    }
-                }
-            }
-            readNext()
+            // Read and accumulate request data until the full HTTP header
+            // (\r\n\r\n) arrives; a single receive() may only get a TCP
+            // fragment. The reader owns the per-connection buffer and stays
+            // alive across the read loop via strong capture in its receive
+            // completion (see ``HTTPConnectionReader``).
+            HTTPConnectionReader(
+                connection: connection,
+                searchHandler: handler,
+                statsHandler: stats,
+                authToken: token
+            ).readNext()
         }
 
         listener.start(queue: queue)
@@ -212,6 +191,79 @@ public actor HTTPSearchService {
     }
 }
 
+// MARK: - HTTPConnectionReader
+
+/// Accumulates incoming bytes for a single HTTP connection until the full
+/// request header (`\r\n\r\n`) is received, then hands the buffer to
+/// ``HTTPRouter/handleRequest(data:connection:searchHandler:statsHandler:authToken:)``.
+///
+/// One instance is created per accepted connection. `@unchecked Sendable` is
+/// sound: Network.framework delivers a connection's `receive` completions
+/// serially (each `receive` is re-armed only from within the previous
+/// completion), so `buffer` is mutated from a single logical thread of
+/// execution and never concurrently. Boxing the mutable buffer behind a
+/// reference type here keeps the recursive read loop off the Swift 6
+/// strict-concurrency capture checker (a local function capturing a `var`
+/// cannot satisfy `@Sendable`).
+///
+/// The reader retains itself across the read loop via strong capture in the
+/// `receive` completion; the last completion (on cancel or header-complete)
+/// drops that reference. This mirrors the lifetime of the original inline
+/// closure.
+private final class HTTPConnectionReader: @unchecked Sendable {
+    private let connection: NWConnection
+    private let searchHandler: HTTPSearchService.SearchHandler
+    private let statsHandler: HTTPSearchService.StatsHandler
+    private let authToken: String
+    private var buffer = Data()
+
+    init(
+        connection: NWConnection,
+        searchHandler: @escaping HTTPSearchService.SearchHandler,
+        statsHandler: @escaping HTTPSearchService.StatsHandler,
+        authToken: String
+    ) {
+        self.connection = connection
+        self.searchHandler = searchHandler
+        self.statsHandler = statsHandler
+        self.authToken = authToken
+    }
+
+    /// Arm one `receive`; append and re-arm until the header delimiter arrives,
+    /// the buffer overruns, or the connection fails.
+    func readNext() {
+        // Bind locals so the @Sendable receive completion captures immutable
+        // values instead of reaching through `self` for the connection.
+        let connection = self.connection
+        connection.receive(minimumIncompleteLength: 1, maximumLength: Constants.HTTP.maxReceiveSize) { data, _, _, error in
+            guard let data, error == nil else {
+                connection.cancel()
+                return
+            }
+            self.buffer.append(data)
+            // Guard against unbounded buffer growth from misbehaving clients.
+            if self.buffer.count > Constants.HTTP.maxHeaderSize {
+                connection.cancel()
+                return
+            }
+            let headerEnd = Data("\r\n\r\n".utf8)
+            if self.buffer.range(of: headerEnd) != nil {
+                // Full header received — dispatch to the router, which owns the
+                // connection from here (it sends the response and cancels).
+                HTTPRouter.handleRequest(
+                    data: self.buffer,
+                    connection: connection,
+                    searchHandler: self.searchHandler,
+                    statsHandler: self.statsHandler,
+                    authToken: self.authToken
+                )
+            } else {
+                self.readNext()
+            }
+        }
+    }
+}
+
 // MARK: - HTTPRouter
 
 /// Stateless HTTP request parser and router.
@@ -221,8 +273,11 @@ public enum HTTPRouter {
 
     /// Represents a parsed HTTP request.
     public struct HTTPRequest {
+        /// HTTP method (e.g. `"GET"`), uppercased and validated against standard verbs.
         public let method: String
+        /// Request path without the query string (e.g. `"/search"`).
         public let path: String
+        /// Percent-decoded query parameters.
         public let queryParams: [String: String]
         /// Raw header lines (for extracting Authorization header).
         public let headers: [String: String]
@@ -282,8 +337,7 @@ public enum HTTPRouter {
 
         case "/search":
             let query = request.queryParams["q"] ?? ""
-            let limit = Int(request.queryParams["limit"] ?? "100") ?? Constants.HTTP.defaultSearchLimit
-            let offset = Int(request.queryParams["offset"] ?? "0") ?? 0
+            let (limit, offset) = pagination(from: request.queryParams)
             let responseDict: [String: Any] = [
                 "query": query,
                 "results": searchResults,
@@ -321,6 +375,10 @@ public enum HTTPRouter {
     }
 
     /// Handle a raw request: parse, authenticate, route, and send response over the connection.
+    /// Handle a raw request on a live connection end-to-end: parse, enforce auth
+    /// (except for `/health` liveness probes and CORS preflight), run the search/stats
+    /// handler asynchronously, and write the response. Used by the running server;
+    /// tests typically call ``route(request:)`` directly instead.
     public static func handleRequest(
         data: Data,
         connection: NWConnection,
@@ -350,8 +408,7 @@ public enum HTTPRouter {
         switch request.path {
         case "/search":
             let query = request.queryParams["q"] ?? ""
-            let limit = Int(request.queryParams["limit"] ?? "100") ?? Constants.HTTP.defaultSearchLimit
-            let offset = Int(request.queryParams["offset"] ?? "0") ?? 0
+            let (limit, offset) = pagination(from: request.queryParams)
             Task {
                 let results = await searchHandler(query, limit, offset)
                 let responseDict: [String: Any] = [
@@ -380,30 +437,12 @@ public enum HTTPRouter {
     // MARK: - Response
 
     /// Build and send an HTTP response.
+    ///
+    /// The response bytes are assembled by ``buildResponse(statusCode:body:)`` — the
+    /// single source of truth for the HTTP wire format, shared with the test harness —
+    /// and then written to the connection.
     public static func sendResponse(connection: NWConnection, statusCode: Int, body: String) {
-        let statusText: String
-        switch statusCode {
-        case 200: statusText = "OK"
-        case 204: statusText = "No Content"
-        case 400: statusText = "Bad Request"
-        case 401: statusText = "Unauthorized"
-        case 404: statusText = "Not Found"
-        case 405: statusText = "Method Not Allowed"
-        default: statusText = "Unknown"
-        }
-
-        let bodyData = body.data(using: .utf8) ?? Data()
-        let headerLines = [
-            "HTTP/1.1 \(statusCode) \(statusText)",
-            "Content-Type: application/json",
-            "Content-Length: \(bodyData.count)",
-            "Connection: close",
-            "Access-Control-Allow-Origin: *",
-            "Access-Control-Allow-Methods: GET, POST, OPTIONS",
-            "Access-Control-Allow-Headers: Content-Type, Authorization",
-        ]
-        let headerString = headerLines.joined(separator: "\r\n") + "\r\n\r\n"
-        let responseData = (headerString.data(using: .utf8) ?? Data()) + bodyData
+        let responseData = buildResponse(statusCode: statusCode, body: body).data(using: .utf8) ?? Data()
 
         connection.send(content: responseData, completion: .contentProcessed { _ in
             connection.cancel()
@@ -412,6 +451,8 @@ public enum HTTPRouter {
 
     // MARK: - Helpers
 
+    /// Parse a URL query string (`key=value&key2=value2`) into a dictionary.
+    /// Keys and values are percent-decoded; pairs without a value are skipped.
     public static func parseQueryParams(_ queryString: String) -> [String: String] {
         var params: [String: String] = [:]
         for pair in queryString.split(separator: "&") {
@@ -424,6 +465,22 @@ public enum HTTPRouter {
         return params
     }
 
+    /// Parse and clamp the `limit`/`offset` pagination parameters from a request.
+    ///
+    /// `limit` is clamped to `[1, maxPageSize]` so a client can never request an
+    /// unbounded result set (denial-of-service / memory amplification), and
+    /// `offset` is clamped to `>= 0`. Non-numeric or missing values fall back to
+    /// the defaults. This is the single source of truth used by both
+    /// `route(request:)` and `handleRequest(...)`.
+    public static func pagination(from params: [String: String]) -> (limit: Int, offset: Int) {
+        let rawLimit = Int(params["limit"] ?? "") ?? Constants.HTTP.defaultSearchLimit
+        let limit = min(max(1, rawLimit), Constants.HTTP.maxPageSize)
+        let offset = max(0, Int(params["offset"] ?? "") ?? 0)
+        return (limit, offset)
+    }
+
+    /// Serialize a dictionary to a JSON string with sorted keys.
+    /// Returns `"{}"` if serialization fails (non-serializable value types).
     public static func jsonString(from dict: [String: Any]) -> String {
         guard let data = try? JSONSerialization.data(withJSONObject: dict, options: [.sortedKeys]) else {
             return "{}"
@@ -431,7 +488,10 @@ public enum HTTPRouter {
         return String(data: data, encoding: .utf8) ?? "{}"
     }
 
-    /// Build a full HTTP response string (for testing).
+    /// Build a full HTTP response string (status line + headers + body).
+    ///
+    /// This is the single source of truth for the HTTP response wire format, shared by
+    /// ``sendResponse(connection:statusCode:body:)`` (production send) and the unit tests.
     public static func buildResponse(statusCode: Int, body: String) -> String {
         let statusText: String
         switch statusCode {

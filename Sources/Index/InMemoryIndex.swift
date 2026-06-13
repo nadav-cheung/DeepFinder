@@ -93,6 +93,17 @@ public actor InMemoryIndex {
     /// from all sub-indices before the new one is inserted (upsert semantics).
     public func insert(_ record: FileRecord) {
         let id = record.id
+
+        // Keep the auto-ID counter above any explicitly-supplied ID, so the live
+        // FSEvents create path (which allocates via the auto-ID convenience
+        // insert) can never reuse an ID already held by a scanned or reloaded
+        // record. This makes `nextID` a true high-water mark and the single
+        // source of truth for ID allocation — covering both the initial-scan path
+        // and the SQLite reload path, which both arrive here with explicit IDs.
+        if id >= nextID {
+            nextID = id &+ 1
+        }
+
         let name = record.name
 
         // If overwriting, remove old entries from sub-indices first

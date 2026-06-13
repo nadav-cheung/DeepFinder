@@ -188,4 +188,30 @@ struct ConfigStoreTests {
         let after = await store.get()
         #expect(after.indexBatchSize == 999)
     }
+
+    // MARK: - 11. Atomic publish leaves no orphaned temp files after overwrites
+
+    @Test func persistLeavesNoTempFilesAfterOverwrite() async throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let path = configPath(in: dir)
+
+        let store = ConfigStore(configPath: path)
+        // Three overwrites of an existing file exercise the replaceItem publish path.
+        try await store.set(key: "indexBatchSize", value: "200")
+        try await store.set(key: "maxResults", value: "3000")
+        try await store.set(key: "indexBatchSize", value: "400")
+
+        // Only the config file may remain — no orphaned .tmp.* files from the publish step.
+        let entries = try FileManager.default.contentsOfDirectory(atPath: dir.path)
+        let leftovers = entries.filter { $0.contains(".tmp") }
+        #expect(leftovers.isEmpty, "Orphaned temp files left by persist(): \(leftovers)")
+        #expect(entries.filter { !$0.contains(".tmp") } == ["config.json"])
+
+        // Final value must reflect the last write (replaceItem preserved data integrity).
+        let store2 = ConfigStore(configPath: path)
+        let config = await store2.get()
+        #expect(config.indexBatchSize == 400)
+        #expect(config.maxResults == 3000)
+    }
 }
