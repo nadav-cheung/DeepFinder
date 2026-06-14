@@ -35,9 +35,9 @@ Sub-millisecond queries against a full in-memory index. A background-daemon arch
 - [Development](#development)
 - [Documentation](#documentation)
 - [Community](#community)
+- [Acknowledgements](#acknowledgements)
 - [Contributing](#contributing)
 - [License](#license)
-- [Acknowledgements](#acknowledgements)
 
 ## Features
 
@@ -278,6 +278,13 @@ User and reference documentation follows the [Diátaxis](https://diataxis.fr/) f
 - [Governance](GOVERNANCE.md)
 - [Support](SUPPORT.md)
 
+## Acknowledgements
+
+- [Everything (voidtools)](https://www.voidtools.com/) — the original sub-second Windows file search that inspired this project.
+- [Raycast](https://www.raycast.com/) and [Alfred](https://www.alfredapp.com/) — keyboard-first launcher UX patterns.
+- [Diátaxis](https://diataxis.fr/) — documentation structure framework.
+- Apple [Vision](https://developer.apple.com/documentation/vision), [Speech](https://developer.apple.com/documentation/speech), and [PDFKit](https://developer.apple.com/documentation/pdfkit) frameworks for on-device intelligence.
+
 ## Contributing
 
 Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for development setup, code style, the TDD workflow, and the pull-request process. The project uses only Swift stdlib and Apple frameworks — please do not add third-party package dependencies.
@@ -285,10 +292,3 @@ Contributions are welcome. See [CONTRIBUTING.md](CONTRIBUTING.md) for developmen
 ## License
 
 MIT License. See [LICENSE](LICENSE) for details.
-
-## Acknowledgements
-
-- [Everything (voidtools)](https://www.voidtools.com/) — the original sub-second Windows file search that inspired this project.
-- [Raycast](https://www.raycast.com/) and [Alfred](https://www.alfredapp.com/) — keyboard-first launcher UX patterns.
-- [Diátaxis](https://diataxis.fr/) — documentation structure framework.
-- Apple [Vision](https://developer.apple.com/documentation/vision), [Speech](https://developer.apple.com/documentation/speech), and [PDFKit](https://developer.apple.com/documentation/pdfkit) frameworks for on-device intelligence.
