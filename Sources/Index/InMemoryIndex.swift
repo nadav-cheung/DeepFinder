@@ -146,6 +146,14 @@ public actor InMemoryIndex {
         }
     }
 
+    /// Batch-remove records by ID in a single actor hop — symmetric counterpart
+    /// to ``insertBatch(_:)``, used for bulk deletions such as volume-unmount cleanup.
+    public func deleteBatch(_ ids: [UInt32]) {
+        for id in ids {
+            remove(id: id)
+        }
+    }
+
     /// Convenience: insert by name and path, creating a FileRecord with auto-ID.
     public func insert(
         name: String,

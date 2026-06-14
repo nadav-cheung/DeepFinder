@@ -278,6 +278,24 @@ struct InMemoryIndexTests {
         #expect(emptyFinal)
     }
 
+    @Test("deleteBatch 批量删除")
+    func deleteBatchRemovesAll() async {
+        let index = InMemoryIndex()
+        await index.insertBatch([
+            makeRecord(id: 1, name: "a.txt"),
+            makeRecord(id: 2, name: "b.txt"),
+            makeRecord(id: 3, name: "c.txt"),
+        ])
+        #expect(await index.count == 3)
+
+        await index.deleteBatch([1, 3])
+        #expect(await index.count == 1)
+
+        // Already-removed IDs are a harmless no-op; the live record is still cleared.
+        await index.deleteBatch([1, 2])
+        #expect(await index.count == 0)
+    }
+
     // MARK: - 13. Deduplication
 
     @Test("搜索结果去重")
