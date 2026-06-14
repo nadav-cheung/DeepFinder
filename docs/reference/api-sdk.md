@@ -9,7 +9,7 @@ DeepFinder provides four integration surfaces: a Unix domain socket IPC protocol
 ## Table of Contents
 
 1. [IPC Protocol Specification](#1-ipc-protocol-specification)
-2. [SearchQuery Reference](#2-searchquery-reference)
+2. [SearchQuery Reference](#2-search-query-reference)
 3. [SearchResult Reference](#3-searchresult-reference)
 4. [FileRecord Schema](#4-filerecord-schema)
 5. [HTTP API Reference](#5-http-api-reference)

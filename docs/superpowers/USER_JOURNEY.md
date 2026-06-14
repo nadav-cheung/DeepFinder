@@ -395,7 +395,7 @@ Esc 按下                 面板消失 + 焦点精确回              < 100ms  
 
 ## 6. 竞品对标摘要
 
-DeepFinder 的架构独立性（自建索引、不依赖 Spotlight）是核心竞争壁垒。与竞品的详细对比见 [竞品对比文档](../COMPARISON.md)，UX 层面的竞品需求分析见 [UX Requirements - 竞品矩阵](specs/ux/2026-06-03-user-experience-requirements.md#21-竞品矩阵)。
+DeepFinder 的架构独立性（自建索引、不依赖 Spotlight）是核心竞争壁垒。与竞品的详细对比见 [竞品对比文档](../COMPARISON.md)，UX 层面的竞品需求分析见 [UX Requirements - 竞品矩阵](specs/ux/2026-06-03-user-experience-requirements.md#21-竞品对标矩阵)。
 
 **关键差异化**：Spotlight/Alfred/Raycast 均依赖 macOS Spotlight 索引（不可靠，静默遗漏文件），EasyFind/Find Any File 使用文件系统暴力搜索（秒级响应），HoudahSpot 功能强大但无免费版本。DeepFinder 是唯一同时提供自建索引（毫秒级响应）+ 免费开源 + CLI REPL + AI 语义搜索 + 全模态媒体元数据的工具。
 
