@@ -216,7 +216,7 @@
 | REQ ID | Description | Status | Source Files | Test Files | Notes |
 |--------|-------------|--------|-------------|------------|-------|
 | REQ-2.0-01 | SearchPanelView (NSPanel) | done | `Sources/GUI/SearchPanelView.swift` | `Tests/GUITests/SearchPanelTests.swift` | Liquid Glass, .floating level, Esc to close |
-| REQ-2.0-02 | SearchBarView | done | `Sources/GUI/SearchBarView.swift` | `Tests/GUITests/SearchBarTests.swift` | Instant search, CJK IME aware, clear button |
+| REQ-2.0-02 | SearchBarView | done | `Sources/GUI/SearchPanelView.swift` | `Tests/GUITests/SearchPanelTests.swift` | Instant search, CJK IME aware, clear button (search bar co-located in SearchPanelView, no separate file) |
 | REQ-2.0-03 | ResultsListView | done | `Sources/GUI/ResultsListView.swift`, `Sources/GUI/SearchViewModel.swift` | `Tests/GUITests/ResultsListTests.swift` | LazyVStack, pagination, keyboard nav |
 | REQ-2.0-04 | ResultRowView | done | `Sources/GUI/ResultRowView.swift` | `Tests/GUITests/ResultRowTests.swift` | File icon, highlighted name, path, size, date |
 | REQ-2.0-05 | IntelligenceGlow | done | `Sources/GUI/IntelligenceGlow.swift`, `Sources/GUI/GlassEffectContainer.swift` | `Tests/GUITests/IntelligenceGlowTests.swift` | AngularGradient, 1.8s rotation, reduceMotion |
@@ -242,12 +242,12 @@
 
 | REQ ID | Description | Status | Source Files | Test Files | Notes |
 |--------|-------------|--------|-------------|------------|-------|
-| REQ-2.1-01 | MetadataExtractor protocol | done | `Sources/Media/MetadataExtractor.swift`, `Sources/Media/ExtractedMetadata.swift` | `Tests/MediaTests/MetadataExtractorRegistryTests.swift`, `Tests/MediaTests/ExtractedMetadataTests.swift` | Protocol + registry, Sendable |
+| REQ-2.1-01 | MetadataExtractor protocol | done | `Sources/Media/MetadataExtractor.swift`, `Sources/Index/ExtractedMetadata.swift` | `Tests/MediaTests/MetadataExtractorRegistryTests.swift`, `Tests/MediaTests/ExtractedMetadataTests.swift` | Protocol + registry, Sendable |
 | REQ-2.1-02 | ImageMetadataExtractor | done | `Sources/Media/ImageMetadataExtractor.swift` | `Tests/MediaTests/ImageMetadataExtractorTests.swift` | CGImageSource, width/height/dpi/colorSpace |
 | REQ-2.1-03 | AudioMetadataExtractor | done | `Sources/Media/AudioMetadataExtractor.swift` | `Tests/MediaTests/AudioMetadataExtractorTests.swift` | AVFoundation, title/artist/album/duration |
 | REQ-2.1-04 | VideoMetadataExtractor | done | `Sources/Media/VideoMetadataExtractor.swift` | `Tests/MediaTests/VideoMetadataExtractorTests.swift` | AVFoundation, width/height/duration/fps/codec |
 | REQ-2.1-05 | PDFMetadataExtractor | done | `Sources/Media/PDFMetadataExtractor.swift` | `Tests/MediaTests/PDFMetadataExtractorTests.swift` | PDFKit, title/author/pages/encrypted |
-| REQ-2.1-06 | MediaMetadataIndex | done | `Sources/Media/MetadataExtractorRegistry.swift`, `Sources/Index/FileRecord.swift` | -- | Actor removed (dead code); function via ExtractedMetadata + registry + SQLite metadata_json |
+| REQ-2.1-06 | MediaMetadataIndex | done | `Sources/Media/MetadataExtractor.swift`, `Sources/Index/FileRecord.swift` | -- | Actor removed (dead code); function via ExtractedMetadata + registry + SQLite metadata_json |
 | REQ-2.1-07 | Metadata search filters | done | `Sources/Search/SearchFilter.swift` | `Tests/MediaTests/MetadataFilterTests.swift` | width:/height:/duration:/artist: etc. |
 
 ---
@@ -323,7 +323,7 @@ Scope: `Sources/GUI/` only. Design doc: `../design/2026-06-03-v3.2-search-ui-des
 | REQ-3.2-26 | Space/⌘Y Quick Look preview | done | `Sources/GUI/QuickLookPreview.swift` | Synchronized selection |
 | REQ-3.2-27 | ⌘C copy path + toast | done | `Sources/GUI/SearchViewModel.swift` | Inline toast confirmation |
 | REQ-3.2-30 | Context-aware Esc | done | `Sources/GUI/SearchPanelView.swift` | QL > detail > text > close |
-| REQ-3.2-36 | CJK IME stability | done | `Sources/GUI/SearchBarView.swift` | Marked-text handled natively |
+| REQ-3.2-36 | CJK IME stability | done | `Sources/GUI/SearchPanelView.swift` | Marked-text handled natively (search bar co-located in SearchPanelView) |
 
 ### Phase 2 — Richness (9 REQs)
 
