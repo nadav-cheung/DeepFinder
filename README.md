@@ -277,6 +277,7 @@ User and reference documentation follows the [Diátaxis](https://diataxis.fr/) f
 - [Security Policy](SECURITY.md)
 - [Governance](GOVERNANCE.md)
 - [Support](SUPPORT.md)
+- [Roadmap](ROADMAP.md)
 
 ## Acknowledgements
 
