@@ -1,0 +1,26 @@
+# Dependabot keeps GitHub Actions versions current. DeepFinder has zero
+# third-party Swift package dependencies (pure Swift + Apple frameworks), so
+# the only ecosystem worth tracking here is `github-actions` — the actions used
+# in .github/workflows/.
+#
+# Swift (Package.swift) updates are intentionally omitted: there is no
+# Package.resolved and no external packages to bump.
+version: 2
+
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    # Group all action updates into one PR to minimize review noise.
+    groups:
+      github-actions:
+        patterns: ["*"]
+    commit-message:
+      prefix: "chore(ci)"
+      include: "scope"
+    labels:
+      - "dependencies"
+      - "github-actions"

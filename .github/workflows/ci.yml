@@ -13,6 +13,17 @@ on:
       - '*.md'
   workflow_dispatch:
 
+# Least-privilege token: CI only needs to read the repo. Actions that must
+# write (none here) would declare their own narrower permissions per-job.
+permissions:
+  contents: read
+
+# Cancel superseded runs on the same ref to free runners and avoid stale
+# results. Always runs to completion on the default branch (push to main).
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   build-and-test:
     runs-on: macos-26

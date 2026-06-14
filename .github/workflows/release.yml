@@ -4,6 +4,11 @@ on:
   push:
     tags: ['v*']
 
+# Publishing a GitHub Release writes to the repo; this is the minimal token
+# scope the release action needs. No broader default permissions are granted.
+permissions:
+  contents: write
+
 jobs:
   release:
     runs-on: macos-26

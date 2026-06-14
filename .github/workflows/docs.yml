@@ -10,6 +10,10 @@ on:
       - 'docs/**'
       - '*.md'
 
+# Linting and link-checking only read the repo; no write access needed.
+permissions:
+  contents: read
+
 jobs:
   lint:
     name: Lint Markdown
