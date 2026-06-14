@@ -66,11 +66,13 @@ Never modify code to introduce behavior that isn't reflected in the spec, and ne
 2. `specs/reqs/REQ_STATUS.md` — 状态矩阵和统计数字
 3. `specs/reqs/00-overview.md` — 若新增/删除 REQ 需更新统计
 
-**REQ 文件格式**：所有 REQ 文件遵循统一模板：
-- 标题 `# vX.Y — 中文名称`，紧接着 REQ 计数行
+**REQ 文件格式**（OSS 标准 · BDD，2026-06-14 重构）：所有 REQ 文件遵循统一模板：
+- 标题 `# vX.Y — 中文名称`，紧接着 REQ 计数行（如 `7 项 REQ（P0: 7，P1: 0）`）
 - 每个 REQ 使用 `### REQ-X.Y-ZZ 描述 [状态图标] [执行图标] P{N}` 格式
 - 状态图标：📋规划/🔨开发/✅完成/❌取消/🔀合并
-- 含 `**用户场景**`、`**验收标准**` 节
+- 每个 REQ 含三节：**用户故事**（作为 X，我希望 Y，以便 Z）+ **验收标准（Given / When / Then）**（若干 BDD 场景，每个场景一组 Given/When/Then）+ **实现**/**测试** 文件溯源（`Sources/...` · `Tests/...`）
+- **不再使用 `[ ]`/`[x]` 复选框验收标准**（已废弃——易与现实脱节，曾出现 1100+ 个失效勾选）；改用 Given/When/Then 场景描述已验证行为
+- 参考实现（金标准）：`specs/reqs/v0.1-index-core.md`
 
 **交叉引用**：所有设计文档和 plans 必须包含：
 - 引用其依赖的 REQ 文件（相对路径）

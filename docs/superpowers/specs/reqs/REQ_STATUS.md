@@ -1,7 +1,9 @@
 # REQ Status Tracking Matrix
 
-**Last updated**: 2026-06-12
+**Last updated**: 2026-06-14
 **Total REQs**: 158 across 19 version modules
+
+> **卡片格式（2026-06-14 起）**：REQ 详情文件（`v*.md`）采用 OSS 标准 BDD——**用户故事**（As a / I want / so that）+ **验收标准**（Given / When / Then 场景）+ **实现/测试** 文件溯源。本矩阵是状态汇总层；统计数字与状态图标与各 REQ 文件保持一致。详见 `00-overview.md` 与金标准 `v0.1-index-core.md`。
 
 ---
 
