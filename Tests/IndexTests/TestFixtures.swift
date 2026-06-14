@@ -235,6 +235,11 @@ public enum PerformanceFixtures {
     public static func index100K() async -> InMemoryIndex {
         await buildIndex(count: 100_000)
     }
+
+    /// Convenience: 1M record index (stress scale; slow to build — use sparingly).
+    public static func index1M() async -> InMemoryIndex {
+        await buildIndex(count: 1_000_000)
+    }
 }
 
 // MARK: - Fixture Tests
