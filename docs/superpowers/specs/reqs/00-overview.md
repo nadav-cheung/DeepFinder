@@ -36,6 +36,25 @@
 
 ---
 
+## 架构文档 ↔ 实现 可追溯性
+
+**原则**：每个需求都有对应的**技术架构文档**，每个架构文档都有对应的**实现**。下表为版本→架构文档→实现模块的映射；逐 REQ 的 Source/Test 文件见各 REQ 卡片与 [`REQ_STATUS.md`](REQ_STATUS.md)。
+
+| 版本 | 技术架构文档 | 实现模块 | 覆盖 |
+|------|-------------|---------|------|
+| v0.1–v0.7, v1.0 | [`design/2026-05-26-deep-finder-design.md`](../design/2026-05-26-deep-finder-design.md) §1–§5, §12 | Index / FS / Persist / Search / Daemon / CLI | ✅ |
+| **v1.1–v1.5** | [`design/2026-06-14-search-enhancements-design.md`](../design/2026-06-14-search-enhancements-design.md) | Search（QueryParser/FilterPipeline/Sorter/Content/Duplicate） | ✅ |
+| v2.0 GUI | 主设计文档 §6 | GUI（Sources/GUI/） | ✅ |
+| v2.1 Media | 主设计文档 §7 | Media（Sources/Media/） | ✅ |
+| v2.2 Services | 主设计文档 §8 | Services（Sources/Services/） | ✅ |
+| v3.0 AI | [`design/2026-06-01-ai-tech-stack-design.md`](../design/2026-06-01-ai-tech-stack-design.md) | AI（Sources/AI/） | ✅ |
+| v3.1 RAG | AI 技术栈设计 §2.2/§2.3 + [`plans/2026-06-01-ai-v3.1-implementation.md`](../plans/2026-06-01-ai-v3.1-implementation.md) | —（📋 未实现，延期） | 📋 |
+| v3.2 Search UI | [`design/2026-06-03-v3.2-search-ui-design.md`](../design/2026-06-03-v3.2-search-ui-design.md) | GUI（Sources/GUI/） | ✅ |
+
+跨切面架构决策见 [`docs/adr/`](../../../adr/)（13 份 ADR）。文档结构设计见 [`design/2026-06-03-user-journey-docs-design.md`](../design/2026-06-03-user-journey-docs-design.md)。
+
+---
+
 ## 版本路线图
 
 | Version | Milestone | Key Features |
