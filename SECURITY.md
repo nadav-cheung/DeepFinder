@@ -13,9 +13,18 @@ Only the latest major version (v3) receives security updates. If you are running
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in DeepFinder, please report it responsibly.
+If you discover a security vulnerability in DeepFinder, please report it
+privately. **Do not open a public GitHub issue.**
 
-**Contact**: [security@nadav.com.cn](mailto:security@nadav.com.cn)
+**Preferred — GitHub Private Vulnerability Reporting:** click
+**"Report a vulnerability"** on this repository's
+[Security → Advisories](../../security/advisories/new) tab. Reports submitted
+this way are encrypted, visible only to maintainers, and support coordinated
+disclosure end-to-end (draft security advisory → optional CVE → controlled
+publication). This is the fastest and safest path.
+
+**Email:** [security@nadav.com.cn](mailto:security@nadav.com.cn) if you cannot
+use the GitHub channel above.
 
 **Response pledge**: We will acknowledge your report within **48 hours** and provide an initial assessment, including a timeline for a fix if the issue is confirmed.
 
