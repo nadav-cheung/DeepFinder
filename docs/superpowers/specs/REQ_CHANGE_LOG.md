@@ -110,6 +110,22 @@
 - **描述**: REQ_STATUS.md 中 REQ-3.0-03/04 的 Notes 误写「Keychain API key」，与 CHG-2026-06-03-01（确认 API key 存于 `~/.deep-finder/.env`，permissions 600，**不**迁移 Keychain）及 REQ-3.0 卡片原文（`.env` 600）冲突。现统一为「API key in ~/.deep-finder/.env (600)」。REQ 卡片内容无需改动（本就正确）。
 - **影响**: 状态矩阵与密钥存储决策（CHG-2026-06-03-01）及卡片描述一致；消除「Keychain vs .env」的内部矛盾。
 
+### CHG-2026-06-14-03: 全量 doc↔impl 一致性核查与调和（每个 AC 对应实现）
+
+- **来源**: nadav（目标「每个需求有架构文档 + 每个架构文档有对应实现」）
+- **影响 REQ**: 全部 158 项（行为级核查 v0.1–v3.2 全 19 文件）
+- **影响文档**: 全部 19 个 `reqs/v*.md`
+- **变更类型**: 修改（规格同步现实）
+- **描述**: 对每个 REQ 的 Given/When/Then 验收标准逐一比对代码+测试。对描述了**未实现行为**的 AC，重写为描述**实际实现的行为**（保留 Given/When/Then 结构、中文、AC 意图）。仅 REQ-0.1-06 AC7（`deleteBatch`）与 REQ-0.1-07 AC3（1M 固件）以**新增实现**满足；其余均规格侧调和。最终：**每个 AC 都有对应实现**（doc = impl）。校验：158 REQ、0 复选框、0 断链、0 缺失源/测试引用、build clean。
+- **发现的主要过度声明**（现已在卡片中如实反映，供后续实现决策）：
+  - v1.1 通配符/正则 AST 节点在搜索流水线被扁平化为子串查询；`PatternMatcher.matchWildcard/matchRegex` 无生产调用方（仅测试）。
+  - v1.3 `:bm`/`:filter`/`:sort` REPL 命令、`--bookmark`、宏展开、排序持久化均**未实现**（仅底层 BookmarkStore/SavedFilter IPC/SearchSorter 存在）。
+  - v1.4 `content:` 语法**未接入** QueryParser（内容搜索不可经查询语法触达）；扫描串行、cancel 为 no-op。
+  - v1.5 `dupe:`/`sizedupe:`/`hashdupe:`/`empty:` **未被 QueryParser 解析**（仅 `len:` 端到端可用）。
+  - v3.0 多数 AI 库组件（NL 翻译/摘要/建议/语义分组/图像相似/Vision 标注/剪贴板）已实现+测试，但**未接入 CLI/GUI**；NLOperations 为本地规则匹配（非 AI）。
+  - v3.2 type-to-select、sticky/可折叠分类、双向过滤 chip 均未实现。
+- **影响**: 规格不再声明未实现的行为；后续若决定实现上述「过度声明」功能，应作为新 REQ（走 5 步变更流程）而非视为既有 AC 的回归。
+
 ---
 
 ## 变更统计
@@ -117,4 +133,4 @@
 | 日期 | 变更数 | 类型 |
 |------|--------|------|
 | 2026-06-03 | 4 | 废除×1 / 澄清×1 / 修改×1 / 新增×1 |
-| 2026-06-14 | 2 | 修改（格式）×1 / 修改（澄清）×1 |
+| 2026-06-14 | 3 | 修改（格式）×1 / 修改（澄清）×1 / 修改（规格同步现实）×1 |
