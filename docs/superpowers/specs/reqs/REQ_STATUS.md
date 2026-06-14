@@ -270,8 +270,8 @@
 |--------|-------------|--------|-------------|------------|-------|
 | REQ-3.0-01 | AIModelProvider protocol | done | `Sources/AI/AIModelProvider.swift` | `Tests/AITests/AIModelProviderTests.swift` | Sendable, capabilities, complete(), translate() |
 | REQ-3.0-02 | Privacy boundary | done | `Sources/AI/FileMetadataSummary.swift`, `Sources/AI/AIContext.swift` | `Tests/AITests/FileMetadataSummaryTests.swift` | Path anonymization, no file content in AIContext |
-| REQ-3.0-03 | DeepSeek integration | done | `Sources/AI/DeepSeekProvider.swift`, `Sources/AI/HTTPClient.swift` | `Tests/AITests/DeepSeekProviderTests.swift` | SSE streaming, Keychain API key, 30s timeout |
-| REQ-3.0-04 | Qwen integration | done | `Sources/AI/QwenProvider.swift` | `Tests/AITests/QwenProviderTests.swift` | Same interface as DeepSeek, Keychain API key |
+| REQ-3.0-03 | DeepSeek integration | done | `Sources/AI/DeepSeekProvider.swift`, `Sources/AI/HTTPClient.swift` | `Tests/AITests/DeepSeekProviderTests.swift` | SSE streaming, API key in ~/.deep-finder/.env (600), 30s timeout |
+| REQ-3.0-04 | Qwen integration | done | `Sources/AI/QwenProvider.swift` | `Tests/AITests/QwenProviderTests.swift` | Same interface as DeepSeek; API key in ~/.deep-finder/.env (600) |
 | REQ-3.0-05 | Natural language search | done | `Sources/AI/NLSearchTranslator.swift` | `Tests/AITests/NLSearchTranslatorTests.swift` | NL -> search syntax, editable result |
 | REQ-3.0-06 | Result summarization | done | `Sources/AI/ResultSummarizer.swift` | `Tests/AITests/ResultSummarizerTests.swift` | One-sentence summary, 5-min cache |
 | REQ-3.0-07 | Search advisor | done | `Sources/AI/SearchAdvisor.swift` | `Tests/AITests/SearchAdvisorTests.swift` | Tab-acceptable suggestions, stderr in single-shot |
