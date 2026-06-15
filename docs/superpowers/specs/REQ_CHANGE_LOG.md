@@ -152,10 +152,21 @@
 
 ---
 
+### CHG-2026-06-15-03: :bm 书签命令端到端接线（list/save/delete）
+
+- **来源**: nadav（doc↔impl 调和暴露的过度声明功能——底层完整但两端未接线）
+- **影响 REQ**: REQ-1.3-01（新增端到端 AC8）
+- **影响文档**: `reqs/v1.3-search-exp.md`；代码 `Sources/Daemon/IPCServer.swift`、`DaemonMain.swift`、`Sources/CLI/REPLCommands.swift`、`REPL.swift`
+- **变更类型**: 新增（实现）
+- **描述**: `BookmarkStore`（Search actor，JSON 持久化）+ IPC `bookmarkList/Save/Delete` case 已存在，但 daemon 把所有 bookmark/filter IPC 桩为 `.ack`（不持久化）、REPL 无 `:bm` 命令（审计标为过度声明）。本次两端接线：daemon `makeIPCServer` 创建 `BookmarkStore`（持久化 `~/.deep-finder/bookmarks.json`）并接 3 个 IPC 闭包；IPCServer 路由 bookmark case（不再 `.ack`，filter 仍 `.ack`）；CLI 新增 `REPLCommand.bookmark`（别名 `:bm`）+ `handleBookmark`（`:bm`/`:bm save NAME`/`:bm delete N`）。
+- **影响**: REQ-1.3-01 新增 AC8（端到端 REPL/daemon）；`:bm` 命令名副其实。仍未实现：`:sort`、`:filter` 宏、`--bookmark` flag（备注标注）。测试：IPCServerTests bookmark 路由（12 全绿）、CLITests 156 全绿、build clean。
+
+---
+
 ## 变更统计
 
 | 日期 | 变更数 | 类型 |
 |------|--------|------|
 | 2026-06-03 | 4 | 废除×1 / 澄清×1 / 修改×1 / 新增×1 |
 | 2026-06-14 | 3 | 修改（格式）×1 / 修改（澄清）×1 / 修改（规格同步现实）×1 |
-| 2026-06-15 | 2 | 新增（实现）×2 |
+| 2026-06-15 | 3 | 新增（实现）×3 |
