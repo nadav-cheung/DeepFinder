@@ -32,6 +32,12 @@ public struct SingleShot {
         options: CLIOptions,
         client: any IPCClientProtocol
     ) async -> (output: CLIOutput, exitCode: CLIExitCode) {
+        // Duplicate-finder commands (dupe:/sizedupe:/hashdupe:/empty:) route to
+        // the duplicate finder rather than substring search.
+        if let strategy = DuplicateCommand.detect(query) {
+            return await executeDuplicate(strategy: strategy, options: options, client: client)
+        }
+
         // Build and send the IPC request
         let request: IPCRequest = .query(query, limit: options.limit)
         let response: IPCResponse
@@ -99,6 +105,37 @@ public struct SingleShot {
                 return (CLIOutput(stderr: "Error: Protocol version mismatch — your client is newer than the daemon. Please update the daemon.\n"), .daemonError)
             }
 
+        default:
+            return (CLIOutput(stderr: "Error: unexpected response from daemon\n"), .daemonError)
+        }
+    }
+
+    /// Execute a duplicate-finder query (`dupe:`/`sizedupe:`/`hashdupe:`/`empty:`).
+    private static func executeDuplicate(
+        strategy: DuplicateQueryStrategy,
+        options: CLIOptions,
+        client: any IPCClientProtocol
+    ) async -> (output: CLIOutput, exitCode: CLIExitCode) {
+        let response: IPCResponse
+        do {
+            response = try await client.send(.duplicateQuery(strategy: strategy))
+        } catch let error as IPCClientError {
+            return (CLIOutput(stderr: "Error: could not reach daemon — \(error.description)\n"), .daemonError)
+        } catch {
+            return (CLIOutput(stderr: "Error: could not reach daemon — \(error.localizedDescription)\n"), .daemonError)
+        }
+
+        switch response {
+        case .duplicates(let groups):
+            let total = groups.reduce(0) { $0 + $1.records.count }
+            if total == 0 {
+                let label = strategy == .empty ? "No empty files found" : "No duplicates found"
+                return (CLIOutput(stderr: "\(label)\n"), .noResults)
+            }
+            let formatted = TerminalFormatter.formatDuplicates(groups, strategy: strategy, options: options)
+            return (CLIOutput(stdout: formatted), .success)
+        case .error(let ipcError):
+            return (CLIOutput(stderr: "Error: \(ipcError)\n"), .queryError)
         default:
             return (CLIOutput(stderr: "Error: unexpected response from daemon\n"), .daemonError)
         }

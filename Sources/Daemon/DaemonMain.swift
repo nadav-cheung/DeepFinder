@@ -532,11 +532,39 @@ public actor DaemonMain {
             }
         }
 
+        // Duplicate finder (REQ-1.5-06). The DuplicateFinder backend is
+        // strategy-based; `.hash` does a two-phase size pre-filter so only
+        // same-size files are SHA-256 hashed (avoids hashing the whole index).
+        let duplicateProvider: @Sendable (DuplicateQueryStrategy) async -> [DuplicateGroup] = { strategy in
+            let finder = DuplicateFinder(index: index)
+            switch strategy {
+            case .name:
+                return await finder.findByName()
+            case .size:
+                return await finder.findBySize()
+            case .empty:
+                let empties = await finder.findEmpty()
+                return empties.isEmpty ? [] : [DuplicateGroup(key: "empty", records: empties)]
+            case .hash:
+                let records = await index.allRecords()
+                var bySize: [Int64: [String]] = [:]
+                for record in records where !record.isDirectory && record.size > 0 {
+                    bySize[record.size, default: []].append(record.path)
+                }
+                var paths: [String] = []
+                for (_, group) in bySize where group.count > 1 {
+                    paths.append(contentsOf: group)
+                }
+                return await finder.findByHash(paths: paths)
+            }
+        }
+
         return IPCServer(
             socketPath: resolvedSocketPath,
             coordinator: coordinator,
             statsProvider: statsProvider,
             indexStatusProvider: indexStatusProvider,
+            duplicateProvider: duplicateProvider,
             suggestProvider: suggestProvider,
             configGetProvider: configGetProvider,
             configSetProvider: configSetProvider

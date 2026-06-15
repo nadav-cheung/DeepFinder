@@ -432,6 +432,14 @@ public actor REPL {
     private func executeQuery(_ query: String) async {
         lastQuery = query
         recentQueries.append(query)
+
+        // Duplicate-finder commands (dupe:/sizedupe:/hashdupe:/empty:) route to
+        // the duplicate finder rather than substring search.
+        if let strategy = DuplicateCommand.detect(query) {
+            await executeDuplicate(strategy: strategy)
+            return
+        }
+
         let request = IPCRequest.query(query, limit: nil)
         let response: IPCResponse
         do {
@@ -467,6 +475,35 @@ public actor REPL {
                 output.writeError("Error: Protocol version mismatch — your client is newer than the daemon. Please update the daemon.\n")
             }
 
+        default:
+            output.writeError("Error: unexpected response from daemon\n")
+        }
+    }
+
+    /// Execute a duplicate-finder query and display grouped results.
+    private func executeDuplicate(strategy: DuplicateQueryStrategy) async {
+        let response: IPCResponse
+        do {
+            response = try await client.send(.duplicateQuery(strategy: strategy))
+        } catch {
+            output.writeError("Error: could not reach daemon — \(error.localizedDescription)\n")
+            return
+        }
+
+        switch response {
+        case .duplicates(let groups):
+            let total = groups.reduce(0) { $0 + $1.records.count }
+            if total == 0 {
+                let label = strategy == .empty ? "No empty files found" : "No duplicates found"
+                output.write("\(label)\n")
+            } else {
+                let options = CLIOptions(query: lastQuery)
+                let formatted = TerminalFormatter.formatDuplicates(groups, strategy: strategy, options: options)
+                output.write(formatted + "\n")
+                output.write("\(total) file\(total == 1 ? "" : "s") across \(groups.count) group\(groups.count == 1 ? "" : "s")\n")
+            }
+        case .error(let ipcError):
+            output.writeError("Error: \(ipcError)\n")
         default:
             output.writeError("Error: unexpected response from daemon\n")
         }

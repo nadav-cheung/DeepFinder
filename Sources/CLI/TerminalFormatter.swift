@@ -41,6 +41,40 @@ public enum TerminalFormatter {
         return formatANSI(results, options: options, isTerminal: isTerminal)
     }
 
+    /// Format duplicate-file groups (`dupe:`/`sizedupe:`/`hashdupe:`/`empty:`).
+    ///
+    /// Same three output modes as ``format(_:options:isTerminal:)``: JSON encodes
+    /// the `[DuplicateGroup]` array, NUL joins all record paths with `\0`, and the
+    /// default is a grouped human-readable view.
+    public static func formatDuplicates(
+        _ groups: [DuplicateGroup],
+        strategy: DuplicateQueryStrategy,
+        options: CLIOptions
+    ) -> String {
+        if options.jsonOutput {
+            guard let data = try? JSONEncoder().encode(groups),
+                  let str = String(data: data, encoding: .utf8) else { return "[]" }
+            return str
+        }
+        if options.nullOutput {
+            let paths = groups.flatMap(\.records).map(\.path)
+            return paths.isEmpty ? "" : paths.joined(separator: "\0") + "\0"
+        }
+        var lines: [String] = []
+        for group in groups {
+            let count = group.records.count
+            let noun = strategy == .empty ? "items" : (count == 1 ? "copy" : "copies")
+            let header = strategy == .empty
+                ? "Empty files/dirs (\(count) \(noun))"
+                : "\(group.key) (\(count) \(noun))"
+            lines.append("--- \(header) ---")
+            for record in group.records {
+                lines.append("  \(record.path)")
+            }
+        }
+        return lines.joined(separator: "\n")
+    }
+
     /// Returns `true` if stdout is attached to a terminal.
     public static func isatty() -> Bool {
         Foundation.isatty(STDOUT_FILENO) != 0

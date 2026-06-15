@@ -2,6 +2,7 @@ import Testing
 import Foundation
 import DeepFinderSearch
 import DeepFinderIndex
+import DeepFinderDaemon
 @testable import DeepFinderCLILib
 
 @Suite("TerminalFormatter")
@@ -310,5 +311,54 @@ struct TerminalFormatterTests {
         // No ANSI codes — just the original text
         #expect(!highlighted.contains("\u{1B}["))
         #expect(highlighted == "报告.pdf")
+    }
+
+    // MARK: - Duplicate rendering (REQ-1.5-06)
+
+    @Test("formatDuplicates plain mode lists grouped paths")
+    func formatDuplicatesPlain() {
+        let groups = [
+            DuplicateGroup(key: "report.pdf", records: [
+                makeRecord(name: "report.pdf", path: "/a/report.pdf"),
+                makeRecord(name: "report.pdf", path: "/b/report.pdf"),
+            ])
+        ]
+        let options = CLIOptions(query: "dupe:")
+        let out = TerminalFormatter.formatDuplicates(groups, strategy: .name, options: options)
+        #expect(out.contains("--- report.pdf (2 copies) ---"))
+        #expect(out.contains("/a/report.pdf"))
+        #expect(out.contains("/b/report.pdf"))
+    }
+
+    @Test("formatDuplicates JSON mode encodes the array")
+    func formatDuplicatesJSON() {
+        let groups = [DuplicateGroup(key: "x", records: [makeRecord()])]
+        var options = CLIOptions(query: "dupe:")
+        options.jsonOutput = true
+        let out = TerminalFormatter.formatDuplicates(groups, strategy: .name, options: options)
+        #expect(out.hasPrefix("["))
+        #expect(out.contains("\"key\""))
+    }
+
+    @Test("formatDuplicates NUL mode joins paths with \\0")
+    func formatDuplicatesNUL() {
+        let groups = [DuplicateGroup(key: "k", records: [
+            makeRecord(name: "f.txt", path: "/a/f.txt"),
+            makeRecord(name: "f.txt", path: "/b/f.txt"),
+        ])]
+        var options = CLIOptions(query: "dupe:")
+        options.nullOutput = true
+        let out = TerminalFormatter.formatDuplicates(groups, strategy: .name, options: options)
+        #expect(out == "/a/f.txt\0/b/f.txt\0")
+    }
+
+    @Test("formatDuplicates empty-strategy labels items")
+    func formatDuplicatesEmpty() {
+        let groups = [DuplicateGroup(key: "empty", records: [
+            makeRecord(name: "z", path: "/z", size: 0),
+        ])]
+        let options = CLIOptions(query: "empty:")
+        let out = TerminalFormatter.formatDuplicates(groups, strategy: .empty, options: options)
+        #expect(out.contains("Empty files/dirs (1 items)"))
     }
 }
