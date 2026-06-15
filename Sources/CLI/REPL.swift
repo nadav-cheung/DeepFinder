@@ -304,6 +304,9 @@ public actor REPL {
     /// Last search query string, stored for `:explain N`.
     public var lastQuery: String = ""
 
+    /// Last listed bookmarks, for `:bm delete N` (1-based).
+    private var lastBookmarks: [SearchBookmark] = []
+
     /// Operation history for `:undo` support.
     public let operationHistory: NLOperationHistory = NLOperationHistory()
 
@@ -534,6 +537,8 @@ public actor REPL {
             return handleDataPreview()
         case .undo:
             return await handleUndo()
+        case .bookmark:
+            return await handleBookmark(args: args)
         }
     }
 
@@ -742,6 +747,85 @@ public actor REPL {
         }
         let op = record.operation
         output.write("Undone: \(op.type.rawValue) '\(op.sourcePattern)' to '\(op.destination)'\n")
+        return true
+    }
+
+    // MARK: - Bookmarks (:bm)
+
+    /// Handle `:bm` — list, `:bm save NAME`, or `:bm delete N`.
+    private func handleBookmark(args: [String]) async -> Bool {
+        let sub = args.first?.lowercased() ?? "list"
+
+        switch sub {
+        case "list", "":
+            let response: IPCResponse
+            do {
+                response = try await client.send(.bookmarkList)
+            } catch {
+                output.writeError("Error: could not reach daemon — \(error.localizedDescription)\n")
+                return true
+            }
+            guard case .bookmarks(let bookmarks) = response else {
+                output.writeError("Error: unexpected response from daemon\n")
+                return true
+            }
+            lastBookmarks = bookmarks
+            if bookmarks.isEmpty {
+                output.write("No bookmarks saved. Use :bm save NAME after a search.\n")
+            } else {
+                for (i, bookmark) in bookmarks.enumerated() {
+                    output.write("\(i + 1). \(bookmark.name) — \(bookmark.query)\n")
+                }
+            }
+
+        case "save":
+            guard let name = args.dropFirst().first, !name.isEmpty else {
+                output.writeError("Usage: :bm save NAME\n")
+                return true
+            }
+            guard !lastQuery.isEmpty else {
+                output.writeError("No query to bookmark — run a search first.\n")
+                return true
+            }
+            let bookmark = SearchBookmark(name: name, query: lastQuery)
+            do {
+                let response = try await client.send(.bookmarkSave(bookmark))
+                if case .ack = response {
+                    output.write("Saved: \(name) — \(lastQuery)\n")
+                } else if case .error(let ipcError) = response {
+                    output.writeError("Error: \(ipcError)\n")
+                } else {
+                    output.writeError("Error: could not save bookmark\n")
+                }
+            } catch {
+                output.writeError("Error: could not reach daemon — \(error.localizedDescription)\n")
+            }
+
+        case "delete":
+            guard let target = args.dropFirst().first,
+                  let index = Int(target),
+                  index >= 1, index <= lastBookmarks.count else {
+                output.writeError("Usage: :bm delete N (list bookmarks first with :bm)\n")
+                return true
+            }
+            let bookmark = lastBookmarks[index - 1]
+            do {
+                let response = try await client.send(.bookmarkDelete(bookmark.id))
+                if case .ack = response {
+                    output.write("Deleted: \(bookmark.name)\n")
+                    lastBookmarks.remove(at: index - 1)
+                } else if case .error(let ipcError) = response {
+                    output.writeError("Error: \(ipcError)\n")
+                } else {
+                    output.writeError("Error: could not delete bookmark\n")
+                }
+            } catch {
+                output.writeError("Error: could not reach daemon — \(error.localizedDescription)\n")
+            }
+
+        default:
+            output.writeError("Usage: :bm [save NAME | delete N]\n")
+        }
         return true
     }
 }

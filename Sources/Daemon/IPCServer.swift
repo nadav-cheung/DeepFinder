@@ -58,6 +58,9 @@ public actor IPCServer {
     private let duplicateProvider: @Sendable (DuplicateQueryStrategy) async -> [DuplicateGroup]
     private let suggestProvider: @Sendable (String) async -> [String]
     private let contentSearchHandler: @Sendable (String) async -> [SearchResult]
+    private let bookmarkListHandler: @Sendable () async -> [SearchBookmark]
+    private let bookmarkSaveHandler: @Sendable (SearchBookmark) async -> Bool
+    private let bookmarkDeleteHandler: @Sendable (UUID) async -> Bool
     private let configGetProvider: @Sendable (String?) async -> String?
     private let configSetProvider: @Sendable (String, String) async -> Void
 
@@ -112,6 +115,9 @@ public actor IPCServer {
         duplicateProvider: @escaping @Sendable (DuplicateQueryStrategy) async -> [DuplicateGroup] = { _ in [] },
         suggestProvider: @escaping @Sendable (String) async -> [String] = { _ in [] },
         contentSearchHandler: @escaping @Sendable (String) async -> [SearchResult] = { _ in [] },
+        bookmarkListHandler: @escaping @Sendable () async -> [SearchBookmark] = { [] },
+        bookmarkSaveHandler: @escaping @Sendable (SearchBookmark) async -> Bool = { _ in false },
+        bookmarkDeleteHandler: @escaping @Sendable (UUID) async -> Bool = { _ in false },
         configGetProvider: @escaping @Sendable (String?) async -> String? = { _ in nil },
         configSetProvider: @escaping @Sendable (String, String) async -> Void = { _, _ in },
         maxConnsPerSecond: Int = Constants.IPC.maxConnsPerSecond,
@@ -124,6 +130,9 @@ public actor IPCServer {
         self.duplicateProvider = duplicateProvider
         self.suggestProvider = suggestProvider
         self.contentSearchHandler = contentSearchHandler
+        self.bookmarkListHandler = bookmarkListHandler
+        self.bookmarkSaveHandler = bookmarkSaveHandler
+        self.bookmarkDeleteHandler = bookmarkDeleteHandler
         self.configGetProvider = configGetProvider
         self.configSetProvider = configSetProvider
         self.maxConnsPerSecond = maxConnsPerSecond
@@ -554,10 +563,21 @@ public actor IPCServer {
             let groups = await duplicateProvider(strategy)
             return .duplicates(groups)
 
-        // Bookmark & filter IPC (REQ-1.3-06) — delegated to closures.
-        case .bookmarkList, .bookmarkSave, .bookmarkDelete,
-             .filterList, .filterSave, .filterDelete:
-            // These are handled locally by the CLI; daemon returns ack for forward compat.
+        // Bookmark IPC (REQ-1.3-06) — backed by BookmarkStore.
+        case .bookmarkList:
+            return .bookmarks(await bookmarkListHandler())
+        case .bookmarkSave(let bookmark):
+            let ok = await bookmarkSaveHandler(bookmark)
+            return ok ? .ack : .error(.queryError(
+                "Bookmark store full (limit \(Constants.Search.maxBookmarks))"
+            ))
+        case .bookmarkDelete(let id):
+            let ok = await bookmarkDeleteHandler(id)
+            return ok ? .ack : .error(.queryError("Bookmark not found: \(id)"))
+
+        // Saved-filter IPC (REQ-1.3-06) — not yet backed by storage.
+        case .filterList, .filterSave, .filterDelete:
+            // Forward-compat ack; filter macros are not persisted by the daemon yet.
             return .ack
 
         case .suggest(let query):

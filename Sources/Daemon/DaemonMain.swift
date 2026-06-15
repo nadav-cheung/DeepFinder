@@ -572,6 +572,21 @@ public actor DaemonMain {
             return results
         }
 
+        // Bookmarks (REQ-1.3-06) — persisted to ~/.deep-finder/bookmarks.json via
+        // BookmarkStore (atomic writes, 600 perms). Loaded on daemon startup.
+        let bookmarkStore = BookmarkStore(filePath: resolvedDataDir + "/bookmarks.json")
+        let bookmarkListHandler: @Sendable () async -> [SearchBookmark] = {
+            await bookmarkStore.getAll()
+        }
+        let bookmarkSaveHandler: @Sendable (SearchBookmark) async -> Bool = { bookmark in
+            do { try await bookmarkStore.add(bookmark); return true }
+            catch { return false }
+        }
+        let bookmarkDeleteHandler: @Sendable (UUID) async -> Bool = { id in
+            do { try await bookmarkStore.remove(id: id); return true }
+            catch { return false }
+        }
+
         return IPCServer(
             socketPath: resolvedSocketPath,
             coordinator: coordinator,
@@ -580,6 +595,9 @@ public actor DaemonMain {
             duplicateProvider: duplicateProvider,
             suggestProvider: suggestProvider,
             contentSearchHandler: contentSearchHandler,
+            bookmarkListHandler: bookmarkListHandler,
+            bookmarkSaveHandler: bookmarkSaveHandler,
+            bookmarkDeleteHandler: bookmarkDeleteHandler,
             configGetProvider: configGetProvider,
             configSetProvider: configSetProvider
         )

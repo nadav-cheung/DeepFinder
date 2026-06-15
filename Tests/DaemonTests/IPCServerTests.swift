@@ -427,11 +427,63 @@ struct IPCServerTests {
             #expect(emptyResults.isEmpty)
         }
     }
+
+    // MARK: - bookmark IPC routing (REQ-1.3-06)
+
+    @Test("bookmark list/save/delete route to the handlers")
+    func testBookmarkRouting() async throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = BookmarkBox()
+        let coordinator = SearchCoordinator(providers: [])
+        let server = IPCServer(
+            socketPath: socketPath(in: dir),
+            coordinator: coordinator,
+            bookmarkListHandler: { store.bookmarks },
+            bookmarkSaveHandler: { bm in store.bookmarks.append(bm); return true },
+            bookmarkDeleteHandler: { id in
+                let before = store.bookmarks.count
+                store.bookmarks.removeAll { $0.id == id }
+                return store.bookmarks.count < before
+            }
+        )
+
+        // Empty list.
+        let list1 = await server.dispatchRequest(.bookmarkList)
+        if case .bookmarks(let bms) = list1 { #expect(bms.isEmpty) }
+
+        // Save.
+        let bm = SearchBookmark(name: "work", query: "report ext:pdf")
+        let saved = await server.dispatchRequest(.bookmarkSave(bm))
+        if case .ack = saved {} else { Issue.record("expected .ack after save") }
+
+        // List now has one.
+        let list2 = await server.dispatchRequest(.bookmarkList)
+        if case .bookmarks(let bms) = list2 {
+            #expect(bms.count == 1)
+            #expect(bms.first?.name == "work")
+            #expect(bms.first?.query == "report ext:pdf")
+        }
+
+        // Delete by id.
+        let deleted = await server.dispatchRequest(.bookmarkDelete(bm.id))
+        if case .ack = deleted {} else { Issue.record("expected .ack after delete") }
+
+        // Delete unknown id → error.
+        let deletedUnknown = await server.dispatchRequest(.bookmarkDelete(UUID()))
+        if case .error = deletedUnknown {} else { Issue.record("expected .error for unknown id") }
+    }
 }
 
 /// Sendable box to capture the term passed to a @Sendable closure in tests.
 private final class TermBox: @unchecked Sendable {
     var term: String?
+}
+
+/// Sendable mutable bookmark store for testing the bookmark IPC handlers.
+private final class BookmarkBox: @unchecked Sendable {
+    var bookmarks: [SearchBookmark] = []
 }
 
 // MARK: - TestSocket

@@ -25,6 +25,7 @@ public enum REPLCommand: String, CaseIterable, Sendable {
     case explain
     case dataPreview
     case undo
+    case bookmark
 
     /// One-line help text for each command.
     public var description: String {
@@ -49,6 +50,8 @@ public enum REPLCommand: String, CaseIterable, Sendable {
             return "Show sample data sent to AI providers"
         case .undo:
             return "Undo last file operation"
+        case .bookmark:
+            return "List, save, or delete search bookmarks (:bm [save NAME | delete N])"
         }
     }
 
@@ -89,6 +92,8 @@ public enum REPLCommand: String, CaseIterable, Sendable {
             resolved = "quit"
         case "h":
             resolved = "help"
+        case "bm":
+            resolved = "bookmark"
         case "data_preview":
             resolved = "dataPreview"
         default:
