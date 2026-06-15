@@ -163,10 +163,21 @@
 
 ---
 
+### CHG-2026-06-15-04: :filter 宏命令端到端接线（list/save/delete/apply）
+
+- **来源**: nadav（doc↔impl 调和暴露的过度声明功能——IPC 类型在但两端未接线）
+- **影响 REQ**: REQ-1.3-02（新增端到端 AC6）、REQ-1.3-06（IPC 说明修正）
+- **影响文档**: `reqs/v1.3-search-exp.md`；代码 `Sources/Daemon/FilterStore.swift`（新）、`IPCServer.swift`、`DaemonMain.swift`、`Sources/CLI/REPLCommands.swift`、`REPL.swift`
+- **变更类型**: 新增（实现）
+- **描述**: `SavedFilter` 类型 + IPC `filterList/Save/Delete` 已存在，但 daemon 桩为 `.ack`（不持久化）、REPL 无 `:filter` 命令。本次两端接线：新增 `FilterStore` actor（upsert-by-name，持久化 `~/.deep-finder/filters.json`）；IPCServer 路由 filter case（不再 `.ack`）；CLI 新增 `REPLCommand.filter` + `handleFilter`（`:filter`/`:filter save NAME EXPR`/`:filter delete NAME`/`:filter apply NAME`，apply 重跑 `上次查询 + 过滤表达式`）。宏展开经 `:filter apply` 实现而非查询内联 `:name`（避免与 REPL `:` 命令命名空间冲突）。
+- **影响**: REQ-1.3-02 新增 AC8（端到端）+ REQ-1.3-06 IPC 说明修正。测试：FilterStoreTests 4 + IPCServerTests filter 路由（13 全绿）+ CLITests `:filter` 解析（160 全绿）；build clean。
+
+---
+
 ## 变更统计
 
 | 日期 | 变更数 | 类型 |
 |------|--------|------|
 | 2026-06-03 | 4 | 废除×1 / 澄清×1 / 修改×1 / 新增×1 |
 | 2026-06-14 | 3 | 修改（格式）×1 / 修改（澄清）×1 / 修改（规格同步现实）×1 |
-| 2026-06-15 | 3 | 新增（实现）×3 |
+| 2026-06-15 | 4 | 新增（实现）×4 |
