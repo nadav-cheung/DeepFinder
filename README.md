@@ -47,7 +47,7 @@ Sub-millisecond queries against a full in-memory index. A background-daemon arch
 - **Advanced query syntax** — boolean operators (`|`, `!`), wildcards (`*.pdf`), regex, path qualifiers
 - **Filters** — `ext:pdf`, `size:>10mb`, `dm:today`, `file:`, `folder:`, media filters (`artist:`, `width:>`, `duration:<`)
 - **Duplicate detection** — find duplicates by name, size, or content hash (SHA-256)
-- **Content search** — search inside files with line-level matching and encoding auto-detection
+- **Content search** — `content:term` finds files whose contents contain a string (text files only, auto-detected UTF-8/UTF-16)
 
 ### Interface
 - **CLI** — single-shot (`deepfinder "query"`) and interactive REPL with readline, tab completion, and persistent history

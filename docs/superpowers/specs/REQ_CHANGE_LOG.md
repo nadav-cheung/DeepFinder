@@ -141,10 +141,21 @@
 
 ---
 
+### CHG-2026-06-15-02: content: 内容搜索端到端接线（文件级）
+
+- **来源**: nadav（doc↔impl 调和暴露的过度声明功能——后端完整但未触达）
+- **影响 REQ**: REQ-1.4-01（AC1 重写）
+- **影响文档**: `reqs/v1.4-content-search.md`、`README.md`；代码 `Sources/Daemon/IPCServer.swift`、`DaemonMain.swift`
+- **变更类型**: 新增（实现）
+- **描述**: `ContentSearchProvider`/`ContentScanner` 已完整实现+测试，但 daemon 仅注册 `FileIndexProvider`、`content:` 未路由（doc↔impl 审计标为过度声明）。内容扫描昂贵，必须 opt-in。本次接线：IPCServer 新增 `contentSearchHandler` 闭包，`.query` 分支检测 `content:` 前缀（廉价门控）→ 剥离前缀 → 调用 handler；daemon handler 每次查询新建 `ContentSearchProvider` 运行扫描、返回 `.results`（`.substring`）。普通查询完全绕过（文件名搜索保持亚毫秒）。**当前为文件级结果**（哪些文件含该词）；行级匹配详情未经 IPC 返回（未来增强）。README 由「line-level matching」更正为「find files whose contents contain a string」。
+- **影响**: REQ-1.4-01 AC1 重写为反映实际路由路径；README 内容搜索描述如实。测试：IPCServerTests 新增 content 路由测试（11 全绿）；build clean。
+
+---
+
 ## 变更统计
 
 | 日期 | 变更数 | 类型 |
 |------|--------|------|
 | 2026-06-03 | 4 | 废除×1 / 澄清×1 / 修改×1 / 新增×1 |
 | 2026-06-14 | 3 | 修改（格式）×1 / 修改（澄清）×1 / 修改（规格同步现实）×1 |
-| 2026-06-15 | 1 | 新增（实现）×1 |
+| 2026-06-15 | 2 | 新增（实现）×2 |
