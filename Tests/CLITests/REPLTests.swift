@@ -79,6 +79,13 @@ struct REPLTests {
         #expect(args.isEmpty)
     }
 
+    @Test(":filter parses with subcommand and expression tokens")
+    func testParseFilter() {
+        let (cmd, args, _) = REPLCommand.parse(":filter save big size:>10mb")
+        #expect(cmd == .filter)
+        #expect(args == ["save", "big", "size:>10mb"])
+    }
+
     @Test(":open 3 parses with numeric argument")
     func testParseOpenWithArg() {
         let (cmd, args, _) = REPLCommand.parse(":open 3")

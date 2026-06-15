@@ -27,6 +27,7 @@ public enum REPLCommand: String, CaseIterable, Sendable {
     case undo
     case bookmark
     case sort
+    case filter
 
     /// One-line help text for each command.
     public var description: String {
@@ -55,6 +56,8 @@ public enum REPLCommand: String, CaseIterable, Sendable {
             return "List, save, or delete search bookmarks (:bm [save NAME | delete N])"
         case .sort:
             return "Set result sort for the session (:sort [relevance|name|date|size|natural] [reverse| clear])"
+        case .filter:
+            return "Manage saved filter macros (:filter [save NAME EXPR | delete NAME | apply NAME])"
         }
     }
 

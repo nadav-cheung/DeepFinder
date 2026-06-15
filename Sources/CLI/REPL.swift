@@ -552,6 +552,8 @@ public actor REPL {
             return await handleBookmark(args: args)
         case .sort:
             return handleSort(args: args)
+        case .filter:
+            return await handleFilter(args: args)
         }
     }
 
@@ -887,5 +889,104 @@ public actor REPL {
         } else {
             output.write("Sort: daemon relevance order (use :sort <criterion>).\n")
         }
+    }
+
+    // MARK: - Filter macros (:filter)
+
+    /// Handle `:filter` — list, `:filter save NAME EXPR`, `:filter delete NAME`,
+    /// or `:filter apply NAME` (re-run the last query with the saved filter appended).
+    private func handleFilter(args: [String]) async -> Bool {
+        let sub = args.first?.lowercased() ?? "list"
+
+        switch sub {
+        case "list", "":
+            let response: IPCResponse
+            do {
+                response = try await client.send(.filterList)
+            } catch {
+                output.writeError("Error: could not reach daemon — \(error.localizedDescription)\n")
+                return true
+            }
+            guard case .filters(let filters) = response else {
+                output.writeError("Error: unexpected response from daemon\n")
+                return true
+            }
+            if filters.isEmpty {
+                output.write("No filters saved. Use :filter save NAME \"ext:pdf size:>10mb\".\n")
+            } else {
+                for filter in filters {
+                    output.write("\(filter.name) — \(filter.expression)\n")
+                }
+            }
+
+        case "save":
+            let rest = args.dropFirst()
+            guard let name = rest.first, !name.isEmpty else {
+                output.writeError("Usage: :filter save NAME \"ext:pdf size:>10mb\"\n")
+                return true
+            }
+            let expression = rest.dropFirst().joined(separator: " ")
+            guard !expression.isEmpty else {
+                output.writeError("Usage: :filter save NAME \"ext:pdf size:>10mb\"\n")
+                return true
+            }
+            do {
+                let response = try await client.send(.filterSave(name: name, expression: expression))
+                if case .ack = response {
+                    output.write("Saved filter: \(name) — \(expression)\n")
+                } else if case .error(let ipcError) = response {
+                    output.writeError("Error: \(ipcError)\n")
+                } else {
+                    output.writeError("Error: could not save filter\n")
+                }
+            } catch {
+                output.writeError("Error: could not reach daemon — \(error.localizedDescription)\n")
+            }
+
+        case "delete":
+            guard let name = args.dropFirst().first, !name.isEmpty else {
+                output.writeError("Usage: :filter delete NAME\n")
+                return true
+            }
+            do {
+                let response = try await client.send(.filterDelete(name: name))
+                if case .ack = response {
+                    output.write("Deleted filter: \(name)\n")
+                } else if case .error(let ipcError) = response {
+                    output.writeError("Error: \(ipcError)\n")
+                } else {
+                    output.writeError("Error: could not delete filter\n")
+                }
+            } catch {
+                output.writeError("Error: could not reach daemon — \(error.localizedDescription)\n")
+            }
+
+        case "apply":
+            guard let name = args.dropFirst().first, !name.isEmpty else {
+                output.writeError("Usage: :filter apply NAME (re-runs the last query with the filter)\n")
+                return true
+            }
+            guard !lastQuery.isEmpty else {
+                output.writeError("No query to apply the filter to — run a search first.\n")
+                return true
+            }
+            let response: IPCResponse
+            do {
+                response = try await client.send(.filterList)
+            } catch {
+                output.writeError("Error: could not reach daemon — \(error.localizedDescription)\n")
+                return true
+            }
+            guard case .filters(let filters) = response,
+                  let filter = filters.first(where: { $0.name == name }) else {
+                output.writeError("No filter named '\(name)'. Use :filter to list.\n")
+                return true
+            }
+            await executeQuery("\(lastQuery) \(filter.expression)")
+
+        default:
+            output.writeError("Usage: :filter [save NAME EXPR | delete NAME | apply NAME]\n")
+        }
+        return true
     }
 }

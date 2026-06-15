@@ -61,6 +61,9 @@ public actor IPCServer {
     private let bookmarkListHandler: @Sendable () async -> [SearchBookmark]
     private let bookmarkSaveHandler: @Sendable (SearchBookmark) async -> Bool
     private let bookmarkDeleteHandler: @Sendable (UUID) async -> Bool
+    private let filterListHandler: @Sendable () async -> [SavedFilter]
+    private let filterSaveHandler: @Sendable (String, String) async -> Void
+    private let filterDeleteHandler: @Sendable (String) async -> Bool
     private let configGetProvider: @Sendable (String?) async -> String?
     private let configSetProvider: @Sendable (String, String) async -> Void
 
@@ -118,6 +121,9 @@ public actor IPCServer {
         bookmarkListHandler: @escaping @Sendable () async -> [SearchBookmark] = { [] },
         bookmarkSaveHandler: @escaping @Sendable (SearchBookmark) async -> Bool = { _ in false },
         bookmarkDeleteHandler: @escaping @Sendable (UUID) async -> Bool = { _ in false },
+        filterListHandler: @escaping @Sendable () async -> [SavedFilter] = { [] },
+        filterSaveHandler: @escaping @Sendable (String, String) async -> Void = { _, _ in },
+        filterDeleteHandler: @escaping @Sendable (String) async -> Bool = { _ in false },
         configGetProvider: @escaping @Sendable (String?) async -> String? = { _ in nil },
         configSetProvider: @escaping @Sendable (String, String) async -> Void = { _, _ in },
         maxConnsPerSecond: Int = Constants.IPC.maxConnsPerSecond,
@@ -133,6 +139,9 @@ public actor IPCServer {
         self.bookmarkListHandler = bookmarkListHandler
         self.bookmarkSaveHandler = bookmarkSaveHandler
         self.bookmarkDeleteHandler = bookmarkDeleteHandler
+        self.filterListHandler = filterListHandler
+        self.filterSaveHandler = filterSaveHandler
+        self.filterDeleteHandler = filterDeleteHandler
         self.configGetProvider = configGetProvider
         self.configSetProvider = configSetProvider
         self.maxConnsPerSecond = maxConnsPerSecond
@@ -575,10 +584,15 @@ public actor IPCServer {
             let ok = await bookmarkDeleteHandler(id)
             return ok ? .ack : .error(.queryError("Bookmark not found: \(id)"))
 
-        // Saved-filter IPC (REQ-1.3-06) — not yet backed by storage.
-        case .filterList, .filterSave, .filterDelete:
-            // Forward-compat ack; filter macros are not persisted by the daemon yet.
+        // Saved-filter IPC (REQ-1.3-06) — backed by FilterStore.
+        case .filterList:
+            return .filters(await filterListHandler())
+        case .filterSave(let name, let expression):
+            await filterSaveHandler(name, expression)
             return .ack
+        case .filterDelete(let name):
+            let ok = await filterDeleteHandler(name)
+            return ok ? .ack : .error(.queryError("Filter not found: \(name)"))
 
         case .suggest(let query):
             let terms = await suggestProvider(query)

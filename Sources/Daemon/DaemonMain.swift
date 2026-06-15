@@ -587,6 +587,19 @@ public actor DaemonMain {
             catch { return false }
         }
 
+        // Saved filter macros (REQ-1.3-06) — persisted to
+        // ~/.deep-finder/filters.json via FilterStore (upsert by name).
+        let filterStore = FilterStore(filePath: resolvedDataDir + "/filters.json")
+        let filterListHandler: @Sendable () async -> [SavedFilter] = {
+            await filterStore.getAll()
+        }
+        let filterSaveHandler: @Sendable (String, String) async -> Void = { name, expression in
+            await filterStore.upsert(name: name, expression: expression)
+        }
+        let filterDeleteHandler: @Sendable (String) async -> Bool = { name in
+            await filterStore.delete(name: name)
+        }
+
         return IPCServer(
             socketPath: resolvedSocketPath,
             coordinator: coordinator,
@@ -598,6 +611,9 @@ public actor DaemonMain {
             bookmarkListHandler: bookmarkListHandler,
             bookmarkSaveHandler: bookmarkSaveHandler,
             bookmarkDeleteHandler: bookmarkDeleteHandler,
+            filterListHandler: filterListHandler,
+            filterSaveHandler: filterSaveHandler,
+            filterDeleteHandler: filterDeleteHandler,
             configGetProvider: configGetProvider,
             configSetProvider: configSetProvider
         )

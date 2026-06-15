@@ -474,6 +474,55 @@ struct IPCServerTests {
         let deletedUnknown = await server.dispatchRequest(.bookmarkDelete(UUID()))
         if case .error = deletedUnknown {} else { Issue.record("expected .error for unknown id") }
     }
+
+    // MARK: - filter IPC routing (REQ-1.3-06)
+
+    @Test("filter list/save/delete route to the handlers")
+    func testFilterRouting() async throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let store = FilterBox()
+        let coordinator = SearchCoordinator(providers: [])
+        let server = IPCServer(
+            socketPath: socketPath(in: dir),
+            coordinator: coordinator,
+            filterListHandler: { store.filters },
+            filterSaveHandler: { name, expression in
+                store.filters.removeAll { $0.name == name }
+                store.filters.append(SavedFilter(name: name, expression: expression))
+            },
+            filterDeleteHandler: { name in
+                let before = store.filters.count
+                store.filters.removeAll { $0.name == name }
+                return store.filters.count < before
+            }
+        )
+
+        // Empty list.
+        let list1 = await server.dispatchRequest(.filterList)
+        if case .filters(let fs) = list1 { #expect(fs.isEmpty) }
+
+        // Save.
+        let saved = await server.dispatchRequest(.filterSave(name: "big", expression: "size:>10mb"))
+        if case .ack = saved {} else { Issue.record("expected .ack after filter save") }
+
+        // List now has one.
+        let list2 = await server.dispatchRequest(.filterList)
+        if case .filters(let fs) = list2 {
+            #expect(fs.count == 1)
+            #expect(fs.first?.name == "big")
+            #expect(fs.first?.expression == "size:>10mb")
+        }
+
+        // Delete by name.
+        let deleted = await server.dispatchRequest(.filterDelete(name: "big"))
+        if case .ack = deleted {} else { Issue.record("expected .ack after filter delete") }
+
+        // Delete unknown name → error.
+        let deletedUnknown = await server.dispatchRequest(.filterDelete(name: "nope"))
+        if case .error = deletedUnknown {} else { Issue.record("expected .error for unknown filter name") }
+    }
 }
 
 /// Sendable box to capture the term passed to a @Sendable closure in tests.
@@ -484,6 +533,11 @@ private final class TermBox: @unchecked Sendable {
 /// Sendable mutable bookmark store for testing the bookmark IPC handlers.
 private final class BookmarkBox: @unchecked Sendable {
     var bookmarks: [SearchBookmark] = []
+}
+
+/// Sendable mutable filter store for testing the filter IPC handlers.
+private final class FilterBox: @unchecked Sendable {
+    var filters: [SavedFilter] = []
 }
 
 // MARK: - TestSocket
