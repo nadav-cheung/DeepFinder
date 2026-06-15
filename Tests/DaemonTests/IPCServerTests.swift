@@ -386,6 +386,52 @@ struct IPCServerTests {
         #expect(FileManager.default.fileExists(atPath: path))  // socket exists (new one)
         await server.stop()
     }
+
+    // MARK: - content: prefix routing (REQ-1.4)
+
+    @Test("content: prefix routes to contentSearchHandler, not the coordinator")
+    func testContentPrefixRouting() async throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let coordinator = SearchCoordinator(providers: [])
+        let contentResult = SearchResult(
+            record: makeRecord(id: 1, name: "notes.txt", path: "/tmp/notes.txt"),
+            providerID: "content-search", score: 1.0, matchType: .substring
+        )
+        let termBox = TermBox()
+        let server = IPCServer(
+            socketPath: socketPath(in: dir),
+            coordinator: coordinator,
+            contentSearchHandler: { term in
+                termBox.term = term
+                return [contentResult]
+            }
+        )
+
+        // content: query routes to the handler with the stripped term.
+        let resp = await server.dispatchRequest(.query("content:hello world", limit: nil))
+        guard case .results(let results, _) = resp else {
+            Issue.record("expected .results for content: query"); return
+        }
+        #expect(results == [contentResult])
+        #expect(termBox.term == "hello world")
+
+        // A plain query does NOT invoke the content handler (still "hello world").
+        _ = await server.dispatchRequest(.query("hello", limit: nil))
+        #expect(termBox.term == "hello world")
+
+        // Empty content term returns empty results without scanning.
+        let empty = await server.dispatchRequest(.query("content:", limit: nil))
+        if case .results(let emptyResults, _) = empty {
+            #expect(emptyResults.isEmpty)
+        }
+    }
+}
+
+/// Sendable box to capture the term passed to a @Sendable closure in tests.
+private final class TermBox: @unchecked Sendable {
+    var term: String?
 }
 
 // MARK: - TestSocket

@@ -559,6 +559,19 @@ public actor DaemonMain {
             }
         }
 
+        // Content search (REQ-1.4). Opt-in via a `content:` query prefix; the
+        // IPCServer gates the expensive scan on that prefix. A fresh provider per
+        // query keeps `storedMatches` query-scoped.
+        let contentSearchHandler: @Sendable (String) async -> [SearchResult] = { term in
+            let provider = ContentSearchProvider(index: index)
+            let sequence = await provider.search(query: SearchQuery(term))
+            var results: [SearchResult] = []
+            for await result in sequence {
+                results.append(result)
+            }
+            return results
+        }
+
         return IPCServer(
             socketPath: resolvedSocketPath,
             coordinator: coordinator,
@@ -566,6 +579,7 @@ public actor DaemonMain {
             indexStatusProvider: indexStatusProvider,
             duplicateProvider: duplicateProvider,
             suggestProvider: suggestProvider,
+            contentSearchHandler: contentSearchHandler,
             configGetProvider: configGetProvider,
             configSetProvider: configSetProvider
         )

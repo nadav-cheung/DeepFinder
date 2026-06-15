@@ -57,6 +57,7 @@ public actor IPCServer {
     private let indexStatusProvider: @Sendable () async -> DaemonIndexStatus
     private let duplicateProvider: @Sendable (DuplicateQueryStrategy) async -> [DuplicateGroup]
     private let suggestProvider: @Sendable (String) async -> [String]
+    private let contentSearchHandler: @Sendable (String) async -> [SearchResult]
     private let configGetProvider: @Sendable (String?) async -> String?
     private let configSetProvider: @Sendable (String, String) async -> Void
 
@@ -110,6 +111,7 @@ public actor IPCServer {
         },
         duplicateProvider: @escaping @Sendable (DuplicateQueryStrategy) async -> [DuplicateGroup] = { _ in [] },
         suggestProvider: @escaping @Sendable (String) async -> [String] = { _ in [] },
+        contentSearchHandler: @escaping @Sendable (String) async -> [SearchResult] = { _ in [] },
         configGetProvider: @escaping @Sendable (String?) async -> String? = { _ in nil },
         configSetProvider: @escaping @Sendable (String, String) async -> Void = { _, _ in },
         maxConnsPerSecond: Int = Constants.IPC.maxConnsPerSecond,
@@ -121,6 +123,7 @@ public actor IPCServer {
         self.indexStatusProvider = indexStatusProvider
         self.duplicateProvider = duplicateProvider
         self.suggestProvider = suggestProvider
+        self.contentSearchHandler = contentSearchHandler
         self.configGetProvider = configGetProvider
         self.configSetProvider = configSetProvider
         self.maxConnsPerSecond = maxConnsPerSecond
@@ -498,6 +501,18 @@ public actor IPCServer {
                 return .error(.queryError(
                     "Query too long (\(query.count) chars, max \(maxQueryLength))"
                 ))
+            }
+            // Content search is opt-in via a `content:` prefix (REQ-1.4): it scans
+            // file bytes (expensive), so it must NOT run on every filename query.
+            // A cheap prefix check gates the expensive scan.
+            let trimmed = query.trimmingCharacters(in: .whitespaces)
+            if trimmed.lowercased().hasPrefix("content:") {
+                let term = trimmed.dropFirst("content:".count).trimmingCharacters(in: .whitespaces)
+                let queryID = "q-\(UUID().uuidString.prefix(8))"
+                guard !term.isEmpty else { return .results([], queryID: queryID) }
+                var results = await contentSearchHandler(term)
+                if let limit { results = Array(results.prefix(limit)) }
+                return .results(results, queryID: queryID)
             }
             // Extract modifier pairs from the query and build filters
             let parsed = QueryParser.parse(query)
