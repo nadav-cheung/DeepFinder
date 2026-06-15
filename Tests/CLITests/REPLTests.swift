@@ -58,6 +58,27 @@ struct REPLTests {
         #expect(args == ["index.path"])
     }
 
+    @Test(":bm alias parses as bookmark command")
+    func testParseBookmarkAlias() {
+        let (cmd, args, _) = REPLCommand.parse(":bm save work")
+        #expect(cmd == .bookmark)
+        #expect(args == ["save", "work"])
+    }
+
+    @Test(":sort parses with criterion argument")
+    func testParseSort() {
+        let (cmd, args, _) = REPLCommand.parse(":sort name")
+        #expect(cmd == .sort)
+        #expect(args == ["name"])
+    }
+
+    @Test(":sort with no args parses for showing current preference")
+    func testParseSortNoArgs() {
+        let (cmd, args, _) = REPLCommand.parse(":sort")
+        #expect(cmd == .sort)
+        #expect(args.isEmpty)
+    }
+
     @Test(":open 3 parses with numeric argument")
     func testParseOpenWithArg() {
         let (cmd, args, _) = REPLCommand.parse(":open 3")

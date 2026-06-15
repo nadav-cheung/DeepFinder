@@ -307,6 +307,11 @@ public actor REPL {
     /// Last listed bookmarks, for `:bm delete N` (1-based).
     private var lastBookmarks: [SearchBookmark] = []
 
+    /// Session sort preference for `:sort` (nil = daemon's relevance order).
+    private var sortPreference: SortCriterion?
+    /// Whether to reverse the session sort.
+    private var reversePreference: Bool = false
+
     /// Operation history for `:undo` support.
     public let operationHistory: NLOperationHistory = NLOperationHistory()
 
@@ -454,14 +459,20 @@ public actor REPL {
 
         switch response {
         case .results(let results, _):
-            lastResults = results
-            if results.isEmpty {
+            // Apply the session sort preference (from :sort) before rendering.
+            var displayed = results
+            if let preference = sortPreference {
+                displayed = SearchSorter.sort(displayed, by: preference)
+                if reversePreference { displayed = displayed.reversed() }
+            }
+            lastResults = displayed
+            if displayed.isEmpty {
                 output.write("No results found.\n")
             } else {
                 let options = CLIOptions(query: query)
-                let formatted = TerminalFormatter.format(results, options: options, isTerminal: true)
+                let formatted = TerminalFormatter.format(displayed, options: options, isTerminal: true)
                 output.write(formatted + "\n")
-                output.write("\(results.count) result\(results.count == 1 ? "" : "s")\n")
+                output.write("\(displayed.count) result\(displayed.count == 1 ? "" : "s")\n")
             }
 
         case .error(let ipcError):
@@ -539,6 +550,8 @@ public actor REPL {
             return await handleUndo()
         case .bookmark:
             return await handleBookmark(args: args)
+        case .sort:
+            return handleSort(args: args)
         }
     }
 
@@ -827,5 +840,52 @@ public actor REPL {
             output.writeError("Usage: :bm [save NAME | delete N]\n")
         }
         return true
+    }
+
+    // MARK: - Sort (:sort)
+
+    /// Handle `:sort` — set/show the session result sort. In-session only;
+    /// cross-session persistence is a future enhancement.
+    private func handleSort(args: [String]) -> Bool {
+        guard let sub = args.first?.lowercased() else {
+            describeCurrentSort()
+            return true
+        }
+
+        switch sub {
+        case "clear":
+            sortPreference = nil
+            reversePreference = false
+            output.write("Sort cleared (daemon relevance order).\n")
+        case "reverse":
+            reversePreference.toggle()
+            output.write("Reverse: \(reversePreference ? "on" : "off").\n")
+        case "relevance":
+            sortPreference = .relevance
+            output.write("Sort: relevance\(reversePreference ? " (reversed)" : "").\n")
+        case "name":
+            sortPreference = .name
+            output.write("Sort: name\(reversePreference ? " (reversed)" : "").\n")
+        case "date":
+            sortPreference = .date
+            output.write("Sort: date\(reversePreference ? " (reversed)" : "").\n")
+        case "size":
+            sortPreference = .size
+            output.write("Sort: size\(reversePreference ? " (reversed)" : "").\n")
+        case "natural":
+            sortPreference = .natural
+            output.write("Sort: natural\(reversePreference ? " (reversed)" : "").\n")
+        default:
+            output.writeError("Usage: :sort [relevance|name|date|size|natural|reverse|clear]\n")
+        }
+        return true
+    }
+
+    private func describeCurrentSort() {
+        if let preference = sortPreference {
+            output.write("Sort: \(preference)\(reversePreference ? " (reversed)" : "")\n")
+        } else {
+            output.write("Sort: daemon relevance order (use :sort <criterion>).\n")
+        }
     }
 }
