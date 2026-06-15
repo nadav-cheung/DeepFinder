@@ -128,9 +128,23 @@
 
 ---
 
+## 2026-06-15 — 实现重复查找端到端接线
+
+### CHG-2026-06-15-01: 重复查找 CLI↔daemon 端到端接线（dupe:/sizedupe:/hashdupe:/empty:）
+
+- **来源**: nadav（doc↔impl 调和暴露的过度声明功能——后端完整但两端未接线）
+- **影响 REQ**: REQ-1.5-01 / 02 / 03 / 04 / 06（新增端到端 AC5）
+- **影响文档**: `reqs/v1.5-duplicate.md`；代码 `Sources/CLI/DuplicateCommand.swift`、`SingleShot.swift`、`REPL.swift`、`TerminalFormatter.swift`、`DaemonMain.swift`
+- **变更类型**: 新增（实现）
+- **描述**: 重复查找后端（`DuplicateFinder`）与 IPC 传输（`.duplicateQuery`/`.duplicates`）本已完整，但 daemon 用默认空 `duplicateProvider`、CLI 把所有非命令输入当普通 `.query`——故 `dupe:`/`hashdupe:` 从未到达查找器（doc↔impl 审计将此标为过度声明）。本次接线两端：daemon `makeIPCServer` 提供真实 `duplicateProvider`（`.hash` 两阶段 size 预筛）；CLI `DuplicateCommand.detect` 识别前缀并路由（single-shot + REPL）；`TerminalFormatter.formatDuplicates` 提供 JSON/NUL/分组 ANSI 输出。README 的「Duplicate detection」headline 现名副其实。
+- **影响**: REQ-1.5 ACs 更新为反映完整端到端路径（含新 AC5）；v1.5 两处「CLI 未实现」备注修正。测试：DuplicateCommandTests 6 + formatDuplicates 4；CLITests 152 全绿；build clean。
+
+---
+
 ## 变更统计
 
 | 日期 | 变更数 | 类型 |
 |------|--------|------|
 | 2026-06-03 | 4 | 废除×1 / 澄清×1 / 修改×1 / 新增×1 |
 | 2026-06-14 | 3 | 修改（格式）×1 / 修改（澄清）×1 / 修改（规格同步现实）×1 |
+| 2026-06-15 | 1 | 新增（实现）×1 |
