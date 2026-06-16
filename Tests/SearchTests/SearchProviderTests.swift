@@ -141,4 +141,56 @@ struct SearchProviderTests {
         #expect(names.contains("Report-2024.xlsx"))
         #expect(names.contains("quarterly-report.txt"))
     }
+
+    // MARK: - Wildcard & regex queries (pattern scan)
+
+    @Test("Wildcard *.ext matches by extension")
+    func testWildcardExtension() async {
+        let provider = FileIndexProvider(index: await makeIndex())
+        let results = await collect(await provider.search(query: SearchQuery("*.pdf")))
+        let names = results.map(\.record.name)
+        #expect(names.contains("report.pdf"))
+        #expect(!names.contains("photo.jpg"))
+        #expect(!names.contains("notes.md"))
+    }
+
+    @Test("Wildcard *term* matches names containing term")
+    func testWildcardContains() async {
+        let provider = FileIndexProvider(index: await makeIndex())
+        let results = await collect(await provider.search(query: SearchQuery("*report*")))
+        let names = Set(results.map(\.record.name))
+        // Case-insensitive: report.pdf, Report-2024.xlsx, quarterly-report.txt
+        #expect(names.contains("report.pdf"))
+        #expect(names.contains("Report-2024.xlsx"))
+        #expect(names.contains("quarterly-report.txt"))
+    }
+
+    @Test("Wildcard prefix* matches names starting with prefix")
+    func testWildcardPrefix() async {
+        let provider = FileIndexProvider(index: await makeIndex())
+        let results = await collect(await provider.search(query: SearchQuery("report*")))
+        let names = Set(results.map(\.record.name))
+        #expect(names.contains("report.pdf"))           // starts with "report"
+        #expect(names.contains("Report-2024.xlsx"))     // case-insensitive prefix
+        #expect(!names.contains("quarterly-report.txt"))
+    }
+
+    @Test("regex: prefix matches via NSRegularExpression")
+    func testRegexQuery() async {
+        let provider = FileIndexProvider(index: await makeIndex())
+        let results = await collect(await provider.search(query: SearchQuery("regex:^report")))
+        let names = Set(results.map(\.record.name))
+        #expect(names.contains("report.pdf"))
+        #expect(names.contains("Report-2024.xlsx"))     // case-insensitive
+        #expect(!names.contains("quarterly-report.txt"))
+        #expect(!names.contains("photo.jpg"))
+    }
+
+    @Test("Plain query (no wildcard/regex) still uses the index path")
+    func testPlainQueryUnaffected() async {
+        let provider = FileIndexProvider(index: await makeIndex())
+        let results = await collect(await provider.search(query: SearchQuery("report")))
+        // Index path classifies exact/prefix/substring; wildcard path is not taken.
+        #expect(!results.isEmpty)
+    }
 }

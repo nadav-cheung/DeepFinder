@@ -46,6 +46,26 @@ public actor FileIndexProvider: SearchProvider {
     // MARK: - Internal
 
     private func performSearch(query: SearchQuery) async -> [SearchResult] {
+        let raw = query.rawQuery
+
+        // Wildcard pattern (glob with `*`/`?`): scan all records and apply
+        // PatternMatcher — the index has no structural support for glob matching.
+        // Explicit wildcard queries are rare, so an O(n) in-memory scan (capped at
+        // maxResults) is acceptable; the index stays sub-millisecond for normal queries.
+        if raw.contains("*") || raw.contains("?") {
+            return await patternSearch(pattern: raw) { record in
+                PatternMatcher.matchWildcard(pattern: raw, input: record.name)
+            }
+        }
+
+        // Regex pattern (`regex:` prefix).
+        if raw.hasPrefix("regex:") {
+            let pattern = String(raw.dropFirst("regex:".count))
+            return await patternSearch(pattern: pattern) { record in
+                PatternMatcher.matchRegex(pattern: pattern, input: record.name)
+            }
+        }
+
         guard !query.normalizedQuery.isEmpty else { return [] }
 
         let records = await index.search(query: query.normalizedQuery)
@@ -62,6 +82,31 @@ public actor FileIndexProvider: SearchProvider {
                 matchType: matchType
             )
         }
+    }
+
+    /// Scan all indexed records, keeping those that `matcher` accepts, capped at
+    /// `Constants.Daemon.maxResults`. Used for wildcard/regex queries.
+    private func patternSearch(
+        pattern: String,
+        matcher: @Sendable @escaping (FileRecord) -> Bool
+    ) async -> [SearchResult] {
+        guard !pattern.isEmpty else { return [] }
+        let allRecords = await index.allRecords()
+        var results: [SearchResult] = []
+        let cap = Constants.Daemon.maxResults
+        for record in allRecords {
+            guard matcher(record) else { continue }
+            // Wildcard/regex matches classify as substring (no dedicated MatchType),
+            // scored slightly above a plain substring hit — it was an explicit pattern.
+            results.append(SearchResult(
+                record: record,
+                providerID: providerID,
+                score: 0.6,
+                matchType: .substring
+            ))
+            if results.count >= cap { break }
+        }
+        return results
     }
 
     /// Determine how the query matched the record name and assign a score.
