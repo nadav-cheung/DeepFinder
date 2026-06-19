@@ -144,6 +144,52 @@ public actor InMemoryIndex {
         return results
     }
 
+    // MARK: - Substring Search
+
+    public func searchSubstring(query: String) -> [FileRecord] {
+        guard let idx = _idx else { return [] }
+        let lowered = query.precomposedStringWithCanonicalMapping.lowercased()
+        guard !lowered.isEmpty else { return [] }
+
+        var ids: UnsafeMutablePointer<UInt32>? = nil
+        let count = lowered.withCString { cstr in
+            cindex_search_substring(idx, cstr, &ids, 0)
+        }
+
+        var results: [FileRecord] = []
+        if let ids, count > 0 {
+            for i in 0..<Int(count) {
+                if let record = _lookup(id: ids[i]) {
+                    results.append(record)
+                }
+            }
+        }
+        free(ids)
+        return results.sorted { $0.id < $1.id }
+    }
+
+    public func searchSubstring(query: String, limit: Int) -> [FileRecord] {
+        guard let idx = _idx else { return [] }
+        let lowered = query.precomposedStringWithCanonicalMapping.lowercased()
+        guard !lowered.isEmpty else { return [] }
+
+        var ids: UnsafeMutablePointer<UInt32>? = nil
+        let count = lowered.withCString { cstr in
+            cindex_search_substring(idx, cstr, &ids, UInt32(limit))
+        }
+
+        var results: [FileRecord] = []
+        if let ids, count > 0 {
+            for i in 0..<Int(count) {
+                if let record = _lookup(id: ids[i]) {
+                    results.append(record)
+                }
+            }
+        }
+        free(ids)
+        return results
+    }
+
     public func allRecords() -> [FileRecord] {
         guard let idx = _idx else { return [] }
         var results: [FileRecord] = []

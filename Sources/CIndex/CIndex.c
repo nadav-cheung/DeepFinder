@@ -1,5 +1,6 @@
 // CIndex implementation — compact, Everything-style
 #include "include/CIndex.h"
+#include "include/CTrigramIndex.h"
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>  // strcasecmp, strncasecmp
@@ -60,6 +61,9 @@ struct CIndex {
 
     // Auto-increment ID
     uint32_t  next_id;
+
+    // Trigram inverted index for O(1)-ish substring search.
+    CTrigramIndex* tri;
 };
 
 // ── Helpers ─────────────────────────────────────────────
@@ -81,18 +85,6 @@ static bool str_has_prefix(const char* str, const char* prefix) {
     size_t plen = strlen(prefix);
     if (plen > slen) return false;
     return strncasecmp(str, prefix, plen) == 0;
-}
-
-static bool str_contains(const char* haystack, const char* needle) {
-    // Simple strstr with case-insensitive
-    if (!*needle) return true;
-    size_t nlen = strlen(needle);
-    size_t hlen = strlen(haystack);
-    if (nlen > hlen) return false;
-    for (size_t i = 0; i <= hlen - nlen; i++) {
-        if (strncasecmp(haystack + i, needle, nlen) == 0) return true;
-    }
-    return false;
 }
 
 // FNV-1a hash for paths
@@ -120,6 +112,9 @@ CIndex* cindex_create(void) {
     idx->path_hash = (PathSlot*)calloc(PATH_HASH_CAP, sizeof(PathSlot));
 
     idx->next_id = 1;
+
+    idx->tri = ctrigram_create();
+
     return idx;
 }
 
@@ -138,8 +133,10 @@ void cindex_destroy(CIndex* idx) {
     free(idx->names);
     free(idx->metas);
     free(idx->path_hash);
+    CTrigramIndex* tri = idx->tri;
     pthread_mutex_unlock(&idx->mutex);
     pthread_mutex_destroy(&idx->mutex);
+    ctrigram_destroy(tri);
     free(idx);
 }
 
@@ -288,6 +285,10 @@ uint32_t cindex_insert(CIndex* idx,
         uint32_t pos = name_lower_bound(idx, lower);
         name_insert_at(idx, pos, lower, m->id);
         free(lower);
+
+        // Update trigram index (re-insert updates the stored name for this id).
+        if (idx->tri) ctrigram_insert(idx->tri, name, m->id);
+
         pthread_mutex_unlock(&idx->mutex);
         return m->id;
     }
@@ -322,6 +323,9 @@ uint32_t cindex_insert(CIndex* idx,
     name_insert_at(idx, pos, lower, id);
     free(lower);
 
+    // Insert into trigram index.
+    if (idx->tri) ctrigram_insert(idx->tri, name, id);
+
     pthread_mutex_unlock(&idx->mutex);
     return id;
 }
@@ -341,6 +345,9 @@ static bool cindex_remove_locked(CIndex* idx, uint32_t id) {
 
             // Remove from path hash
             path_remove(idx, m->path);
+
+            // Remove from trigram index.
+            if (idx->tri) ctrigram_remove(idx->tri, id);
 
             // Free strings
             free(m->original_name);
@@ -454,39 +461,14 @@ uint32_t cindex_search_substring(const CIndex* idx, const char* substring,
     if (!idx || !substring || !out_ids) return 0;
     if (!*substring) return 0;
 
-    if (max_results == 0) max_results = MAX_RESULTS;
-
-    pthread_mutex_lock(&((CIndex*)idx)->mutex);
-
-    char* lower = strdup_lower(substring);
-
-    // First pass: count matches
-    uint32_t count = 0;
-    for (uint32_t i = 0; i < idx->name_count; i++) {
-        if (str_contains(idx->names[i].name, lower)) {
-            count++;
-            if (max_results > 0 && count >= max_results) break;
-        }
-    }
-
-    if (count == 0) {
-        free(lower);
-        *out_ids = NULL;
-        pthread_mutex_unlock(&((CIndex*)idx)->mutex);
-        return 0;
-    }
-
-    *out_ids = (uint32_t*)malloc(count * sizeof(uint32_t));
-    uint32_t j = 0;
-    for (uint32_t i = 0; i < idx->name_count && j < count; i++) {
-        if (str_contains(idx->names[i].name, lower)) {
-            (*out_ids)[j++] = idx->names[i].record_id;
-        }
-    }
-
-    free(lower);
-    pthread_mutex_unlock(&((CIndex*)idx)->mutex);
-    return count;
+    // Delegate to the trigram inverted index. Its own mutex serializes access;
+    // acquiring the CIndex mutex first (in callers of cindex_remove/insert) and
+    // then the trigram mutex inside is a strict, acyclic lock order (the trigram
+    // index never calls back into CIndex). Cast away const exactly as the other
+    // const query functions do for their mutex acquisition.
+    CIndex* mut = (CIndex*)idx;
+    if (!mut->tri) return 0;
+    return ctrigram_search(mut->tri, substring, out_ids, max_results);
 }
 
 // ── Iterate ────────────────────────────────────────────

@@ -68,7 +68,7 @@ public actor FileIndexProvider: SearchProvider {
 
         guard !query.normalizedQuery.isEmpty else { return [] }
 
-        let records = await index.search(query: query.normalizedQuery)
+        let records = await index.searchSubstring(query: query.normalizedQuery)
 
         return records.map { record in
             let (matchType, score) = classifyMatch(
