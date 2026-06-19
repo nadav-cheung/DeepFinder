@@ -174,6 +174,17 @@
 
 ---
 
+### CHG-2026-06-16-01: wildcard/regex 接入搜索流水线
+
+- **来源**: nadav（doc↔impl 调和暴露的过度声明功能——PatternMatcher 已实现但无生产调用方）
+- **影响 REQ**: REQ-1.1-02（通配符）、REQ-1.1-03（正则）、REQ-1.1-06（AC8）
+- **影响文档**: `reqs/v1.1-advanced-syntax.md`；代码 `Sources/Search/FileIndexProvider.swift`
+- **变更类型**: 新增（实现）
+- **描述**: `PatternMatcher.matchWildcard`/`matchRegex` 已实现+测试，但无生产调用方——wildcard/regex AST 节点经 `textOnlyQuery` 扁平化为子串文本，故 `*.pdf`/`regex:...` 从不按模式匹配（审计标为过度声明）。本次接线：`FileIndexProvider.performSearch` 检测 cleanQuery 中的 glob（`*`/`?`）与 `regex:` 前缀，扫描全部记录并经 `PatternMatcher` 匹配（上限 `maxResults`，结果归类为 `.substring`、score 0.6）。普通查询不受影响（廉价前缀/字符检测，仍走索引子串路径）。
+- **影响**: v1.1 三处「PatternMatcher 无生产调用方 / 扁平化为子串」AC 已更正 + 顶部更新说明。README「Wildcards (`*.pdf`)」「regex:」headline 名副其实。测试：SearchProviderTests 新增 5（`*.ext`/`*term*`/`prefix*`/`regex:^report`/plain-unaffected），SearchTests 223 全绿；build clean。
+
+---
+
 ## 变更统计
 
 | 日期 | 变更数 | 类型 |
@@ -181,3 +192,4 @@
 | 2026-06-03 | 4 | 废除×1 / 澄清×1 / 修改×1 / 新增×1 |
 | 2026-06-14 | 3 | 修改（格式）×1 / 修改（澄清）×1 / 修改（规格同步现实）×1 |
 | 2026-06-15 | 4 | 新增（实现）×4 |
+| 2026-06-16 | 1 | 新增（实现）×1 |
