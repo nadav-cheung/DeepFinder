@@ -387,12 +387,27 @@ public actor FSEventWatcher {
     }
 
     /// Handle a rename event.
+    ///
+    /// macOS FSEvents sends the rename event for the OLD path. If the file
+    /// no longer exists there, we remove the old entry and scan the parent
+    /// directory to pick up the new filename.
     private func handleFileRenamed(at path: String) async {
         let fm = FileManager.default
         if fm.fileExists(atPath: path) {
+            // Rename TO this path (new name) — add it
             await handleFileCreated(at: path)
         } else {
+            // Rename FROM this path (old name) — delete and scan parent
             await handleFileDeleted(at: path)
+
+            let parentPath = (path as NSString).deletingLastPathComponent
+            guard let children = try? fm.contentsOfDirectory(atPath: parentPath) else { return }
+            for child in children.prefix(50) {
+                let childPath = parentPath + "/" + child
+                var isDir: ObjCBool = false
+                guard fm.fileExists(atPath: childPath, isDirectory: &isDir) else { continue }
+                await handleFileCreated(at: childPath)
+            }
         }
     }
 

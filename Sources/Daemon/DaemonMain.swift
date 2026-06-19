@@ -677,6 +677,12 @@ public actor DaemonMain {
             await filterStore.delete(name: name)
         }
 
+        let rescanHandler: @Sendable () async -> Void = { [weak self] in
+            guard let self else { return }
+            Logger.shared.info("daemon", "rescan triggered via IPC")
+            await self.startInitialScanIfNeeded(recordsWereEmpty: false, force: true)
+        }
+
         return IPCServer(
             socketPath: resolvedSocketPath,
             coordinator: coordinator,
@@ -684,6 +690,7 @@ public actor DaemonMain {
             indexStatusProvider: indexStatusProvider,
             duplicateProvider: duplicateProvider,
             suggestProvider: suggestProvider,
+            rescanHandler: rescanHandler,
             contentSearchHandler: contentSearchHandler,
             bookmarkListHandler: bookmarkListHandler,
             bookmarkSaveHandler: bookmarkSaveHandler,
@@ -701,13 +708,14 @@ public actor DaemonMain {
     /// Extracted from `run()` for readability; the `Task.detached` body is moved verbatim,
     /// so cancellation handling and persistence behavior are unchanged.
     private func startInitialScanIfNeeded(
-        index: InMemoryIndex,
-        persistence: IndexPersistence,
-        recordsWereEmpty recordsEmpty: Bool
+        index: InMemoryIndex? = nil,
+        persistence: IndexPersistence? = nil,
+        recordsWereEmpty recordsEmpty: Bool,
+        force: Bool = false
     ) {
-        guard recordsEmpty else { return }
-        let bgIndex = index
-        let bgPersistence = persistence
+        guard recordsEmpty || force else { return }
+        let bgIndex = index ?? self.index!
+        let bgPersistence = persistence ?? self.persistence!
         backgroundScanTask = Task.detached { [weak self = self] in
             let scanner = FileScanner()
             let homeDir = NSHomeDirectory()

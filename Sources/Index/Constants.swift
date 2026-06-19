@@ -59,7 +59,7 @@ public enum Constants {
 
     // MARK: - File System Scanning
     public enum Scan {
-        public static let defaultMaxDepth = 8
+        public static let defaultMaxDepth = 20
         public static let fsEventLatency: TimeInterval = 0.5
         /// Directories always skipped during file scanning.
         public static let alwaysSkippedNames: Set<String> = [
@@ -67,6 +67,21 @@ public enum Constants {
             ".claude", ".build", ".swiftpm", "DerivedData",
             ".cache", ".npm", ".cargo", "__pycache__", ".venv",
             "vendor", "bower_components",
+            ".svn", ".hg", ".tox", ".eggs", "build", "dist",
+            ".idea", ".vscode", ".vs", "target", "out", "zig-out",
+            ".mypy_cache", ".pytest_cache", ".ruff_cache", ".turbo",
+            ".next", ".nuxt", ".svelte-kit",
+        ]
+        /// Individual files always skipped during scanning.
+        public static let alwaysSkippedFiles: Set<String> = [
+            ".DS_Store", "Thumbs.db", "desktop.ini", ".localized",
+        ]
+        /// File extensions always skipped during scanning.
+        public static let alwaysSkippedExtensions: Set<String> = [
+            "o", "obj", "class", "pyc", "pyo", "pyd",
+            "exe", "dll", "so", "dylib", "a",
+            "ilk", "pdb", "idb", "ncb", "sdf",
+            "suo", "user", "cache",
         ]
         /// Directory path prefixes always excluded from scanning.
         public static let alwaysExcludedPrefixes: [String] = [

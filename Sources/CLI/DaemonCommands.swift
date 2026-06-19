@@ -43,12 +43,14 @@ public protocol PIDReader: Sendable {
 
 /// Subcommands for managing the DeepFinder daemon.
 ///
-/// Usage: `deepfinder daemon start|stop|restart|status`
+/// Usage: `deepfinder daemon start|stop|restart|status|rebuild|rescan`
 public enum DaemonSubcommand: String, Sendable, Equatable {
     case start
     case stop
     case restart
     case status
+    case rebuild
+    case rescan
 }
 
 // MARK: - DaemonCommandRunnerError
@@ -149,6 +151,10 @@ public struct DaemonCommandRunner: Sendable {
             return await doRestart(client: client)
         case .status:
             return await doStatus(client: client)
+        case .rebuild:
+            return await doRebuild(client: client)
+        case .rescan:
+            return await doRescan(client: client)
         }
     }
 
@@ -308,6 +314,71 @@ public struct DaemonCommandRunner: Sendable {
 
         default:
             output.writeError("Daemon running (PID \(pid)) but returned unexpected response\n")
+            return 2
+        }
+    }
+
+    // MARK: - Rebuild
+
+    /// Rebuild the index from scratch: stop daemon, delete index cache, restart.
+    private func doRebuild(client: any IPCClientProtocol) async -> Int32 {
+        output.write("Rebuilding index from scratch...\n")
+
+        // 1. Stop daemon if running
+        if let pid = pidReader.readPID(from: pidPath), processSignaler.isProcessAlive(pid) {
+            output.write("Stopping daemon (PID \(pid))...\n")
+            _ = processSignaler.sendSIGTERM(to: pid)
+            let deadline = Date().addingTimeInterval(shutdownTimeout)
+            var exited = false
+            while Date() < deadline {
+                if !processSignaler.isProcessAlive(pid) { exited = true; break }
+                try? await Task.sleep(nanoseconds: UInt64(shutdownPollInterval * 1_000_000_000))
+            }
+            if !exited {
+                output.writeError("Error: daemon did not stop in time\n")
+                return 2
+            }
+            pidReader.removePIDFile(at: pidPath)
+            cleanupSocket()
+        }
+
+        // 2. Delete index cache
+        let cacheDir = (pidPath as NSString).deletingLastPathComponent + "/../cache"
+        let resolvedCacheDir = NSString(string: cacheDir).expandingTildeInPath
+        let indexPath = resolvedCacheDir + "/index.db"
+        for suffix in ["", "-wal", "-shm"] {
+            let path = indexPath + suffix
+            if FileManager.default.fileExists(atPath: path) {
+                try? FileManager.default.removeItem(atPath: path)
+            }
+        }
+        output.write("Index cache cleared.\n")
+
+        // 3. Start daemon (will rebuild from scratch)
+        return await doStart(client: client)
+    }
+
+    // MARK: - Rescan
+
+    /// Trigger a rescan of all paths without clearing the index.
+    private func doRescan(client: any IPCClientProtocol) async -> Int32 {
+        // Check daemon is running
+        guard let pid = pidReader.readPID(from: pidPath), processSignaler.isProcessAlive(pid) else {
+            output.write("Daemon is not running. Start it first: \(Product.command) daemon start\n")
+            return 2
+        }
+
+        do {
+            let response = try await client.send(.rescan)
+            if case .ack = response {
+                output.write("Rescan triggered — daemon is scanning all paths.\n")
+                return 0
+            } else {
+                output.writeError("Error: unexpected response from daemon\n")
+                return 2
+            }
+        } catch {
+            output.writeError("Error: could not reach daemon — \(error.localizedDescription)\n")
             return 2
         }
     }

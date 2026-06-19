@@ -83,7 +83,7 @@ public enum IPCRequest: Codable, Sendable, Equatable {
         case query, cancel, stats, configGet, configSet, indexStatus, duplicateQuery
         case bookmarkList, bookmarkSave, bookmarkDelete
         case filterList, filterSave, filterDelete
-        case suggest
+        case suggest, rescan
     }
 
     /// Execute a search query with optional result limit and offset.
@@ -117,6 +117,8 @@ public enum IPCRequest: Codable, Sendable, Equatable {
     case filterDelete(name: String)
     /// Request fuzzy suggestions for a query (REQ-1.0-03).
     case suggest(query: String)
+    /// Trigger a full rescan of all paths (REQ-v0.0.1).
+    case rescan
 
     // Custom Codable: encodes a `kind` discriminator + `ipcProtocolVersion` field.
 
@@ -166,6 +168,8 @@ public enum IPCRequest: Codable, Sendable, Equatable {
         case .suggest(let query):
             try c.encode(Kind.suggest, forKey: .kind)
             try c.encode(query, forKey: .query)
+        case .rescan:
+            try c.encode(Kind.rescan, forKey: .kind)
         }
     }
 
@@ -230,6 +234,8 @@ public enum IPCRequest: Codable, Sendable, Equatable {
         case .suggest:
             let query = try c.decode(String.self, forKey: .query)
             self = .suggest(query: query)
+        case .rescan:
+            self = .rescan
         }
     }
 }

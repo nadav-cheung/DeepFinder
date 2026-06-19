@@ -57,6 +57,7 @@ public actor IPCServer {
     private let indexStatusProvider: @Sendable () async -> DaemonIndexStatus
     private let duplicateProvider: @Sendable (DuplicateQueryStrategy) async -> [DuplicateGroup]
     private let suggestProvider: @Sendable (String) async -> [String]
+    private let rescanHandler: @Sendable () async -> Void
     private let contentSearchHandler: @Sendable (String) async -> [SearchResult]
     private let bookmarkListHandler: @Sendable () async -> [SearchBookmark]
     private let bookmarkSaveHandler: @Sendable (SearchBookmark) async -> Bool
@@ -117,6 +118,7 @@ public actor IPCServer {
         },
         duplicateProvider: @escaping @Sendable (DuplicateQueryStrategy) async -> [DuplicateGroup] = { _ in [] },
         suggestProvider: @escaping @Sendable (String) async -> [String] = { _ in [] },
+        rescanHandler: @escaping @Sendable () async -> Void = {},
         contentSearchHandler: @escaping @Sendable (String) async -> [SearchResult] = { _ in [] },
         bookmarkListHandler: @escaping @Sendable () async -> [SearchBookmark] = { [] },
         bookmarkSaveHandler: @escaping @Sendable (SearchBookmark) async -> Bool = { _ in false },
@@ -135,6 +137,7 @@ public actor IPCServer {
         self.indexStatusProvider = indexStatusProvider
         self.duplicateProvider = duplicateProvider
         self.suggestProvider = suggestProvider
+        self.rescanHandler = rescanHandler
         self.contentSearchHandler = contentSearchHandler
         self.bookmarkListHandler = bookmarkListHandler
         self.bookmarkSaveHandler = bookmarkSaveHandler
@@ -631,6 +634,10 @@ public actor IPCServer {
         case .suggest(let query):
             let terms = await suggestProvider(query)
             return .suggestions(terms)
+
+        case .rescan:
+            await rescanHandler()
+            return .ack
         }
     }
 

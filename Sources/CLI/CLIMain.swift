@@ -304,14 +304,14 @@ public struct CLIMain {
     ) async -> (CLIOutput, CLIExitCode) {
         guard let action else {
             return (
-                CLIOutput(stderr: "Usage: \(Product.command) daemon start|stop|restart|status\n"),
+                CLIOutput(stderr: "Usage: \(Product.command) daemon start|stop|restart|status|rebuild|rescan\n"),
                 .queryError
             )
         }
 
         guard let subcommand = DaemonSubcommand(rawValue: action) else {
             return (
-                CLIOutput(stderr: "Unknown daemon action: \(action). Use start, stop, restart, or status.\n"),
+                CLIOutput(stderr: "Unknown daemon action: \(action). Use start, stop, restart, status, rebuild, or rescan.\n"),
                 .queryError
             )
         }

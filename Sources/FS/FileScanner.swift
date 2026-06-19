@@ -271,6 +271,17 @@ public actor FileScanner {
                             directoriesScanned += 1
                             continuation.yield(.directoryFound(record))
                         } else {
+                            // Skip individual files by name or extension
+                            let fileName = url.lastPathComponent
+                            if Constants.Scan.alwaysSkippedFiles.contains(fileName) {
+                                skippedCount += 1
+                                continue
+                            }
+                            if let ext = record.extension,
+                               Constants.Scan.alwaysSkippedExtensions.contains(ext.lowercased()) {
+                                skippedCount += 1
+                                continue
+                            }
                             filesScanned += 1
                             continuation.yield(.fileFound(record))
 
