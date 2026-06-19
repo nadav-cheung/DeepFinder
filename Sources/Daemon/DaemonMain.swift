@@ -716,6 +716,13 @@ public actor DaemonMain {
         guard recordsEmpty || force else { return }
         let bgIndex = index ?? self.index!
         let bgPersistence = persistence ?? self.persistence!
+
+        // Capture config values before detached task
+        let cfg = ConfigStore.loadFromDisk(path: resolvedDataDir + "/settings.json") ?? .defaults
+        let skipNames = cfg.excludedNames
+        let skipFiles = cfg.excludedFiles
+        let skipExts = cfg.excludedExtensions
+
         backgroundScanTask = Task.detached { [weak self = self] in
             let scanner = FileScanner()
             let homeDir = NSHomeDirectory()
@@ -728,9 +735,16 @@ public actor DaemonMain {
                 await self?.setEstimatedTotal(total)
             }
 
+            let scanConfig = ScanConfiguration(
+                skipPaths: Set(skipNames.map { "/" + $0 })
+                    .union(Constants.Scan.alwaysExcludedPrefixes),
+                skipFileNames: Set(skipFiles),
+                skipExtensions: Set(skipExts),
+                maxDepth: Constants.Scan.defaultMaxDepth
+            )
             let scanStream = await scanner.scan(
                 rootPaths: [homeDir],
-                config: ScanConfiguration(maxDepth: Constants.Scan.defaultMaxDepth)
+                config: scanConfig
             )
             var scannedCount = 0
             await self?.setScanStart(Date())

@@ -33,11 +33,16 @@ import DeepFinderPersist
 /// Configuration for a filesystem scan.
 public struct ScanConfiguration: Sendable {
     /// Path suffixes to skip entirely (e.g. "/.git", "/node_modules").
-    /// Matched against path components during enumeration.
     public var skipPaths: Set<String>
 
     /// Privacy-sensitive path suffixes to skip (e.g. "/Library/Caches").
     public var privacySkipPaths: Set<String>
+
+    /// Individual file basenames to skip (e.g. ".DS_Store").
+    public var skipFileNames: Set<String>
+
+    /// File extensions to skip (e.g. "o", "pyc").
+    public var skipExtensions: Set<String>
 
     /// Optional maximum directory depth limit. `nil` means no limit.
     public var maxDepth: Int?
@@ -50,11 +55,15 @@ public struct ScanConfiguration: Sendable {
             .union(Constants.Scan.alwaysExcludedPrefixes),
         privacySkipPaths: Set<String> = Constants.Scan.alwaysExcludedPaths
             .union(Constants.Scan.userExcludedPaths()),
+        skipFileNames: Set<String> = Constants.Scan.alwaysSkippedFiles,
+        skipExtensions: Set<String> = Constants.Scan.alwaysSkippedExtensions,
         maxDepth: Int? = nil,
         followSymlinks: Bool = false
     ) {
         self.skipPaths = skipPaths
         self.privacySkipPaths = privacySkipPaths
+        self.skipFileNames = skipFileNames
+        self.skipExtensions = skipExtensions
         self.maxDepth = maxDepth
         self.followSymlinks = followSymlinks
     }
@@ -271,14 +280,14 @@ public actor FileScanner {
                             directoriesScanned += 1
                             continuation.yield(.directoryFound(record))
                         } else {
-                            // Skip individual files by name or extension
+                            // Skip individual files by name or extension (from config)
                             let fileName = url.lastPathComponent
-                            if Constants.Scan.alwaysSkippedFiles.contains(fileName) {
+                            if config.skipFileNames.contains(fileName) {
                                 skippedCount += 1
                                 continue
                             }
                             if let ext = record.extension,
-                               Constants.Scan.alwaysSkippedExtensions.contains(ext.lowercased()) {
+                               config.skipExtensions.contains(ext.lowercased()) {
                                 skippedCount += 1
                                 continue
                             }

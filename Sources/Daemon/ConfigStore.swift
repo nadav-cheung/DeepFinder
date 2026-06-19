@@ -20,13 +20,20 @@ import DeepFinderPersist
 /// When the file is missing or corrupted, defaults are used.
 public struct DaemonConfig: Codable, Sendable, Equatable {
 
-    /// Paths excluded from indexing.
+    /// Paths excluded from indexing (prefix match).
     public var excludedPaths: [String]
 
     /// Volume mount paths excluded from indexing (e.g. "/Volumes/Time Machine").
-    /// Local volumes are always indexed. External and network volumes are indexed
-    /// by default unless listed here.
     public var excludedVolumes: [String]
+
+    /// Directory basenames excluded from scanning (e.g. ".git", "node_modules").
+    public var excludedNames: [String]
+
+    /// Individual file basenames always skipped (e.g. ".DS_Store", "Thumbs.db").
+    public var excludedFiles: [String]
+
+    /// File extensions always skipped (e.g. "o", "pyc", "class").
+    public var excludedExtensions: [String]
 
     /// Number of records to batch-write to SQLite at once.
     public var indexBatchSize: Int
@@ -49,9 +56,12 @@ public struct DaemonConfig: Codable, Sendable, Equatable {
     public static let defaults = DaemonConfig(
         excludedPaths: Constants.Scan.alwaysExcludedPrefixes,
         excludedVolumes: [],
+        excludedNames: Constants.Scan.alwaysSkippedNames.sorted(),
+        excludedFiles: Constants.Scan.alwaysSkippedFiles.sorted(),
+        excludedExtensions: Constants.Scan.alwaysSkippedExtensions.sorted(),
         indexBatchSize: Constants.Daemon.indexBatchSize,
         maxResults: Constants.Daemon.maxResults,
-        configVersion: 1
+        configVersion: 2
     )
 
     /// Serialize every field to its string form for the IPC `config_get` wire format.
@@ -69,6 +79,9 @@ public struct DaemonConfig: Codable, Sendable, Equatable {
         return [
             "excludedPaths": jsonString(excludedPaths),
             "excludedVolumes": jsonString(excludedVolumes),
+            "excludedNames": jsonString(excludedNames),
+            "excludedFiles": jsonString(excludedFiles),
+            "excludedExtensions": jsonString(excludedExtensions),
             "indexBatchSize": String(indexBatchSize),
             "maxResults": String(maxResults),
             "configVersion": String(configVersion),
@@ -143,6 +156,24 @@ public actor ConfigStore {
                 throw ConfigStoreError.invalidValue(key: key, reason: "Expected a JSON array of strings")
             }
             config.excludedPaths = paths
+        case "excludedNames":
+            guard let data = value.data(using: .utf8),
+                  let names = try? JSONDecoder().decode([String].self, from: data) else {
+                throw ConfigStoreError.invalidValue(key: key, reason: "Expected a JSON array of strings")
+            }
+            config.excludedNames = names
+        case "excludedFiles":
+            guard let data = value.data(using: .utf8),
+                  let files = try? JSONDecoder().decode([String].self, from: data) else {
+                throw ConfigStoreError.invalidValue(key: key, reason: "Expected a JSON array of strings")
+            }
+            config.excludedFiles = files
+        case "excludedExtensions":
+            guard let data = value.data(using: .utf8),
+                  let exts = try? JSONDecoder().decode([String].self, from: data) else {
+                throw ConfigStoreError.invalidValue(key: key, reason: "Expected a JSON array of strings")
+            }
+            config.excludedExtensions = exts
         case "excludedVolumes":
             guard let data = value.data(using: .utf8),
                   let volumes = try? JSONDecoder().decode([String].self, from: data) else {
@@ -249,7 +280,7 @@ public actor ConfigStore {
     // MARK: - Load
 
     /// Attempt to load config from disk. Returns nil on any failure (missing, corrupt).
-    private static func loadFromDisk(path: String) -> DaemonConfig? {
+    static func loadFromDisk(path: String) -> DaemonConfig? {
         guard let data = try? Data(contentsOf: URL(fileURLWithPath: path)) else {
             return nil
         }
