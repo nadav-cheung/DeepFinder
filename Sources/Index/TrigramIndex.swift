@@ -132,6 +132,7 @@ public struct TrigramIndex {
         _count -= 1
 
         let scalars = Array(storedName.unicodeScalars)
+        guard scalars.count >= 3 else { return }
         for i in 0..<(scalars.count - 2) {
             let trigram = Self.makeTrigram(scalars: scalars, at: i)
             if var posting = postingLists[trigram] {

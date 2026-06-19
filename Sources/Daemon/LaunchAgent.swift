@@ -61,6 +61,21 @@ public enum LaunchAgent {
         return "\(home)/Library/LaunchAgents/\(label).plist"
     }
 
+    /// Resolve the daemon binary path by looking next to the CLI binary.
+    /// Falls back to `Product.defaultBinDir` if detection fails.
+    static func resolveDaemonBinaryPath() -> String {
+        // Try to find deepfinder-daemon next to the currently-running CLI
+        if let cliPath = CommandLine.arguments.first {
+            let cliDir = (cliPath as NSString).deletingLastPathComponent
+            let daemonPath = cliDir + "/" + Product.daemonCommand
+            if FileManager.default.fileExists(atPath: daemonPath) {
+                return daemonPath
+            }
+        }
+        // Fallback: default install path
+        return Product.defaultBinDir + "/" + Product.daemonCommand
+    }
+
     // MARK: - Plist Generation
 
     /// Generate the LaunchAgent plist XML content.
@@ -75,7 +90,8 @@ public enum LaunchAgent {
     ///
     /// - Returns: A complete XML plist string.
     public static func generatePlist() -> String {
-        let binaryPath = "\(Product.defaultBinDir)/\(Product.daemonCommand)"
+        // Auto-detect daemon binary path relative to the CLI binary
+        let binaryPath = LaunchAgent.resolveDaemonBinaryPath()
         let logOut = "\(Product.logsDir)/daemon-stdout.log"
         let logErr = "\(Product.logsDir)/daemon-stderr.log"
 
