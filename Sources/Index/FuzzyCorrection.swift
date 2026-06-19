@@ -2,11 +2,6 @@
 // SPDX-FileCopyrightText: 2026 nadav.com.cn
 
 import Foundation
-import DeepFinderIndex
-import DeepFinderSearch
-import DeepFinderDaemon
-import DeepFinderAI
-import DeepFinderServices
 
 // MARK: - FuzzyCorrector
 

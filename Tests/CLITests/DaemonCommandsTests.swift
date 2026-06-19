@@ -131,7 +131,7 @@ struct DaemonCommandsTests {
         )
 
         let result = await runner.run(.stop, client: MockIPCClient(response: .ack))
-        #expect(result == 1) // error exit
+        #expect(result == 2) // daemonError
         #expect(!signaler.sigtermSent) // should NOT send signal
     }
 
@@ -225,7 +225,7 @@ struct DaemonCommandsTests {
 
         let result = await runner.run(.status, client: mockClient)
         let lastReq = await mockClient.lastRequest
-        #expect(result == 1) // error: daemon not running
+        #expect(result == 2) // daemonError: daemon not running
         #expect(lastReq == nil)
     }
 
@@ -255,7 +255,7 @@ struct DaemonCommandsTests {
         )
 
         let result = await runner.run(.start, client: MockIPCClient(response: .ack))
-        #expect(result == 1) // error: timeout
+        #expect(result == 2) // daemonError: timeout
         #expect(spawnTracker.spawnCalled) // did attempt to spawn
     }
 }

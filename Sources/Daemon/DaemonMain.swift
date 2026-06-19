@@ -402,6 +402,10 @@ public actor DaemonMain {
     ///
     /// - Throws: `DaemonError` on startup failures.
     public func run() async throws {
+        // 0. Configure logging
+        Logger.shared.configure(logDir: resolvedDataDir + "/logs")
+        Logger.shared.info("daemon", "DeepFinder daemon starting (version \(Product.version))")
+
         // 1. Ensure data directory and subdirectories
         try Self.ensureDataDir(dataDir)
         try Self.ensureDataDir(resolvedDataDir + "/session")
@@ -427,7 +431,30 @@ public actor DaemonMain {
         let index = InMemoryIndex()
         self.index = index
         let records = try await persistence.loadAllRecords()
+        Logger.shared.info("daemon", "loaded \(records.count) records from database")
+
+        // 4.5. Dedup records by path (keep highest ID = most recent)
+        var seenPaths: [String: FileRecord] = [:]
+        var duplicateIDs: [UInt32] = []
         for record in records {
+            if let existing = seenPaths[record.path] {
+                if record.id > existing.id {
+                    duplicateIDs.append(existing.id)
+                    seenPaths[record.path] = record
+                } else {
+                    duplicateIDs.append(record.id)
+                }
+            } else {
+                seenPaths[record.path] = record
+            }
+        }
+        let dedupedRecords = Array(seenPaths.values)
+        if !duplicateIDs.isEmpty {
+            Logger.shared.info("daemon", "removing \(duplicateIDs.count) duplicate records from database")
+            await persistence.deleteRecords(duplicateIDs)
+        }
+
+        for record in dedupedRecords {
             await index.insert(record)
         }
 
@@ -442,6 +469,7 @@ public actor DaemonMain {
         let ipcServer = makeIPCServer(index: index, coordinator: coordinator, startTime: startTime)
         try await ipcServer.start()
         self.ipcServer = ipcServer
+        Logger.shared.info("daemon", "IPC server listening on \(resolvedSocketPath)")
 
         _state = .ready
 
@@ -460,6 +488,7 @@ public actor DaemonMain {
         )
 
         _state = .live
+        Logger.shared.info("daemon", "FSEventWatcher started, state=live")
 
         // 8. Background initial scan on first run (empty index)
         startInitialScanIfNeeded(index: index, persistence: persistence, recordsWereEmpty: records.isEmpty)
@@ -510,9 +539,17 @@ public actor DaemonMain {
             )
         }
 
-        let suggestProvider: @Sendable (String) async -> [String] = {
-            let results = await capturedIndex.search(query: $0)
-            return Array(results.prefix(5).map(\.name))
+        let suggestProvider: @Sendable (String) async -> [String] = { query in
+            // Build FuzzyCorrector from all known filenames for edit-distance suggestions
+            let allRecords = await capturedIndex.allRecords()
+            let knownNames = Set(allRecords.map(\.name))
+            let corrector = FuzzyCorrector(knownTerms: knownNames)
+            if let suggestion = corrector.suggest(for: query, maxDistance: 2) {
+                return [suggestion]
+            }
+            // Fallback: prefix search results
+            let results = await capturedIndex.search(query: query)
+            return Array(results.prefix(3).map(\.name))
         }
 
         // ConfigStore for IPC config_get/config_set (REQ-0.4-05)

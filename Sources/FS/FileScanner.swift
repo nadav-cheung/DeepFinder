@@ -48,7 +48,8 @@ public struct ScanConfiguration: Sendable {
     public init(
         skipPaths: Set<String> = Set(Constants.Scan.alwaysSkippedNames.map { "/" + $0 })
             .union(Constants.Scan.alwaysExcludedPrefixes),
-        privacySkipPaths: Set<String> = Constants.Scan.alwaysExcludedPaths,
+        privacySkipPaths: Set<String> = Constants.Scan.alwaysExcludedPaths
+            .union(Constants.Scan.userExcludedPaths()),
         maxDepth: Int? = nil,
         followSymlinks: Bool = false
     ) {

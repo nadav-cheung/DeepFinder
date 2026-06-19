@@ -132,6 +132,19 @@ public struct CLIMain {
             return (CLIOutput(stderr: "Error: \(error)\n"), .queryError)
         }
 
+        // 1.5. Configure debug logging if enabled
+        if options.debug {
+            Logger.shared.setStderrEnabled(true)
+            let level: LogLevel = switch options.logLevel {
+            case "debug": .debug
+            case "warn":  .warn
+            case "error": .error
+            default:      .info
+            }
+            Logger.shared.setLevel(level)
+            Logger.shared.debug("cli", "CLIMain args: \(args.joined(separator: " "))")
+        }
+
         // 2. Handle --help
         if options.showHelp {
             return (CLIOutput(stdout: ArgParser.helpText), .success)

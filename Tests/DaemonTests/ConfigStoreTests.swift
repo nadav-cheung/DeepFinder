@@ -28,7 +28,7 @@ struct ConfigStoreTests {
         let store = ConfigStore(configPath: configPath(in: dir))
         let config = await store.get()
 
-        #expect(config.excludedPaths == ["/System", "/Library"])
+        #expect(config.excludedPaths == ["/System", "/Library", "/tmp", "/private/tmp"])
         #expect(config.indexBatchSize == 100)
         #expect(config.maxResults == 1000)
         #expect(config.configVersion == 1)
@@ -107,7 +107,7 @@ struct ConfigStoreTests {
         let config = await store.get()
         #expect(config.indexBatchSize == 200)
         #expect(config.maxResults == 2000)
-        #expect(config.excludedPaths == ["/System", "/Library", "/private"])
+        #expect(config.excludedPaths == ["/System", "/Library", "/tmp", "/private/tmp", "/private"])
     }
 
     // MARK: - 6. Atomic write verified (no partial file)
@@ -154,7 +154,7 @@ struct ConfigStoreTests {
         let store = ConfigStore(configPath: path)
         let config = await store.get()
         // Should fall back to defaults
-        #expect(config.excludedPaths == ["/System", "/Library"])
+        #expect(config.excludedPaths == ["/System", "/Library", "/tmp", "/private/tmp"])
         #expect(config.indexBatchSize == 100)
         #expect(config.maxResults == 1000)
     }

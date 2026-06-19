@@ -177,14 +177,14 @@ public struct DaemonCommandRunner: Sendable {
             break
         case .failure(let error):
             output.writeError("Error: \(DaemonCommandRunnerError.spawnFailed(error.localizedDescription))\n")
-            return 1
+            return 2
         }
 
         // Wait for socket
         let ready = socketWaiter.waitForSocket(at: socketPath, timeout: startupTimeout)
         if !ready {
             output.writeError("Error: \(DaemonCommandRunnerError.startupTimedOut)\n")
-            return 1
+            return 2
         }
 
         output.write("Daemon started\n")
@@ -197,7 +197,7 @@ public struct DaemonCommandRunner: Sendable {
     private func doStop() async -> Int32 {
         guard let pid = pidReader.readPID(from: pidPath) else {
             output.write("Daemon is not running\n")
-            return 1
+            return 2
         }
 
         guard processSignaler.isProcessAlive(pid) else {
@@ -205,13 +205,13 @@ public struct DaemonCommandRunner: Sendable {
             pidReader.removePIDFile(at: pidPath)
             cleanupSocket()
             output.write("Daemon is not running (cleaned up stale PID file)\n")
-            return 1
+            return 2
         }
 
         // Send SIGTERM
         guard processSignaler.sendSIGTERM(to: pid) else {
             output.writeError("Error: failed to send SIGTERM to PID \(pid)\n")
-            return 1
+            return 2
         }
 
         // Poll until process exits or timeout
@@ -227,7 +227,7 @@ public struct DaemonCommandRunner: Sendable {
 
         if !exited {
             output.writeError("Error: \(DaemonCommandRunnerError.stopTimedOut)\n")
-            return 1
+            return 2
         }
 
         // Cleanup
@@ -255,12 +255,12 @@ public struct DaemonCommandRunner: Sendable {
     private func doStatus(client: any IPCClientProtocol) async -> Int32 {
         guard let pid = pidReader.readPID(from: pidPath) else {
             output.write("Daemon is not running\n")
-            return 1
+            return 2
         }
 
         guard processSignaler.isProcessAlive(pid) else {
             output.write("Daemon is not running (stale PID file)\n")
-            return 1
+            return 2
         }
 
         // Fetch stats via IPC
@@ -271,7 +271,7 @@ public struct DaemonCommandRunner: Sendable {
             // Daemon PID exists but IPC failed
             output.writeError("Daemon running (PID \(pid)) but not reachable via IPC\n")
             output.writeError("  Error: \(error.localizedDescription)\n")
-            return 1
+            return 2
         }
 
         switch response {
@@ -304,11 +304,11 @@ public struct DaemonCommandRunner: Sendable {
 
         case .error(let ipcError):
             output.writeError("Daemon running (PID \(pid)) but returned error: \(ipcError)\n")
-            return 1
+            return 2
 
         default:
             output.writeError("Daemon running (PID \(pid)) but returned unexpected response\n")
-            return 1
+            return 2
         }
     }
 

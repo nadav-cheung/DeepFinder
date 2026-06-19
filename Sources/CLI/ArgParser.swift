@@ -28,6 +28,10 @@ public struct CLIOptions: Sendable, Equatable {
     public var reverse: Bool = false
     /// Verbose output.
     public var verbose: Bool = false
+    /// Enable debug logging to stderr.
+    public var debug: Bool = false
+    /// Minimum log level when --debug is enabled.
+    public var logLevel: String = "info"
     /// Show help text and exit.
     public var showHelp: Bool = false
     /// Show version and exit.
@@ -107,6 +111,16 @@ public struct ArgParser {
                     opts.reverse = true
                 case "--verbose":
                     opts.verbose = true
+                case "--debug":
+                    opts.debug = true
+                case "--log-level":
+                    let levelVal = try nextValue(after: i, in: args, flag: arg)
+                    let validLevels = ["debug", "info", "warn", "error"]
+                    guard validLevels.contains(levelVal) else {
+                        throw CLIError.invalidValue(flag: "--log-level", value: levelVal)
+                    }
+                    opts.logLevel = levelVal
+                    i += 1
                 case "--help":
                     opts.showHelp = true
                 case "--version":
@@ -204,6 +218,8 @@ public struct ArgParser {
           --offset <n>        Number of results to skip
           --reverse           Reverse sort order
           --verbose           Show match type and relevance score per result
+          --debug              Enable debug logging to stderr
+          --log-level LEVEL    Minimum log level: debug, info, warn, error (default: info)
           --bookmark <name>   Recall a saved bookmark's query (see :bm in REPL)
           --serve             Start HTTP search service (no query needed)
           --port <n>          Port for --serve mode (default: 7654)

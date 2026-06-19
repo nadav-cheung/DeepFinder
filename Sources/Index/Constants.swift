@@ -64,15 +64,28 @@ public enum Constants {
         /// Directories always skipped during file scanning.
         public static let alwaysSkippedNames: Set<String> = [
             ".git", "node_modules", ".Trash", ".Spotlight-V100",
+            ".claude", ".build", ".swiftpm", "DerivedData",
+            ".cache", ".npm", ".cargo", "__pycache__", ".venv",
+            "vendor", "bower_components",
         ]
         /// Directory path prefixes always excluded from scanning.
         public static let alwaysExcludedPrefixes: [String] = [
             "/System", "/Library",
+            "/tmp", "/private/tmp",
         ]
         /// Full paths always excluded from scanning.
+        /// User-home-relative paths are expanded at runtime via ``userExcludedPaths()``.
         public static let alwaysExcludedPaths: Set<String> = [
             "/Library/Caches", "/Library/Cookies", "/Library/Keychains",
         ]
+        /// User-home-relative paths that cannot be expressed as static literals.
+        /// Call this at runtime to get the full exclusion set.
+        public static func userExcludedPaths() -> Set<String> {
+            let home = NSHomeDirectory()
+            return [
+                home + "/Library/Developer",
+            ]
+        }
 
         /// Number of bytes checked for NUL bytes to detect binary files.
         /// 8 KB is a common tradeoff: large enough to avoid false positives
