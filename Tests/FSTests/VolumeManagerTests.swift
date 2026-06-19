@@ -147,8 +147,8 @@ struct VolumeManagerTests {
             isDirectory: true
         )
 
-        // Verify 3 records in index
-        let countBefore = await index.count
+        // Verify 3 records in index (count is files-only; totalRecords includes dirs).
+        let countBefore = await index.totalRecords
         #expect(countBefore == 3)
 
         // Remove all records for the USB volume

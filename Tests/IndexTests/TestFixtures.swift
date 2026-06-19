@@ -273,15 +273,16 @@ struct TestFixtureTests {
     @Test func generatorPopulatesIndex() async {
         let index = InMemoryIndex()
         await FileRecordGenerator.populate(index: index, count: 100)
-        #expect(await index.count == 100)
+        // totalRecords = files + directories (~20% are dirs); count is files-only.
+        #expect(await index.totalRecords == 100)
     }
 
     @Test func performanceFixturesBuild10K() async {
         let index = await PerformanceFixtures.index10K()
-        #expect(await index.count == 10_000)
+        #expect(await index.totalRecords == 10_000)
 
-        // Should be searchable
-        let results = await index.search(query: "pdf")
+        // Should be searchable (names like "report_5.pdf" — substring, not prefix).
+        let results = await index.searchSubstring(query: "pdf")
         #expect(!results.isEmpty)
     }
 }

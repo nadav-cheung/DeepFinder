@@ -81,8 +81,8 @@ struct InMemoryIndexTests {
         await index.insert(makeRecord(id: 1, name: "my_report_final.pdf"))
         await index.insert(makeRecord(id: 2, name: "summary.doc"))
 
-        // "report" is a substring (not prefix) — FullSubstringMap handles this
-        let results = await index.search(query: "report")
+        // "report" is a substring (not prefix) — handled by the trigram index.
+        let results = await index.searchSubstring(query: "report")
         #expect(results.count == 1)
         #expect(results[0].id == 1)
     }
@@ -97,7 +97,7 @@ struct InMemoryIndexTests {
         await index.insert(makeRecord(id: 1, name: longName))
         await index.insert(makeRecord(id: 2, name: "short.txt"))
 
-        let results = await index.search(query: "substring_map")
+        let results = await index.searchSubstring(query: "substring_map")
         #expect(results.count == 1)
         #expect(results[0].id == 1)
     }
@@ -142,8 +142,8 @@ struct InMemoryIndexTests {
         let count = await index.count
         #expect(count == 4)
 
-        // "a" should match alpha, beta, gamma, delta (all contain "a")
-        let results = await index.search(query: "a")
+        // "a" should match alpha, beta, gamma, delta (all contain "a") via substring.
+        let results = await index.searchSubstring(query: "a")
         let ids = results.map(\.id).sorted()
         #expect(ids == [1, 2, 3, 4])
     }
@@ -237,7 +237,9 @@ struct InMemoryIndexTests {
         let results = await index.search(query: "thesis")
         #expect(results.count == 1)
         let found = results[0]
-        #expect(found.id == 42)
+        // The C index auto-assigns IDs; the caller-supplied id (42) is not
+        // preserved (IDs are internal and regenerated each scan).
+        #expect(found.id != 0)
         #expect(found.name == "thesis.pdf")
         #expect(found.path == "/Users/alice/Documents/thesis.pdf")
         #expect(found.parentPath == "/Users/alice/Documents")

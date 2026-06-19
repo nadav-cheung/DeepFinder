@@ -94,8 +94,19 @@ public actor InMemoryIndex {
     // MARK: - Volume
 
     public func removeRecordsForVolume(volumePath: String) -> [UInt32] {
-        // C index doesn't support volume enumeration directly
-        return []
+        guard let idx = _idx else { return [] }
+        // Match the volume root exactly and everything beneath it. Normalize so
+        // "/Volumes/USB" matches "/Volumes/USB" and "/Volumes/USB/..." but not
+        // "/Volumes/USB Drive".
+        let prefix = volumePath.hasSuffix("/") ? volumePath : volumePath + "/"
+        var removed: [UInt32] = []
+        for record in allRecords() {
+            if record.path == volumePath || record.path.hasPrefix(prefix) {
+                cindex_remove(idx, record.id)
+                removed.append(record.id)
+            }
+        }
+        return removed
     }
 
     // MARK: - Search
@@ -199,17 +210,18 @@ public actor InMemoryIndex {
             cindex_iterate(idx, { (id, name, originalName, path, parentPath, isDir, size, createdAt, modifiedAt, userData) in
                 guard let userData else { return }
                 let resultsPtr = userData.assumingMemoryBound(to: [FileRecord].self)
+                let origName = originalName != nil ? String(cString: originalName!) : ""
                 let record = FileRecord(
                     id: id,
                     name: name != nil ? String(cString: name!).precomposedStringWithCanonicalMapping : "",
-                    originalName: originalName != nil ? String(cString: originalName!) : "",
+                    originalName: origName,
                     path: path != nil ? String(cString: path!) : "",
                     parentPath: parentPath != nil ? String(cString: parentPath!) : "",
                     isDirectory: isDir,
                     size: size,
                     createdAt: Date(timeIntervalSince1970: Double(createdAt)),
                     modifiedAt: Date(timeIntervalSince1970: Double(modifiedAt)),
-                    extension: nil
+                    extension: dfDeriveExtension(name: origName, isDirectory: isDir)
                 )
                 resultsPtr.pointee.append(record)
             }, ptr)
@@ -383,7 +395,7 @@ public actor InMemoryIndex {
             size: size,
             createdAt: createdAt,
             modifiedAt: modifiedAt,
-            extension: nil
+            extension: dfDeriveExtension(name: name, isDirectory: isDir)
         )
     }
 }
@@ -407,4 +419,14 @@ public struct IndexSnapshot: Sendable {
     public func record(atPath path: String) -> FileRecord? {
         records.first { $0.path == path }
     }
+}
+
+/// Derive a file's extension from its name. The C index stores only the name
+/// (not the extension), so we derive it for `ext:` filtering (SearchFilter) and
+/// GUI display. nil for directories or extensionless names. Top-level (not a
+/// method) so it can be called from `@convention(c)` iterate callbacks.
+private func dfDeriveExtension(name: String, isDirectory: Bool) -> String? {
+    if isDirectory { return nil }
+    let ext = (name as NSString).pathExtension
+    return ext.isEmpty ? nil : ext.lowercased()
 }

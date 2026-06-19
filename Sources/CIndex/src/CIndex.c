@@ -336,6 +336,10 @@ static bool cindex_remove_locked(CIndex* idx, uint32_t id) {
         if (idx->metas[i].id == id) {
             FileMeta* m = &idx->metas[i];
 
+            // Capture the removed record's flags BEFORE the swap-with-last below,
+            // which overwrites *m with a different record.
+            bool was_directory = m->is_directory;
+
             // Remove from names
             char* lower = strdup_lower(m->original_name);
             if (lower) {
@@ -361,7 +365,7 @@ static bool cindex_remove_locked(CIndex* idx, uint32_t id) {
                 path_insert(idx, idx->metas[i].path, i);
             }
             idx->meta_count--;
-            if (!m->is_directory) idx->file_count--;
+            if (!was_directory) idx->file_count--;
             return true;
         }
     }
