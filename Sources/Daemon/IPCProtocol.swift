@@ -238,11 +238,12 @@ public enum IPCRequest: Codable, Sendable, Equatable {
 
 /// Runtime statistics reported by the daemon.
 public struct DaemonStats: Codable, Sendable, Equatable {
-    public init(totalFiles: Int, indexState: String, uptimeSeconds: Double, memoryUsageMB: Double) {
+    public init(totalFiles: Int, indexState: String, uptimeSeconds: Double, memoryUsageMB: Double, estimatedTotalFiles: Int? = nil) {
         self.totalFiles = totalFiles
         self.indexState = indexState
         self.uptimeSeconds = uptimeSeconds
         self.memoryUsageMB = memoryUsageMB
+        self.estimatedTotalFiles = estimatedTotalFiles
     }
     /// Total number of files currently in the index.
     public let totalFiles: Int
@@ -252,6 +253,8 @@ public struct DaemonStats: Codable, Sendable, Equatable {
     public let uptimeSeconds: Double
     /// Approximate memory usage of the daemon process in megabytes.
     public let memoryUsageMB: Double
+    /// Estimated total files on disk (from pre-scan count). `nil` while counting.
+    public let estimatedTotalFiles: Int?
 }
 
 // MARK: - DaemonIndexStatus

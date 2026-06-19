@@ -280,7 +280,25 @@ public struct DaemonCommandRunner: Sendable {
             output.write("Daemon running (PID \(pid))\n")
             output.write("  Uptime: \(uptime)\n")
             output.write("  Index state: \(stats.indexState)\n")
-            output.write("  Files indexed: \(stats.totalFiles)\n")
+
+            // Progress: when estimatedTotalFiles is known and scan is ongoing,
+            // show percentage + ETA. Otherwise just the raw count.
+            if let estimated = stats.estimatedTotalFiles, estimated > 0 {
+                let pct = min(100, stats.totalFiles * 100 / estimated)
+                let filesStr = Self.formatNumber(stats.totalFiles)
+                let estStr = Self.formatNumber(estimated)
+                output.write("  Files indexed: \(filesStr) / \(estStr) (\(pct)%)\n")
+
+                if stats.totalFiles < estimated && stats.uptimeSeconds > 0 {
+                    let rate = Double(stats.totalFiles) / max(stats.uptimeSeconds, 1)
+                    if rate > 0 {
+                        let remaining = Double(estimated - stats.totalFiles) / rate
+                        output.write("  Scan ETA: ~\(formatDuration(remaining))\n")
+                    }
+                }
+            } else {
+                output.write("  Files indexed: \(Self.formatNumber(stats.totalFiles))\n")
+            }
             output.write("  Memory: \(String(format: "%.1f", stats.memoryUsageMB)) MB\n")
             return 0
 
@@ -316,6 +334,25 @@ public struct DaemonCommandRunner: Sendable {
             let hours = Int(seconds) / 3600
             let mins = (Int(seconds) % 3600) / 60
             return "\(hours)h \(mins)m"
+        }
+    }
+
+    /// Format an integer with thousand-separator commas (e.g. 1_484_939 → "1,484,939").
+    private static func formatNumber(_ n: Int) -> String {
+        let nf = NumberFormatter()
+        nf.numberStyle = .decimal
+        nf.groupingSeparator = ","
+        return nf.string(from: NSNumber(value: n)) ?? String(n)
+    }
+
+    /// Format a duration in seconds as a human-readable ETA (e.g. "45m", "2h 30m", "30s").
+    private func formatDuration(_ seconds: Double) -> String {
+        if seconds < 60 {
+            return "\(Int(seconds))s"
+        } else if seconds < 3600 {
+            return "\(Int(seconds / 60))m"
+        } else {
+            return "\(Int(seconds / 3600))h \(Int(seconds.truncatingRemainder(dividingBy: 3600) / 60))m"
         }
     }
 

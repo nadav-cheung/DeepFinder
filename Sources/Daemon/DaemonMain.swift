@@ -136,6 +136,15 @@ public actor DaemonMain {
     /// Background initial-scan task, if one was started. Cancelled on shutdown.
     private var backgroundScanTask: Task<Void, Never>?
 
+    /// Estimated total files on disk from pre-scan count. `nil` until count completes.
+    private var estimatedTotalFiles: Int?
+
+    /// When the current scan started. `nil` when idle.
+    private var scanStartTime: Date?
+
+    /// Files scanned so far in the current scan pass.
+    private var scannedSoFar: Int = 0
+
     /// Event stream factory for dependency injection. Defaults to FSEventStreamImpl.
     private let eventStreamProvider: @Sendable () -> FileSystemEventStream
 
@@ -480,14 +489,15 @@ public actor DaemonMain {
         let capturedState: @Sendable () async -> DaemonState = { [weak self = self] in
             await self?._state ?? .starting
         }
-        let statsProvider: @Sendable () async -> DaemonStats = {
+        let statsProvider: @Sendable () async -> DaemonStats = { [weak self = self] in
             let fileCount = await capturedIndex.count
             let memoryMB = Self.processMemoryMB()
             return DaemonStats(
                 totalFiles: fileCount,
                 indexState: (await capturedState()).rawValue,
                 uptimeSeconds: Date().timeIntervalSince(startTime),
-                memoryUsageMB: memoryMB
+                memoryUsageMB: memoryMB,
+                estimatedTotalFiles: await self?.estimatedTotalFiles
             )
         }
         let indexStatusProvider: @Sendable () async -> DaemonIndexStatus = {
@@ -644,14 +654,24 @@ public actor DaemonMain {
         guard recordsEmpty else { return }
         let bgIndex = index
         let bgPersistence = persistence
-        backgroundScanTask = Task.detached {
+        backgroundScanTask = Task.detached { [weak self = self] in
             let scanner = FileScanner()
             let homeDir = NSHomeDirectory()
+
+            // Pre-count in parallel with the scan — the count takes 10–30 s
+            // for large disks and must not block the scan from starting.
+            let preCountTask = Task { await Self.countFilesRecursively(at: homeDir) }
+            Task {
+                let total = await preCountTask.value
+                await self?.setEstimatedTotal(total)
+            }
+
             let scanStream = await scanner.scan(
                 rootPaths: [homeDir],
                 config: ScanConfiguration(maxDepth: Constants.Scan.defaultMaxDepth)
             )
             var scannedCount = 0
+            await self?.setScanStart(Date())
             for await event in scanStream {
                 // Respect cancellation (daemon shutting down)
                 guard !Task.isCancelled else { return }
@@ -665,16 +685,42 @@ public actor DaemonMain {
                 case .scanComplete:
                     let allRecords = await bgIndex.allRecords()
                     await bgPersistence.saveRecords(allRecords)
+                    await self?.setScanComplete()
                     let log = Logger(subsystem: Product.daemonSubsystem, category: "lifecycle")
                     log.info("Initial scan complete: \(scannedCount) files indexed, \(allRecords.count) total")
                 case .scanError(let error):
                     let log = Logger(subsystem: Product.daemonSubsystem, category: "lifecycle")
                     log.warning("Background scan error at \(error.path, privacy: .public): \(error.reason, privacy: .public)")
                 case .progress:
-                    break
+                    await self?.setScannedSoFar(scannedCount)
                 }
             }
         }
+    }
+
+    // MARK: - Progress helpers
+
+    private func setEstimatedTotal(_ total: Int) { estimatedTotalFiles = total }
+    private func setScanStart(_ start: Date) { scanStartTime = start }
+    private func setScannedSoFar(_ n: Int) { scannedSoFar = n }
+    private func setScanComplete() { scanStartTime = nil; estimatedTotalFiles = nil }
+
+    /// Lightweight recursive file count for progress estimation.
+    /// Uses `nextObject()` instead of a `for`-`in` loop so the sync
+    /// enumeration compiles inside an async context. Does NOT skip hidden
+    /// files — the scanner indexes them, so the denominator must include them
+    /// or the percentage will read 100% long before the scan finishes.
+    private static func countFilesRecursively(at path: String) async -> Int {
+        let fm = FileManager.default
+        guard let enumerator = fm.enumerator(
+            at: URL(fileURLWithPath: path),
+            includingPropertiesForKeys: [],
+            options: .producesRelativePathURLs,
+            errorHandler: { _, _ in true }
+        ) else { return 0 }
+        var count = 0
+        while let _ = enumerator.nextObject() { count += 1 }
+        return count
     }
 
     /// Initiate graceful shutdown.
