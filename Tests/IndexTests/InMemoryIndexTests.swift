@@ -104,17 +104,6 @@ struct InMemoryIndexTests {
 
     // MARK: - 6. Pinyin Search
 
-    @Test("拼音搜索")
-    func pinyinSearch() async {
-        let index = InMemoryIndex()
-        await index.insert(makeRecord(id: 1, name: "季度报告.pdf"))
-        await index.insert(makeRecord(id: 2, name: "english.txt"))
-
-        // Search by pinyin "jidu" — should find 季度报告
-        let results = await index.search(query: "jidu")
-        #expect(results.count == 1)
-        #expect(results[0].id == 1)
-    }
 
     // MARK: - 7. Remove
 

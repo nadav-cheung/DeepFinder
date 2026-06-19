@@ -450,8 +450,7 @@ public actor DaemonMain {
         self.persistence = persistence
 
         // 4. Load records and rebuild in-memory index
-        let cfg = ConfigStore.loadFromDisk(path: resolvedDataDir + "/settings.json") ?? .defaults
-        let index = InMemoryIndex(maxSubstringLength: cfg.substringMaxLength)
+        let index = InMemoryIndex()
         self.index = index
         let records = try await persistence.loadAllRecords()
         Logger.shared.info("daemon", "loaded \(records.count) records from database")

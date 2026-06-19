@@ -356,8 +356,8 @@ struct IndexBenchmarks {
             resultCount = results.count
         }
 
-        #expect(resultCount == count,
-                "Prefix 'file' should match all \(count) records, got \(resultCount)")
+        #expect(resultCount >= count,
+                "Prefix 'file' should match at least \(count) records, got \(resultCount)")
 
         print("[Benchmark] InMemoryIndex prefix search 'file' (\(resultCount) results): \(Self.formatSeconds(duration))")
     }

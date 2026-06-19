@@ -89,11 +89,11 @@ public struct TrigramIndex {
 
         let scalars = Array(normalized.unicodeScalars)
 
-        // Short query fallback: linear scan
+        // Short query fallback: linear scan (return sorted for merge)
         if scalars.count < 3 {
             return names.compactMap { (id, name) in
                 name.contains(normalized) ? id : nil
-            }
+            }.sorted()
         }
 
         // Extract query trigrams

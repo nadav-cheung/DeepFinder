@@ -1,26 +1,25 @@
 // SPDX-License-Identifier: MIT
 // SPDX-FileCopyrightText: 2026 nadav.com.cn
 
-/// # Index Module
+/// # Index Module — Everything-style architecture
 ///
-/// Core data structures for in-memory file indexing, optimized for sub-millisecond
-/// search on Apple Silicon M4+ with unified memory.
+/// Core data structures adapted from Voidtools Everything's proven design:
+/// - Sorted filename array + binary search for prefix matching (replaces Trie)
+/// - TrigramIndex for substring matching (replaces FullSubstringMap)
+/// - Compact [UInt32] posting lists (no Set overhead)
 ///
 /// ## Components
 /// - ``FileRecord`` -- immutable record representing a single file or directory
-/// - ``InMemoryIndex`` -- actor-isolated composite index composing all structures below
-/// - ``Trie`` -- generic prefix tree for O(k) prefix lookup on Unicode scalars
-/// - ``FullSubstringMap`` -- precomputed all-substrings map for O(1) lookup (names <= 64 chars)
-/// - ``TrigramIndex`` -- trigram posting lists for long filenames (> 64 chars)
+/// - ``InMemoryIndex`` -- actor-isolated composite index
+/// - ``TrigramIndex`` -- trigram posting lists for substring search
 /// - ``ProductConfig`` -- compile-time product name, paths, and version constants
 ///
-/// ## Search Strategy
+/// ## Search Strategy (Everything-style)
 /// 1. Normalize query (NFC + lowercase)
-/// 2. Query Trie for prefix matches
-/// 3. Query FullSubstringMap for substring matches (names <= maxSubstringLength)
-/// 4. Query TrigramIndex for substring matches (all names, trigram intersection)
-/// 5. Merge all result IDs, deduplicate
-/// 6. Look up FileRecords, return sorted by ID
+/// 2. Binary search sortedNames for prefix matches
+/// 3. TrigramIndex for substring matches
+/// 4. Merge all result IDs, deduplicate
+/// 5. Look up FileRecords, return sorted by ID
 ///
 /// ## Thread Safety
 /// All index structures are value types (structs). ``InMemoryIndex`` is an actor,
@@ -31,21 +30,32 @@
 /// Queries are normalized the same way for consistent matching.
 import Foundation
 
+// MARK: - NameEntry
+
+/// A single entry in the sorted filename array. Comparable by normalized name
+/// for binary search prefix matching (Everything-style).
+public struct NameEntry: Comparable, Sendable {
+    public let normalizedName: String   // lowercased, NFC-normalized
+    public let recordID: UInt32
+
+    public static func < (lhs: NameEntry, rhs: NameEntry) -> Bool {
+        lhs.normalizedName < rhs.normalizedName
+    }
+    public static func == (lhs: NameEntry, rhs: NameEntry) -> Bool {
+        lhs.normalizedName == rhs.normalizedName
+    }
+}
+
+// MARK: - InMemoryIndex
+
 /// The single entry point for all indexing and searching operations.
 ///
-/// An actor that composes all index structures (Trie, FullSubstringMap,
-/// TrigramIndex) and a FileRecord store. All read/write
-/// access is via actor isolation — no internal synchronization needed
-/// for the value-type index structures.
+/// Architecture follows Voidtools Everything's proven design:
+/// - One sorted array of filenames for prefix search (binary search)
+/// - One trigram index for substring search
+/// - Compact sorted [UInt32] posting lists throughout
 ///
-/// Search strategy:
-/// 1. Normalize query (NFC + lowercase)
-/// 2. Query Trie for prefix matches
-/// 3. Query FullSubstringMap for substring matches (names <= 64 chars)
-/// 4. Query TrigramIndex for long-name matches (names > 64 chars)
-/// 
-/// 6. Merge all result IDs, deduplicate
-/// 7. Look up FileRecords, return sorted by ID
+/// Memory target: ~300MB for 200K files (vs ~3.5GB with Trie + FullSubstringMap).
 public actor InMemoryIndex {
 
     // MARK: - Internal Storage
@@ -59,29 +69,19 @@ public actor InMemoryIndex {
     /// Auto-incrementing ID counter.
     private var nextID: UInt32 = 1
 
-    /// Trie for prefix matching. Stores sets of IDs at prefix-terminating nodes.
-    /// Keys are NFC-normalized, lowercased Unicode scalar arrays of the filename.
-    private var trie = Trie<UnicodeScalar, [UInt32]>()
+    /// Sorted filename array for prefix search via binary search.
+    /// Everything-style: replaces the Trie entirely.
+    private var sortedNames: [NameEntry] = []
 
-    /// Full substring map for filenames <= 64 characters.
-    private var substringMap = FullSubstringMap()
-
-    /// Trigram index for filenames > 64 characters.
+    /// Trigram index for substring matching (all names).
     private var trigramIndex = TrigramIndex()
 
+    /// Whether batch loading is in progress (avoids O(n²) insert cost).
+    private var isBatchLoading = false
 
     // MARK: - Init
 
-    /// Create an empty index.
-    /// - Parameter maxSubstringLength: Max filename length for FullSubstringMap.
-    ///   Shorter = less memory. Default 24 (~1GB for 200K files).
-    public init(maxSubstringLength: Int = Constants.Scan.defaultSubstringMaxLength) {
-        self.maxSubstringLength = maxSubstringLength
-        self.substringMap = FullSubstringMap(maxNameLength: maxSubstringLength)
-    }
-
-    /// Max filename length for FullSubstringMap. Names longer than this use TrigramIndex.
-    private let maxSubstringLength: Int
+    public init() {}
 
     // MARK: - Properties
 
@@ -99,31 +99,24 @@ public actor InMemoryIndex {
     public func insert(_ record: FileRecord) {
         let id = record.id
 
-        // Keep the auto-ID counter above any explicitly-supplied ID, so the live
-        // FSEvents create path (which allocates via the auto-ID convenience
-        // insert) can never reuse an ID already held by a scanned or reloaded
-        // record. This makes `nextID` a true high-water mark and the single
-        // source of truth for ID allocation — covering both the initial-scan path
-        // and the SQLite reload path, which both arrive here with explicit IDs.
+        // Keep the auto-ID counter above any explicitly-supplied ID
         if id >= nextID {
             nextID = id &+ 1
         }
 
         let name = record.name
 
-        // B3: path-based upsert — when the same path already exists under a
-        // different ID (re-scan or FSEvents re-add), remove the old entry to
-        // prevent duplicate records piling up for the same file.
+        // B3: path-based upsert
         if let existingID = pathToID[record.path], existingID != id {
             if let oldRecord = records[existingID] {
-                removeFromSubindices(oldRecord)
+                _removeFromIndices(oldRecord)
             }
             records.removeValue(forKey: existingID)
         }
 
-        // If overwriting, remove old entries from sub-indices first
+        // If overwriting, remove old entries first
         if let oldRecord = records[id] {
-            removeFromSubindices(oldRecord)
+            _removeFromIndices(oldRecord)
             pathToID.removeValue(forKey: oldRecord.path)
         }
 
@@ -131,36 +124,45 @@ public actor InMemoryIndex {
         records[id] = record
         pathToID[record.path] = id
 
-        // Insert into Trie — key is NFC-normalized, lowercased unicode scalars
+        // Insert into sortedNames
         let normalizedLower = name.precomposedStringWithCanonicalMapping.lowercased()
-        let scalars = Array(normalizedLower.unicodeScalars)
-        if !scalars.isEmpty {
-            let existing = trie.get(key: scalars) ?? []
-            var updated = existing
-            sortedInsert(&updated, id)
-            trie.insert(scalars, value: updated)
+        let entry = NameEntry(normalizedName: normalizedLower, recordID: id)
+
+        if isBatchLoading {
+            // Batch mode: just append, sort at end
+            sortedNames.append(entry)
+        } else {
+            // Live mode: binary search insert (O(n) shift, fine for single updates)
+            _sortedInsertName(entry)
         }
 
-        // Insert into FullSubstringMap (silently skips names > 64 chars)
-        substringMap.insert(name: name, id: id)
-
-        // Insert into TrigramIndex (handles all names, but primarily useful > 64 chars)
-        if name.count > maxSubstringLength {
-            trigramIndex.insert(name: name, id: id)
-        }
-
+        // Insert into TrigramIndex for substring search
+        trigramIndex.insert(name: name, id: id)
     }
 
-    /// Batch-insert multiple records in a single actor hop.
-    /// Much faster than individual inserts during startup reindexing.
+    /// Enable batch loading mode. Calls to insert() will append without sorting.
+    /// Call finalizeBatchLoad() after all records are inserted.
+    public func beginBatchLoad() {
+        isBatchLoading = true
+    }
+
+    /// Sort the names array and exit batch loading mode.
+    /// Must be called after beginBatchLoad() + insertBatch().
+    public func finalizeBatchLoad() {
+        sortedNames.sort()
+        isBatchLoading = false
+    }
+
+    /// Batch-insert multiple records. Uses batch mode internally for O(N log N) sort.
     public func insertBatch(_ newRecords: [FileRecord]) {
+        isBatchLoading = true
         for record in newRecords {
             insert(record)
         }
+        finalizeBatchLoad()
     }
 
-    /// Batch-remove records by ID in a single actor hop — symmetric counterpart
-    /// to ``insertBatch(_:)``, used for bulk deletions such as volume-unmount cleanup.
+    /// Batch-remove records by ID.
     public func deleteBatch(_ ids: [UInt32]) {
         for id in ids {
             remove(id: id)
@@ -202,59 +204,34 @@ public actor InMemoryIndex {
     public func remove(id: UInt32) {
         guard let record = records.removeValue(forKey: id) else { return }
         pathToID.removeValue(forKey: record.path)
-        removeFromSubindices(record)
+        _removeFromIndices(record)
     }
 
-    /// Remove a file by its absolute path. Returns `true` if a record was found and removed.
-    ///
-    /// O(1) path-based lookup — avoids the costly name-search approach.
+    /// Remove a file by its absolute path. O(1).
     public func removeByPath(_ path: String) -> Bool {
         guard let id = pathToID[path] else { return false }
         remove(id: id)
         return true
     }
 
-    /// Remove a record's entries from all sub-indices (Trie, substringMap,
-    /// trigramIndex) without removing it from the records dict.
-    /// Used by both `remove(id:)` and the upsert path in `insert(_:)`.
-    private func removeFromSubindices(_ record: FileRecord) {
+    /// Remove a record's entries from sortedNames and trigramIndex.
+    private func _removeFromIndices(_ record: FileRecord) {
         let id = record.id
         let name = record.name
-
-        // Remove from Trie
         let normalizedLower = name.precomposedStringWithCanonicalMapping.lowercased()
-        let scalars = Array(normalizedLower.unicodeScalars)
-        if !scalars.isEmpty {
-            if var arr = trie.get(key: scalars) {
-                sortedRemove(&arr, id)
-                if arr.isEmpty {
-                    trie.remove(scalars)
-                } else {
-                    trie.insert(scalars, value: arr)
-                }
-            }
-        }
 
-        // Remove from FullSubstringMap
-        substringMap.remove(name: name, id: id)
+        // Remove from sortedNames — binary search for exact match
+        _sortedRemoveName(normalizedName: normalizedLower, recordID: id)
 
         // Remove from TrigramIndex
         trigramIndex.remove(name: name, id: id)
-
     }
 
     // MARK: - Volume Operations
 
     /// Remove all records whose path starts with the given volume path prefix.
-    ///
-    /// Used when a volume is unmounted to clean up all indexed files on that volume.
-    /// Returns the IDs of removed records for downstream persistence cleanup.
-    ///
-    /// - Parameter volumePath: The mount point path of the volume (e.g. "/Volumes/USB Drive").
-    /// - Returns: Array of removed record IDs.
     public func removeRecordsForVolume(volumePath: String) -> [UInt32] {
         let prefix = volumePath.hasSuffix("/") ? volumePath : volumePath + "/"
-        // Also match the volume path itself (in case a record has path == volumePath)
         let exactMatch = volumePath
 
         var removedIDs: [UInt32] = []
@@ -264,7 +241,6 @@ public actor InMemoryIndex {
             }
         }
 
-        // Remove each record via the normal remove path (updates all index structures)
         for id in removedIDs {
             remove(id: id)
         }
@@ -274,70 +250,67 @@ public actor InMemoryIndex {
 
     // MARK: - Search
 
-    /// Unified search across all index structures. Returns deduplicated, sorted results.
+    /// Prefix search via binary search on sortedNames array (Everything-style).
+    /// Returns sorted record IDs matching the prefix.
+    private func _prefixSearch(_ prefix: String) -> [UInt32] {
+        guard !prefix.isEmpty, !sortedNames.isEmpty else { return [] }
+
+        // Binary search for first entry >= prefix
+        var lo = 0, hi = sortedNames.count
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            if sortedNames[mid].normalizedName < prefix {
+                lo = mid + 1
+            } else {
+                hi = mid
+            }
+        }
+
+        // Scan forward collecting matches
+        var result: [UInt32] = []
+        var i = lo
+        while i < sortedNames.count, sortedNames[i].normalizedName.hasPrefix(prefix) {
+            result.append(sortedNames[i].recordID)
+            i += 1
+        }
+        return result
+    }
+
+    /// Unified search across all index structures.
     public func search(query: String) -> [FileRecord] {
         let normalized = query.precomposedStringWithCanonicalMapping
         let lowered = normalized.lowercased()
 
-        // Empty query returns empty (no "return everything" behavior)
         guard !lowered.isEmpty else { return [] }
 
-        let scalars = Array(lowered.unicodeScalars)
+        // 1. Prefix matches from sortedNames (binary search)
+        let prefixIDs = _prefixSearch(lowered)
 
-        // Collect results from all sub-indices as sorted arrays
-        var allResults: [[UInt32]] = []
+        // 2. Substring matches from TrigramIndex
+        let substringIDs = trigramIndex.search(substring: lowered)
 
-        // 1. Trie prefix matches
-        if !scalars.isEmpty {
-            allResults.append(contentsOf: trie.search(prefix: scalars))
-        }
-
-        // 2. FullSubstringMap matches
-        allResults.append(substringMap.search(substring: lowered))
-
-        // 3. TrigramIndex matches (for long names)
-        allResults.append(trigramIndex.search(substring: lowered))
-
-
-        // 5. Merge all, look up records, sort by ID
-        let matchedIDs = unionAll(allResults)
+        // 3. Merge both sources
+        let matchedIDs = mergeSorted(prefixIDs, substringIDs)
         return matchedIDs.compactMap { id in records[id] }.sorted { $0.id < $1.id }
     }
 
     /// Search with a limit on the number of results.
-    /// Short-circuits after finding `limit` results to avoid full materialization.
     public func search(query: String, limit: Int) -> [FileRecord] {
         let normalized = query.precomposedStringWithCanonicalMapping
         let lowered = normalized.lowercased()
         guard !lowered.isEmpty else { return [] }
 
-        let scalars = Array(lowered.unicodeScalars)
-
-        // Collect matched IDs from all sub-indices, merging progressively
-        var matchedIDs: [UInt32] = []
-        if !scalars.isEmpty {
-            let trieResults = trie.search(prefix: scalars)
-            matchedIDs = unionAll(trieResults)
-            if matchedIDs.count >= limit {
-                return matchedIDs.prefix(limit).compactMap { records[$0] }
-            }
-        }
-
-        matchedIDs = mergeSorted(matchedIDs, substringMap.search(substring: lowered))
+        // Collect from both indices, short-circuit at limit
+        var matchedIDs = _prefixSearch(lowered)
         if matchedIDs.count >= limit {
             return matchedIDs.prefix(limit).compactMap { records[$0] }
         }
 
         matchedIDs = mergeSorted(matchedIDs, trigramIndex.search(substring: lowered))
-        if matchedIDs.count >= limit {
-            return matchedIDs.prefix(limit).compactMap { records[$0] }
-        }
-
         return matchedIDs.prefix(limit).compactMap { records[$0] }
     }
 
-    /// Return all indexed records. Useful for operations that need the full
-    /// dataset (e.g. autocomplete with empty prefix).
+    /// Return all indexed records.
     public func allRecords() -> [FileRecord] {
         Array(records.values)
     }
@@ -345,35 +318,62 @@ public actor InMemoryIndex {
     // MARK: - Snapshot
 
     /// Capture an immutable snapshot of the entire index state.
-    ///
-    /// The snapshot is a value-type copy of all internal data structures.
-    /// Because the sub-indices (Trie, FullSubstringMap, TrigramIndex)
-    /// are value types, the snapshot is fully independent — mutations to the
-    /// live index after `snapshot()` returns do not affect the snapshot.
-    ///
-    /// Use this when you need a consistent view of the index across multiple
-    /// queries (e.g. SearchCoordinator batching) without holding the actor lock.
-    ///
-    /// - Returns: An ``IndexSnapshot`` capturing all records and index structures.
     public func snapshot() -> IndexSnapshot {
         IndexSnapshot(
             records: records,
             pathToID: pathToID,
-            trie: trie,
-            substringMap: substringMap,
-            trigramIndex: trigramIndex,
+            sortedNames: sortedNames,
+            trigramIndex: trigramIndex
         )
     }
+
+    // MARK: - Private: Sorted Array Operations
+
+    /// Binary search insert into sortedNames. O(log N) find + O(N) shift.
+    private func _sortedInsertName(_ entry: NameEntry) {
+        var lo = 0, hi = sortedNames.count
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            if sortedNames[mid] < entry {
+                lo = mid + 1
+            } else {
+                hi = mid
+            }
+        }
+        sortedNames.insert(entry, at: lo)
+    }
+
+    /// Binary search remove from sortedNames. Finds entry matching both name and ID.
+    private func _sortedRemoveName(normalizedName: String, recordID: UInt32) {
+        // Binary search for the first entry with this name
+        var lo = 0, hi = sortedNames.count
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            if sortedNames[mid].normalizedName < normalizedName {
+                lo = mid + 1
+            } else {
+                hi = mid
+            }
+        }
+        // Scan forward to find the entry with matching ID
+        var i = lo
+        while i < sortedNames.count, sortedNames[i].normalizedName == normalizedName {
+            if sortedNames[i].recordID == recordID {
+                sortedNames.remove(at: i)
+                return
+            }
+            i += 1
+        }
+    }
 }
+
+// MARK: - IndexSnapshot
 
 /// Immutable snapshot of the in-memory index state.
 ///
 /// Captured atomically via ``InMemoryIndex/snapshot()``. Because all
 /// sub-indices are value types (structs), the snapshot is a fully independent
 /// copy — concurrent mutations to the live index do not affect it.
-///
-/// Provides the same search API as ``InMemoryIndex`` for convenience,
-/// but runs outside actor isolation (no synchronization overhead).
 ///
 /// `@unchecked Sendable` is safe because the snapshot is captured atomically
 /// inside ``InMemoryIndex/snapshot()`` (a single actor hop). All sub-indices
@@ -386,15 +386,11 @@ public struct IndexSnapshot: @unchecked Sendable {
     /// Path-to-ID lookup.
     public let pathToID: [String: UInt32]
 
-    /// Prefix index.
-    public let trie: Trie<UnicodeScalar, [UInt32]>
+    /// Sorted filename array for prefix search (Everything-style).
+    public let sortedNames: [NameEntry]
 
-    /// Substring index (names ≤ 64 chars).
-    public let substringMap: FullSubstringMap
-
-    /// Trigram index (names > 64 chars).
+    /// Trigram index for substring search.
     public let trigramIndex: TrigramIndex
-
 
     /// Number of indexed files in this snapshot.
     public var count: Int { records.count }

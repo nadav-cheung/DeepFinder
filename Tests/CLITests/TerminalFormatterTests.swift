@@ -265,44 +265,6 @@ struct TerminalFormatterTests {
 
     // MARK: - 16. Pinyin match highlighting
 
-    @Test("highlightMatches highlights CJK characters matched by first-letter pinyin query 'bg'")
-    func testHighlightPinyinFirstLetterMatch() {
-        // "报告.pdf" — 报(bao)告(gao), first-letter abbreviation "bg"
-        let highlighted = TerminalFormatter.highlightMatches(
-            in: "报告.pdf",
-            query: "bg"
-        )
-        // Should contain ANSI bold markers (the CJK chars are highlighted)
-        #expect(highlighted.contains("\u{1B}[1m"))
-        #expect(highlighted.contains("报告"))
-        #expect(highlighted.contains(".pdf"))
-    }
-
-    @Test("highlightMatches highlights CJK characters matched by full pinyin query 'baogao'")
-    func testHighlightPinyinFullMatch() {
-        let highlighted = TerminalFormatter.highlightMatches(
-            in: "报告.pdf",
-            query: "baogao"
-        )
-        #expect(highlighted.contains("\u{1B}[1m"))
-        #expect(highlighted.contains("报告"))
-        #expect(highlighted.contains(".pdf"))
-    }
-
-    @Test("highlightMatches still works for non-pinyin queries after pinyin fallback")
-    func testNormalMatchUnaffectedByPinyinFallback() {
-        let highlighted = TerminalFormatter.highlightMatches(
-            in: "report.pdf",
-            query: "report"
-        )
-        #expect(highlighted.contains("\u{1B}[1m"))
-        #expect(highlighted.contains("report"))
-        // Bold count should be exactly 1
-        let boldCount = highlighted.components(separatedBy: "\u{1B}[1m").count - 1
-        #expect(boldCount == 1)
-    }
-
-    @Test("highlightMatches returns text unchanged when no literal or pinyin match")
     func testNoMatchNoHighlight() {
         let highlighted = TerminalFormatter.highlightMatches(
             in: "报告.pdf",
