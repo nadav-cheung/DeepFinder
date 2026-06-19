@@ -17,9 +17,8 @@
 /// (e.g. `InMemoryIndex`), no internal synchronization is needed.
 public struct TrigramIndex {
 
-    /// Maps a 3-Unicode-scalar trigram (as String) to the set of FileRecord IDs
-    /// whose names contain that trigram.
-    private var postingLists: [String: Set<UInt32>] = [:]
+    /// Maps a 3-Unicode-scalar trigram (as String) to sorted array of FileRecord IDs.
+    private var postingLists: [String: [UInt32]] = [:]
 
     /// Stores the NFC-normalized, lowercased name for each FileRecord ID.
     /// Used for short-query fallback and for exact verification.
@@ -55,7 +54,7 @@ public struct TrigramIndex {
             for i in 0..<(oldScalars.count - 2) {
                 let trigram = Self.makeTrigram(scalars: oldScalars, at: i)
                 if var posting = postingLists[trigram] {
-                    posting.remove(id)
+                    sortedRemove(&posting, id)
                     if posting.isEmpty {
                         postingLists.removeValue(forKey: trigram)
                     } else {
@@ -71,7 +70,7 @@ public struct TrigramIndex {
 
         for i in 0..<(scalars.count - 2) {
             let trigram = Self.makeTrigram(scalars: scalars, at: i)
-            postingLists[trigram, default: []].insert(id)
+            sortedInsert(&postingLists[trigram, default: []], id)
         }
     }
 
@@ -98,14 +97,14 @@ public struct TrigramIndex {
         }
 
         // Extract query trigrams
-        var candidateIDs: Set<UInt32>? = nil
+        var candidateIDs: [UInt32]? = nil
         for i in 0..<(scalars.count - 2) {
             let trigram = Self.makeTrigram(scalars: scalars, at: i)
             guard let posting = postingLists[trigram] else {
                 return [] // A required trigram is missing — no results possible
             }
             if let current = candidateIDs {
-                candidateIDs = current.intersection(posting)
+                candidateIDs = intersectSorted(current, posting)
             } else {
                 candidateIDs = posting
             }
@@ -136,7 +135,7 @@ public struct TrigramIndex {
         for i in 0..<(scalars.count - 2) {
             let trigram = Self.makeTrigram(scalars: scalars, at: i)
             if var posting = postingLists[trigram] {
-                posting.remove(id)
+                sortedRemove(&posting, id)
                 if posting.isEmpty {
                     postingLists.removeValue(forKey: trigram)
                 } else {

@@ -63,7 +63,7 @@ public actor InMemoryIndex {
 
     /// Trie for prefix matching. Stores sets of IDs at prefix-terminating nodes.
     /// Keys are NFC-normalized, lowercased Unicode scalar arrays of the filename.
-    private var trie = Trie<UnicodeScalar, Set<UInt32>>()
+    private var trie = Trie<UnicodeScalar, [UInt32]>()
 
     /// Full substring map for filenames <= 64 characters.
     private var substringMap = FullSubstringMap()
@@ -141,7 +141,7 @@ public actor InMemoryIndex {
         if !scalars.isEmpty {
             let existing = trie.get(key: scalars) ?? []
             var updated = existing
-            updated.insert(id)
+            sortedInsert(&updated, id)
             trie.insert(scalars, value: updated)
         }
 
@@ -231,12 +231,12 @@ public actor InMemoryIndex {
         let normalizedLower = name.precomposedStringWithCanonicalMapping.lowercased()
         let scalars = Array(normalizedLower.unicodeScalars)
         if !scalars.isEmpty {
-            if var set = trie.get(key: scalars) {
-                set.remove(id)
-                if set.isEmpty {
+            if var arr = trie.get(key: scalars) {
+                sortedRemove(&arr, id)
+                if arr.isEmpty {
                     trie.remove(scalars)
                 } else {
-                    trie.insert(scalars, value: set)
+                    trie.insert(scalars, value: arr)
                 }
             }
         }
@@ -292,28 +292,25 @@ public actor InMemoryIndex {
 
         let scalars = Array(lowered.unicodeScalars)
 
+        // Collect results from all sub-indices as sorted arrays
+        var allResults: [[UInt32]] = []
+
         // 1. Trie prefix matches
-        var matchedIDs = Set<UInt32>()
         if !scalars.isEmpty {
-            let trieResults = trie.search(prefix: scalars)
-            for set in trieResults {
-                matchedIDs.formUnion(set)
-            }
+            allResults.append(contentsOf: trie.search(prefix: scalars))
         }
 
         // 2. FullSubstringMap matches
-        let substringResults = substringMap.search(substring: lowered)
-        matchedIDs.formUnion(substringResults)
+        allResults.append(substringMap.search(substring: lowered))
 
         // 3. TrigramIndex matches (for long names)
-        let trigramResults = trigramIndex.search(substring: lowered)
-        matchedIDs.formUnion(trigramResults)
+        allResults.append(trigramIndex.search(substring: lowered))
 
         // 4. PinyinIndex matches
-        let pinyinResults = pinyinIndex.search(pinyin: lowered)
-        matchedIDs.formUnion(pinyinResults)
+        allResults.append(pinyinIndex.search(pinyin: lowered))
 
-        // 5. Look up records, sort by ID for deterministic ordering
+        // 5. Merge all, look up records, sort by ID
+        let matchedIDs = unionAll(allResults)
         return matchedIDs.compactMap { id in records[id] }.sorted { $0.id < $1.id }
     }
 
@@ -326,38 +323,28 @@ public actor InMemoryIndex {
 
         let scalars = Array(lowered.unicodeScalars)
 
-        // Collect matched IDs from all sub-indices
-        var matchedIDs = Set<UInt32>()
+        // Collect matched IDs from all sub-indices, merging progressively
+        var matchedIDs: [UInt32] = []
         if !scalars.isEmpty {
             let trieResults = trie.search(prefix: scalars)
-            for set in trieResults {
-                matchedIDs.formUnion(set)
-                if matchedIDs.count >= limit { break }
+            matchedIDs = unionAll(trieResults)
+            if matchedIDs.count >= limit {
+                return matchedIDs.prefix(limit).compactMap { records[$0] }
             }
         }
 
-        if matchedIDs.count < limit {
-            let substringResults = substringMap.search(substring: lowered)
-            matchedIDs.formUnion(substringResults)
-        }
-        if matchedIDs.count < limit {
-            let trigramResults = trigramIndex.search(substring: lowered)
-            matchedIDs.formUnion(trigramResults)
-        }
-        if matchedIDs.count < limit {
-            let pinyinResults = pinyinIndex.search(pinyin: lowered)
-            matchedIDs.formUnion(pinyinResults)
+        matchedIDs = mergeSorted(matchedIDs, substringMap.search(substring: lowered))
+        if matchedIDs.count >= limit {
+            return matchedIDs.prefix(limit).compactMap { records[$0] }
         }
 
-        // Sort the (cheap) UInt32 IDs and select only `limit` *before* fetching the
-        // (larger) FileRecord values. A broad prefix match can collect many IDs; this
-        // avoids materializing a FileRecord for every match just to discard most of
-        // them. Output is identical to fetch-all-then-sort-then-truncate because IDs
-        // are unique and present in `records`.
-        return matchedIDs
-            .sorted()
-            .prefix(limit)
-            .compactMap { id in records[id] }
+        matchedIDs = mergeSorted(matchedIDs, trigramIndex.search(substring: lowered))
+        if matchedIDs.count >= limit {
+            return matchedIDs.prefix(limit).compactMap { records[$0] }
+        }
+
+        matchedIDs = mergeSorted(matchedIDs, pinyinIndex.search(pinyin: lowered))
+        return matchedIDs.prefix(limit).compactMap { records[$0] }
     }
 
     /// Return all indexed records. Useful for operations that need the full
@@ -412,7 +399,7 @@ public struct IndexSnapshot: @unchecked Sendable {
     public let pathToID: [String: UInt32]
 
     /// Prefix index.
-    public let trie: Trie<UnicodeScalar, Set<UInt32>>
+    public let trie: Trie<UnicodeScalar, [UInt32]>
 
     /// Substring index (names ≤ 64 chars).
     public let substringMap: FullSubstringMap

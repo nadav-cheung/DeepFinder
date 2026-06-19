@@ -21,8 +21,8 @@ public struct FullSubstringMap {
     /// Configurable per instance to control memory usage.
     public let maxNameLength: Int
 
-    /// Maps lowercase substring -> set of FileRecord IDs containing that substring.
-    private var index: [String: Set<UInt32>] = [:]
+    /// Maps lowercase substring -> sorted array of FileRecord IDs.
+    private var index: [String: [UInt32]] = [:]
 
     public init(maxNameLength: Int = defaultMaxNameLength) {
         self.maxNameLength = max(maxNameLength, 0)
@@ -51,7 +51,7 @@ public struct FullSubstringMap {
         let lowered = normalized.lowercased()
 
         // Early-return if this (name, id) pair is already indexed — avoids O(n^2) re-work
-        if index[lowered]?.contains(id) == true {
+        if containsSorted(index[lowered] ?? [], id) {
             return
         }
 
@@ -60,7 +60,7 @@ public struct FullSubstringMap {
             for endIdx in (startIdx + 1)...lowered.count {
                 let end = lowered.index(lowered.startIndex, offsetBy: endIdx)
                 let substring = String(lowered[start..<end])
-                index[substring, default: []].insert(id)
+                sortedInsert(&index[substring, default: []], id)
             }
         }
         _count += 1
@@ -72,8 +72,7 @@ public struct FullSubstringMap {
     public func search(substring: String) -> [UInt32] {
         precondition(!substring.isEmpty, "FullSubstringMap.search requires a non-empty substring")
         let key = substring.precomposedStringWithCanonicalMapping.lowercased()
-        guard let ids = index[key] else { return [] }
-        return Array(ids)
+        return index[key] ?? []
     }
 
     /// Remove `id` from all substring entries generated from `name`.
@@ -91,7 +90,7 @@ public struct FullSubstringMap {
                 let end = lowered.index(lowered.startIndex, offsetBy: endIdx)
                 let substring = String(lowered[start..<end])
                 if var ids = index[substring] {
-                    if ids.remove(id) != nil {
+                    if sortedRemove(&ids, id) {
                         wasPresent = true
                     }
                     if ids.isEmpty {

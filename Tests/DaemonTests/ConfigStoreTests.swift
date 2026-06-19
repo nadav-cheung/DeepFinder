@@ -31,7 +31,7 @@ struct ConfigStoreTests {
         #expect(config.excludedPaths == ["/System", "/Library", "/tmp", "/private/tmp"])
         #expect(config.indexBatchSize == 100)
         #expect(config.maxResults == 1000)
-        #expect(config.configVersion == 1)
+        #expect(config.configVersion == 3)
     }
 
     // MARK: - 2. Round-trip: set then get persists across instances

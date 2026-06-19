@@ -159,9 +159,9 @@ struct FullSubstringMapTests {
 
     // MARK: - 13. 长文件名 (>64 chars) 不插入
 
-    @Test("长文件名 (>64 chars) 不插入")
+    @Test("长文件名超过 maxNameLength 不插入")
     func longNamesRejected() {
-        var map = FullSubstringMap()
+        var map = FullSubstringMap(maxNameLength: 64)
 
         // Exactly 64 chars — should be accepted
         let name64 = String(repeating: "a", count: 64)

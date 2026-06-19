@@ -18,20 +18,18 @@ import Foundation
 /// (e.g. `InMemoryIndex`), no internal synchronization is needed.
 public struct PinyinIndex {
 
-    /// Maps a trie key (as scalar array) to the set of FileRecord IDs stored at that key.
-    /// Needed because Trie stores a single value per key — we use a Set to hold multiple IDs.
-    private var fullPinyinEntries: [[UnicodeScalar]: Set<UInt32>] = [:]
-    private var firstLetterEntries: [[UnicodeScalar]: Set<UInt32>] = [:]
+    /// Maps a trie key (as scalar array) to sorted array of FileRecord IDs.
+    private var fullPinyinEntries: [[UnicodeScalar]: [UInt32]] = [:]
+    private var firstLetterEntries: [[UnicodeScalar]: [UInt32]] = [:]
 
-    /// Trie for full pinyin prefix lookup. Values are sets of FileRecord IDs.
-    /// The entries dict is the source of truth; the trie mirrors it for prefix enumeration.
-    private var fullPinyinTrie = Trie<UnicodeScalar, Set<UInt32>>()
+    /// Trie for full pinyin prefix lookup.
+    private var fullPinyinTrie = Trie<UnicodeScalar, [UInt32]>()
 
-    /// Trie for first-letter abbreviation prefix lookup. Values are sets of FileRecord IDs.
-    private var firstLetterTrie = Trie<UnicodeScalar, Set<UInt32>>()
+    /// Trie for first-letter abbreviation prefix lookup.
+    private var firstLetterTrie = Trie<UnicodeScalar, [UInt32]>()
 
     /// Tracks which FileRecord IDs have Chinese content (for count).
-    private var chineseIDs: Set<UInt32> = []
+    private var chineseIDs: [UInt32] = []
 
     /// Number of entries with Chinese characters.
     public var count: Int { chineseIDs.count }
@@ -49,7 +47,7 @@ public struct PinyinIndex {
 
         guard !tokens.isEmpty else { return }
 
-        chineseIDs.insert(id)
+        sortedInsert(&chineseIDs, id)
 
         var allFirstLetters: [UnicodeScalar] = []
         var allFullPinyin: [UnicodeScalar] = []
@@ -58,7 +56,7 @@ public struct PinyinIndex {
             // Insert each token's full pinyin into trie
             let fullScalars = Array(fullPinyin.unicodeScalars)
             if !fullScalars.isEmpty {
-                fullPinyinEntries[fullScalars, default: []].insert(id)
+                sortedInsert(&fullPinyinEntries[fullScalars, default: []], id)
                 fullPinyinTrie.insert(fullScalars, value: fullPinyinEntries[fullScalars]!)
             }
 
@@ -79,7 +77,7 @@ public struct PinyinIndex {
                 // Insert the suffix starting at this token
                 let suffix = Array(allFullPinyin[offset...])
                 if !suffix.isEmpty {
-                    fullPinyinEntries[suffix, default: []].insert(id)
+                    sortedInsert(&fullPinyinEntries[suffix, default: []], id)
                     fullPinyinTrie.insert(suffix, value: fullPinyinEntries[suffix]!)
                 }
                 offset += tokenScalars.count
@@ -88,7 +86,7 @@ public struct PinyinIndex {
 
         // Insert concatenated first-letter abbreviation into trie
         if !allFirstLetters.isEmpty {
-            firstLetterEntries[allFirstLetters, default: []].insert(id)
+            sortedInsert(&firstLetterEntries[allFirstLetters, default: []], id)
             firstLetterTrie.insert(allFirstLetters, value: firstLetterEntries[allFirstLetters]!)
         }
     }
@@ -101,21 +99,14 @@ public struct PinyinIndex {
     public func search(pinyin: String) -> [UInt32] {
         let normalized = pinyin.precomposedStringWithCanonicalMapping.lowercased()
         let scalars = Array(normalized.unicodeScalars)
-        guard !scalars.isEmpty else { return Array(chineseIDs) }
+        guard !scalars.isEmpty else { return chineseIDs }
 
-        // Search full pinyin trie — results come back with Set<UInt32> values
+        // Search full pinyin trie — results come back with [UInt32] values
         let fullResults = fullPinyinTrie.search(prefix: scalars)
         let flResults = firstLetterTrie.search(prefix: scalars)
 
-        // Merge all sets and deduplicate
-        var seen = Set<UInt32>()
-        for set in fullResults {
-            seen.formUnion(set)
-        }
-        for set in flResults {
-            seen.formUnion(set)
-        }
-        return Array(seen)
+        // Merge all arrays and deduplicate
+        return unionAll(fullResults + flResults)
     }
 
     // MARK: - Remove
@@ -123,7 +114,7 @@ public struct PinyinIndex {
     /// Remove a filename's pinyin entries from the index.
     /// No-op if the id was never inserted or had no Chinese content.
     mutating func remove(name: String, id: UInt32) {
-        guard chineseIDs.remove(id) != nil else { return }
+        guard sortedRemove(&chineseIDs, id) else { return }
 
         let normalized = name.precomposedStringWithCanonicalMapping
         let tokens = tokenizeToPinyin(normalized)
@@ -159,28 +150,28 @@ public struct PinyinIndex {
 
         // Remove from full pinyin entries and trie
         for key in fullPinyinKeys {
-            if var set = fullPinyinEntries[key] {
-                set.remove(id)
-                if set.isEmpty {
+            if var arr = fullPinyinEntries[key] {
+                sortedRemove(&arr, id)
+                if arr.isEmpty {
                     fullPinyinEntries.removeValue(forKey: key)
                     fullPinyinTrie.remove(key)
                 } else {
-                    fullPinyinEntries[key] = set
-                    fullPinyinTrie.insert(key, value: set)
+                    fullPinyinEntries[key] = arr
+                    fullPinyinTrie.insert(key, value: arr)
                 }
             }
         }
 
         // Remove from first-letter entries and trie
         if !allFirstLetters.isEmpty {
-            if var set = firstLetterEntries[allFirstLetters] {
-                set.remove(id)
-                if set.isEmpty {
+            if var arr = firstLetterEntries[allFirstLetters] {
+                sortedRemove(&arr, id)
+                if arr.isEmpty {
                     firstLetterEntries.removeValue(forKey: allFirstLetters)
                     firstLetterTrie.remove(allFirstLetters)
                 } else {
-                    firstLetterEntries[allFirstLetters] = set
-                    firstLetterTrie.insert(allFirstLetters, value: set)
+                    firstLetterEntries[allFirstLetters] = arr
+                    firstLetterTrie.insert(allFirstLetters, value: arr)
                 }
             }
         }

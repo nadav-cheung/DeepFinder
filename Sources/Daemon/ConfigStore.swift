@@ -27,20 +27,17 @@ public struct DaemonConfig: Codable, Sendable, Equatable {
     public var excludedVolumes: [String]
 
     /// Directory basenames excluded from scanning (e.g. ".git", "node_modules").
-    public var excludedNames: [String]
+    public var excludedNames: [String] = Constants.Scan.alwaysSkippedNames.sorted()
 
     /// Individual file basenames always skipped (e.g. ".DS_Store", "Thumbs.db").
-    public var excludedFiles: [String]
+    public var excludedFiles: [String] = Constants.Scan.alwaysSkippedFiles.sorted()
 
     /// File extensions always skipped (e.g. "o", "pyc", "class").
-    public var excludedExtensions: [String]
+    public var excludedExtensions: [String] = Constants.Scan.alwaysSkippedExtensions.sorted()
 
     /// Maximum filename length for FullSubstringMap indexing (default: 24).
     /// Shorter = less memory. Names longer than this use TrigramIndex fallback.
-    ///  24 → ~300 substrings/name → ~800 MB for 200K files
-    ///  32 → ~528 substrings/name → ~1.5 GB
-    ///  48 → ~1176 substrings/name → ~3 GB
-    public var substringMaxLength: Int
+    public var substringMaxLength: Int = Constants.Scan.defaultSubstringMaxLength
 
     /// Number of records to batch-write to SQLite at once.
     public var indexBatchSize: Int
