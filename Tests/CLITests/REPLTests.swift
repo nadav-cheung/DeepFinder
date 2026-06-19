@@ -223,7 +223,7 @@ struct REPLTests {
         // Verify the mock received a query request
         let lastReq = await mockClient.lastRequest
         #expect(lastReq != nil)
-        if case .query(let q, _) = lastReq! {
+        if case .query(let q, _, _) = lastReq! {
             #expect(q == "hello.txt")
         } else {
             Issue.record("Expected query request, got: \(String(describing: lastReq))")

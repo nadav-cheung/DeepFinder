@@ -146,6 +146,48 @@ public actor SearchCoordinator {
         providers.removeAll { $0.providerID == id }
     }
 
+    // MARK: - Boolean AST Search
+
+    /// Execute a search driven by a boolean AST (REQ-1.1-02, REQ-1.1-04).
+    ///
+    /// Used when the parsed query contains `.or` or `.not` nodes – leaf text
+    /// terms are searched individually, then combined with set operations.
+    /// For simple queries without boolean operators, the existing
+    /// ``search(query:filters:)`` fast path is preferred.
+    ///
+    /// - Parameters:
+    ///   - parsed: The parsed query AST (from `QueryParser.parse`).
+    ///   - filters: Metadata filters extracted from modifier terms.
+    /// - Returns: Sorted, deduplicated results capped at `resultLimit`.
+    public func searchWithBooleanAST(
+        parsed: ParsedQuery,
+        filters: [SearchFilter]
+    ) async -> [SearchResult] {
+        guard !providers.isEmpty else { return [] }
+
+        // Increment sequence number – cancels previous query
+        querySequenceNumber += 1
+        let queryID = "bq\(querySequenceNumber)"
+        if let previousID = lastQueryID {
+            await withTaskGroup(of: Void.self) { group in
+                for provider in providers {
+                    group.addTask { await provider.cancel(queryID: previousID) }
+                }
+            }
+        }
+        lastQueryID = queryID
+
+        // Evaluate the AST
+        let rawResults = await evaluateTerms(parsed.terms)
+
+        // Deduplicate, filter, sort
+        let deduped = deduplicate(rawResults)
+        let pipeline = FilterPipeline(filters: filters)
+        let filtered = pipeline.apply(to: deduped)
+        let sorted = SearchSorter.sort(filtered, by: .relevance)
+        return Array(sorted.prefix(resultLimit))
+    }
+
     // MARK: - Private
 
     /// Deduplicate results by FileRecord.id.
@@ -168,5 +210,100 @@ public actor SearchCoordinator {
             }
         }
         return Array(best.values)
+    }
+
+    // MARK: Boolean AST Evaluation
+
+    /// AND-combine the results of multiple AST terms.
+    /// Negative (`.not`) sub-terms are subtracted from the positive intersection.
+    private func evaluateTerms(_ terms: [QueryTerm]) async -> [SearchResult] {
+        guard !terms.isEmpty else { return [] }
+
+        // Separate positive and negative terms at the top level.
+        // For `swift !test`, terms = [.text("swift"), .not(.text("test"))]
+        // → positives = [.text("swift")], negatives = [.text("test")]
+        let positiveTerms = terms.filter { if case .not = $0 { false } else { true } }
+        let negativeTerms = terms.compactMap { if case .not(let inner) = $0 { inner } else { nil } }
+
+        // Evaluate positives with AND semantics
+        var positives: [SearchResult] = []
+        for (i, pt) in positiveTerms.enumerated() {
+            let res = await evaluateTerm(pt)
+            if i == 0 {
+                positives = res
+            } else {
+                let ids = Set(res.map(\.record.id))
+                positives = positives.filter { ids.contains($0.record.id) }
+            }
+        }
+
+        // Subtract negatives
+        for nt in negativeTerms {
+            let neg = await evaluateTerm(nt)
+            let negIDs = Set(neg.map(\.record.id))
+            positives = positives.filter { !negIDs.contains($0.record.id) }
+        }
+
+        return positives
+    }
+
+    /// Recursively evaluate a single QueryTerm node.
+    private func evaluateTerm(_ term: QueryTerm) async -> [SearchResult] {
+        switch term {
+        case .and(let sub):
+            return await evaluateTerms(sub)
+
+        case .or(let sub):
+            var all: [SearchResult] = []
+            for t in sub {
+                all += await evaluateTerm(t)
+            }
+            return all
+
+        case .not:
+            // Standalone NOT without AND context — cannot subtract from anything.
+            return []
+
+        case .text(let s):
+            return await searchLeaf(query: s)
+
+        case .wildcard(let pattern):
+            return await searchLeaf(query: pattern)
+
+        case .regex(let pattern):
+            return await searchLeaf(query: "regex:\(pattern)")
+
+        case .modifier, .pathQualifier:
+            // Modifiers are extracted as filters elsewhere; path qualifiers are
+            // not yet supported at the AST level.
+            return []
+        }
+    }
+
+    /// Run a single leaf-term search across all providers.
+    /// Each leaf is an independent `SearchQuery` dispatch.
+    private func searchLeaf(query rawQuery: String) async -> [SearchResult] {
+        guard !rawQuery.isEmpty else { return [] }
+        let query = SearchQuery(rawQuery)
+
+        let allResults = await withTaskGroup(of: [SearchResult].self) { group in
+            for provider in providers {
+                group.addTask {
+                    let sequence = await provider.search(query: query)
+                    var results: [SearchResult] = []
+                    for await result in sequence {
+                        results.append(result)
+                    }
+                    return results
+                }
+            }
+            var combined: [SearchResult] = []
+            for await providerResults in group {
+                combined.append(contentsOf: providerResults)
+            }
+            return combined
+        }
+
+        return allResults
     }
 }

@@ -65,7 +65,7 @@ public actor IPCServer {
     private let filterSaveHandler: @Sendable (String, String) async -> Void
     private let filterDeleteHandler: @Sendable (String) async -> Bool
     private let configGetProvider: @Sendable (String?) async -> String?
-    private let configSetProvider: @Sendable (String, String) async -> Void
+    private let configSetProvider: @Sendable (String, String) async -> String?
 
     private var listenFD: Int32 = -1
     private var acceptTask: Task<Void, Never>?
@@ -125,7 +125,7 @@ public actor IPCServer {
         filterSaveHandler: @escaping @Sendable (String, String) async -> Void = { _, _ in },
         filterDeleteHandler: @escaping @Sendable (String) async -> Bool = { _ in false },
         configGetProvider: @escaping @Sendable (String?) async -> String? = { _ in nil },
-        configSetProvider: @escaping @Sendable (String, String) async -> Void = { _, _ in },
+        configSetProvider: @escaping @Sendable (String, String) async -> String? = { _, _ in nil },
         maxConnsPerSecond: Int = Constants.IPC.maxConnsPerSecond,
         maxConcurrentClients: Int = Constants.IPC.maxConcurrentClients
     ) {
@@ -512,7 +512,7 @@ public actor IPCServer {
     /// Dispatch a decoded IPCRequest to the appropriate handler.
     public func dispatchRequest(_ request: IPCRequest) async -> IPCResponse {
         switch request {
-        case .query(let query, let limit):
+        case .query(let query, let limit, let offset):
             // Defense-in-depth: reject oversized queries even if the decoder
             // check was somehow bypassed (e.g. future protocol change).
             guard query.count <= maxQueryLength else {
@@ -538,9 +538,35 @@ public actor IPCServer {
             let filters = modifierPairs.isEmpty
                 ? []
                 : FilterPipeline.parse(from: modifierPairs).filters
-            let cleanQuery = parsed.textOnlyQuery
+            var cleanQuery = parsed.textOnlyQuery
 
-            var results = await coordinator.search(query: cleanQuery, filters: filters)
+            // B1: modifier-only query fallback — when the text portion is empty
+            // but filters exist (e.g. `ext:swift`, `dm:today`), use a wildcard
+            // to scan all records through the provider, then let FilterPipeline
+            // narrow them. Without this, the empty-query guard in the coordinator
+            // returns [] before filters ever run.
+            if cleanQuery.isEmpty && !filters.isEmpty {
+                cleanQuery = "*"
+            }
+
+            // B2: boolean AST evaluation — when the parsed query contains .or or
+            // .not nodes, evaluate the AST via SearchCoordinator.searchWithBooleanAST
+            // instead of the flat textOnlyQuery path (which loses boolean semantics).
+            var results: [SearchResult]
+            if parsed.hasBooleanOperators {
+                results = await coordinator.searchWithBooleanAST(
+                    parsed: parsed, filters: filters
+                )
+            } else {
+                results = await coordinator.search(query: cleanQuery, filters: filters)
+            }
+            // B4: apply offset server-side before limit truncation so pagination
+            // works correctly — the client no longer applies a post-hoc dropFirst.
+            if let offset, offset < results.count {
+                results = Array(results.dropFirst(offset))
+            } else if let offset, offset >= results.count {
+                results = []
+            }
             if let limit {
                 results = Array(results.prefix(limit))
             }
@@ -561,7 +587,9 @@ public actor IPCServer {
             return .ack
 
         case .configSet(let key, let value):
-            await configSetProvider(key, value)
+            if let errorMsg = await configSetProvider(key, value) {
+                return .error(.queryError(errorMsg))
+            }
             return .ack
 
         case .indexStatus:
@@ -569,7 +597,13 @@ public actor IPCServer {
             return .indexStatus(status)
 
         case .duplicateQuery(let strategy):
-            let groups = await duplicateProvider(strategy)
+            var groups = await duplicateProvider(strategy)
+            // B5: cap duplicate groups at maxResults to prevent IPC message
+            // overflow on large indices (e.g. 236 MB response for `dupe`).
+            let cap = Constants.Daemon.maxResults
+            if groups.count > cap {
+                groups = Array(groups.prefix(cap))
+            }
             return .duplicates(groups)
 
         // Bookmark IPC (REQ-1.3-06) — backed by BookmarkStore.

@@ -141,7 +141,7 @@ struct CLIMainTests {
         let allRequests = await mock.requests
         let queryReq = allRequests.first { if case .query = $0 { true } else { false } }
         #expect(queryReq != nil)
-        if case .query(_, let limit) = queryReq! {
+        if case .query(_, let limit, _) = queryReq! {
             #expect(limit == 5)
         } else {
             Issue.record("Expected query request")
@@ -171,7 +171,7 @@ struct CLIMainTests {
             switch request {
             case .bookmarkList:
                 return .bookmarks([SearchBookmark(name: "docs", query: "report")])
-            case .query(let query, _):
+            case .query(let query, _, _):
                 return query == "report" ? .results([result], queryID: "q1") : .results([], queryID: "q2")
             default:
                 return nil

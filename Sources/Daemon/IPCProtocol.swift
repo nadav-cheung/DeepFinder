@@ -68,6 +68,7 @@ public enum IPCRequest: Codable, Sendable, Equatable {
         case kind
         case query
         case limit
+        case offset
         case queryID
         case key
         case value
@@ -85,8 +86,11 @@ public enum IPCRequest: Codable, Sendable, Equatable {
         case suggest
     }
 
-    /// Execute a search query with an optional result limit.
-    case query(_ query: String, limit: Int?)
+    /// Execute a search query with optional result limit and offset.
+    /// Offset is applied server-side (before limit truncation) so that
+    /// pagination works correctly — unlike the previous client-side dropFirst
+    /// which was defeated by the daemon's result cap.
+    case query(_ query: String, limit: Int?, offset: Int? = nil)
     /// Cancel an in-flight query by its identifier.
     case cancel(queryID: String)
     /// Request daemon statistics (file count, uptime, memory usage).
@@ -120,10 +124,11 @@ public enum IPCRequest: Codable, Sendable, Equatable {
         var c = encoder.container(keyedBy: CodingKeys.self)
         try c.encode(ipcProtocolVersion, forKey: .ipcProtocolVersion)
         switch self {
-        case .query(let q, let lim):
+        case .query(let q, let lim, let off):
             try c.encode(Kind.query, forKey: .kind)
             try c.encode(q, forKey: .query)
             try c.encodeIfPresent(lim, forKey: .limit)
+            try c.encodeIfPresent(off, forKey: .offset)
         case .cancel(let qid):
             try c.encode(Kind.cancel, forKey: .kind)
             try c.encode(qid, forKey: .queryID)
@@ -186,7 +191,8 @@ public enum IPCRequest: Codable, Sendable, Equatable {
                 )
             }
             let lim = try c.decodeIfPresent(Int.self, forKey: .limit)
-            self = .query(q, limit: lim)
+            let off = try c.decodeIfPresent(Int.self, forKey: .offset)
+            self = .query(q, limit: lim, offset: off)
         case .cancel:
             let qid = try c.decode(String.self, forKey: .queryID)
             self = .cancel(queryID: qid)

@@ -40,6 +40,19 @@ public indirect enum QueryTerm: Equatable, Sendable {
     /// Path qualifier — restricts results to paths containing this component
     /// (expressed with backslash-space: `Projects\ report`).
     case pathQualifier(String)
+
+    /// Recursively check whether this term or any nested term contains `.or` or `.not`.
+    /// Used by ``ParsedQuery/hasBooleanOperators`` to decide between the fast
+    /// textOnlyQuery path and the full AST evaluation path.
+    fileprivate var hasOrOrNot: Bool {
+        switch self {
+        case .or, .not: return true
+        case .and(let sub):
+            return sub.contains { $0.hasOrOrNot }
+        case .text, .wildcard, .regex, .modifier, .pathQualifier:
+            return false
+        }
+    }
 }
 
 // MARK: - ParsedQuery
@@ -76,6 +89,13 @@ extension ParsedQuery {
     public var textOnlyQuery: String {
         rebuildWithoutModifiers(terms)
             .trimmingCharacters(in: .whitespaces)
+    }
+
+    /// Whether the parsed AST contains any boolean operators (OR or NOT).
+    /// `true` means the query needs AST evaluation; `false` means the flat
+    /// textOnlyQuery path is sufficient.
+    public var hasBooleanOperators: Bool {
+        terms.contains { $0.hasOrOrNot }
     }
 
     // MARK: - Private helpers

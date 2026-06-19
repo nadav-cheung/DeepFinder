@@ -39,7 +39,9 @@ public struct SingleShot {
         }
 
         // Build and send the IPC request
-        let request: IPCRequest = .query(query, limit: options.limit)
+        // B4: pass offset to daemon so it applies offset server-side before
+        // limit truncation — client-side dropFirst was broken for offset >= limit.
+        let request: IPCRequest = .query(query, limit: options.limit, offset: options.offset)
         let response: IPCResponse
         do {
             response = try await client.send(request)
@@ -79,13 +81,8 @@ public struct SingleShot {
                 sortedResults = results
             }
 
-            // Apply client-side offset
-            var finalResults = sortedResults
-            if let offset = options.offset, offset < finalResults.count {
-                finalResults = Array(finalResults.dropFirst(offset))
-            } else if let offset = options.offset, offset >= finalResults.count {
-                finalResults = []
-            }
+            // Offset is applied server-side by the daemon (B4 fix).
+            let finalResults = sortedResults
 
             // TerminalFormatter handles output mode selection (JSON, NUL, ANSI)
             let formatted = TerminalFormatter.format(finalResults, options: options)

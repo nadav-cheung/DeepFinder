@@ -62,7 +62,10 @@ public enum FileRecordGenerator {
             id: id ?? UInt32(index &+ 1),
             name: name.precomposedStringWithCanonicalMapping,
             originalName: name,
-            path: "\(parent)/\(name)",
+            // B3: index enforces path uniqueness (upsert by path). The generator
+            // pools may wrap around for large counts; append the index so every
+            // record has a unique path.
+            path: "\(parent)/\(name)_\(index)",
             parentPath: parent,
             isDirectory: isDir,
             size: Int64(abs(Int(seed) * (index + 1) * 1024) % 1_073_741_824),

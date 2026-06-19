@@ -45,7 +45,7 @@ public struct ConfigCommandRunner {
             return 0
         case .ack:
             output.writeError("Error: key not found\n")
-            return 1
+            return 3  // M1: unknown key → queryError, not noResults
         case .error(let ipcError):
             output.writeError("Error: \(ipcError)\n")
             return 3

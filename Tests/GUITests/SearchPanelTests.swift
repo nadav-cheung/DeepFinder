@@ -60,7 +60,7 @@ struct SearchPanelTests {
 
         let lastReq = await mock.lastRequest
         #expect(lastReq != nil)
-        if case .query(let query, _) = lastReq! {
+        if case .query(let query, _, _) = lastReq! {
             #expect(query == "hello")
         } else {
             Issue.record("Expected .query request, got \(lastReq!)")
@@ -265,7 +265,7 @@ struct SearchPanelTests {
         #expect(results.count == 1)
 
         let lastReq = await mock.lastRequest
-        if case .query(let query, _) = lastReq! {
+        if case .query(let query, _, _) = lastReq! {
             #expect(query == "report")
         } else {
             Issue.record("Expected .query request, got \(lastReq!)")

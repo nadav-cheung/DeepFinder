@@ -519,16 +519,16 @@ public actor DaemonMain {
             return (try? JSONEncoder().encode(config.serializedDictionary()))
                 .flatMap { String(data: $0, encoding: .utf8) }
         }
-        let configSetProvider: @Sendable (String, String) async -> Void = { key, value in
-            // The provider returns Void (the IPC configSet handler acks unconditionally),
-            // so a validation failure cannot be surfaced to the client. Log it so an
-            // invalid write (e.g. `indexBatchSize -5`, malformed `excludedPaths` JSON)
-            // is at least observable server-side rather than silently dropped.
+        let configSetProvider: @Sendable (String, String) async -> String? = { key, value in
+            // Returns error message on failure; nil on success.
+            // The IPC handler surfaces the error to the client instead of silently acking.
             let log = Logger(subsystem: Product.daemonSubsystem, category: "config")
             do {
                 try await configStore.set(key: key, value: value)
+                return nil
             } catch {
                 log.error("configSet rejected \(key, privacy: .public)=\(value, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                return error.localizedDescription
             }
         }
 

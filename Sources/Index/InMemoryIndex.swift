@@ -106,6 +106,16 @@ public actor InMemoryIndex {
 
         let name = record.name
 
+        // B3: path-based upsert — when the same path already exists under a
+        // different ID (re-scan or FSEvents re-add), remove the old entry to
+        // prevent duplicate records piling up for the same file.
+        if let existingID = pathToID[record.path], existingID != id {
+            if let oldRecord = records[existingID] {
+                removeFromSubindices(oldRecord)
+            }
+            records.removeValue(forKey: existingID)
+        }
+
         // If overwriting, remove old entries from sub-indices first
         if let oldRecord = records[id] {
             removeFromSubindices(oldRecord)

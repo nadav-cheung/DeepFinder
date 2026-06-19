@@ -9,20 +9,24 @@ struct InMemoryIndexTests {
     private func makeRecord(
         id: UInt32 = 1,
         name: String = "report.pdf",
-        path: String = "/Users/test/Documents/report.pdf",
-        parentPath: String = "/Users/test/Documents",
+        path: String? = nil,
+        parentPath: String? = nil,
         isDirectory: Bool = false,
         size: Int64 = 1024,
         createdAt: Date = Date(timeIntervalSince1970: 1_700_000_000),
         modifiedAt: Date = Date(timeIntervalSince1970: 1_700_000_100),
         extension ext: String? = "pdf"
     ) -> FileRecord {
-        FileRecord(
+        // Derive path from name by default so each record has a unique path —
+        // the index enforces path uniqueness (B3 fix: same path = upsert).
+        let resolvedPath = path ?? "/Users/test/Documents/\(name)"
+        let resolvedParent = parentPath ?? "/Users/test/Documents"
+        return FileRecord(
             id: id,
             name: name.precomposedStringWithCanonicalMapping,
             originalName: name,
-            path: path,
-            parentPath: parentPath,
+            path: resolvedPath,
+            parentPath: resolvedParent,
             isDirectory: isDirectory,
             size: size,
             createdAt: createdAt,
