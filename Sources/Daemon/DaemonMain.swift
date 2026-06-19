@@ -562,14 +562,9 @@ public actor DaemonMain {
         }
 
         let suggestProvider: @Sendable (String) async -> [String] = { query in
-            // Build FuzzyCorrector from all known filenames for edit-distance suggestions
-            let allRecords = await capturedIndex.allRecords()
-            let knownNames = Set(allRecords.map(\.name))
-            let corrector = FuzzyCorrector(knownTerms: knownNames)
-            if let suggestion = corrector.suggest(for: query, maxDistance: 2) {
-                return [suggestion]
-            }
-            // Fallback: prefix search results
+            // Use prefix/pinyin search for suggestions. FuzzyCorrector with
+            // Levenshtein distance over all filenames is O(N×M) and unreliable
+            // for CJK queries — not suitable for per-request suggestion.
             let results = await capturedIndex.search(query: query)
             return Array(results.prefix(3).map(\.name))
         }
