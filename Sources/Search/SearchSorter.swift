@@ -20,6 +20,36 @@ public enum SortCriterion: Sendable {
     case natural
 }
 
+// MARK: - SortCriterion persistence
+
+extension SortCriterion {
+
+    /// Stable string key used for persistence (daemon config / IPC).
+    /// Inverse of ``SortCriterion/from(persistenceKey:)``.
+    public var persistenceKey: String {
+        switch self {
+        case .relevance: return "relevance"
+        case .name: return "name"
+        case .date: return "date"
+        case .size: return "size"
+        case .natural: return "natural"
+        }
+    }
+
+    /// Parse a persistence key back to a criterion. Returns nil for unknown
+    /// or empty strings (empty = no preference = daemon relevance order).
+    public static func from(persistenceKey: String) -> SortCriterion? {
+        switch persistenceKey {
+        case "relevance": return .relevance
+        case "name": return .name
+        case "date": return .date
+        case "size": return .size
+        case "natural": return .natural
+        default: return nil
+        }
+    }
+}
+
 // MARK: - SearchSorter
 
 /// Stateless sorter for search results. All methods are static; no instance needed.

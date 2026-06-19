@@ -198,6 +198,19 @@
 
 ---
 
+## 2026-06-19 — REPL :sort 跨会话持久化
+
+### CHG-2026-06-19-02: :sort 偏好持久化到 daemon 配置（跨会话保留）
+
+- **来源**: nadav（doc↔impl 残留——REQ-1.3-04 用户故事要求"跨会话沿用"，备注标注"DaemonConfig 无 sort 字段"）
+- **影响 REQ**: REQ-1.3-04（新增 AC5）
+- **影响文档**: `reqs/v1.3-search-exp.md`；代码 `Sources/Search/SearchSorter.swift`、`Sources/Daemon/ConfigStore.swift`、`Sources/CLI/REPL.swift`
+- **变更类型**: 新增（实现）
+- **描述**: REPL `:sort` 命令已实现但偏好仅存于会话内（进程退出失效）——审计标注的残留过度声明。本次接线：`DaemonConfig` 新增可选字段 `sortPreference: String?` / `sortReverse: Bool?`（前向兼容：旧 `settings.json` 无此字段时 Codable 解码为 nil，不影响其余字段）；`serializedDictionary()` + `ConfigStore.set` 暴露 `sort`/`sortReverse` 键（空串清空，非法值拒绝）；REPL 启动时 `loadSortPreference()` 载入、每次 `:sort` 变更 `persistSortPreference()` 原子写入。`SortCriterion` 新增 `persistenceKey` / `from(persistenceKey:)` 作为单一映射源。Single-shot 仍由 `--sort`/`--reverse` flag 表达（不自动套用已存偏好，符合 AC1-4）。
+- **影响**: REQ-1.3-04 新增 AC5；备注从「跨会话持久化为未来增强」改为已实现。测试：ConfigStoreTests 4（往返 / 空串清空 / 非法拒绝 / 前向兼容）+ REPLTests 2（启动载入 / 变更持久化）；ConfigStoreTests 16 全绿、CLITests 166 全绿；build clean。
+
+---
+
 ## 变更统计
 
 | 日期 | 变更数 | 类型 |
@@ -206,4 +219,4 @@
 | 2026-06-14 | 3 | 修改（格式）×1 / 修改（澄清）×1 / 修改（规格同步现实）×1 |
 | 2026-06-15 | 4 | 新增（实现）×4 |
 | 2026-06-16 | 1 | 新增（实现）×1 |
-| 2026-06-19 | 1 | 新增（实现）×1 |
+| 2026-06-19 | 2 | 新增（实现）×2 |

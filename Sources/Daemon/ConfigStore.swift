@@ -37,6 +37,14 @@ public struct DaemonConfig: Codable, Sendable, Equatable {
     /// Schema version for forward-compatible migrations.
     public var configVersion: Int
 
+    /// Persisted REPL result-sort criterion (REQ-1.3-04). Optional so existing
+    /// `settings.json` files written before this field existed still decode.
+    /// `nil`/empty = daemon relevance order. Value is a `SortCriterion.persistenceKey`.
+    public var sortPreference: String?
+
+    /// Persisted REPL reverse-sort toggle. `nil`/`false` = ascending.
+    public var sortReverse: Bool?
+
     /// Default configuration values used when the config file is missing or corrupted.
     public static let defaults = DaemonConfig(
         excludedPaths: Constants.Scan.alwaysExcludedPrefixes,
@@ -64,6 +72,8 @@ public struct DaemonConfig: Codable, Sendable, Equatable {
             "indexBatchSize": String(indexBatchSize),
             "maxResults": String(maxResults),
             "configVersion": String(configVersion),
+            "sort": sortPreference ?? "",
+            "sortReverse": (sortReverse ?? false) ? "true" : "false",
         ]
     }
 }
@@ -154,6 +164,25 @@ public actor ConfigStore {
                 throw ConfigStoreError.invalidValue(key: key, reason: "Expected a positive integer")
             }
             config.configVersion = v
+        case "sort":
+            // Empty string clears the preference; otherwise validate against the
+            // accepted criterion names (SortCriterion.persistenceKey values).
+            if value.isEmpty {
+                config.sortPreference = nil
+            } else if SortCriterion.from(persistenceKey: value) != nil {
+                config.sortPreference = value
+            } else {
+                throw ConfigStoreError.invalidValue(key: key, reason: "Expected a sort criterion (relevance/name/date/size/natural) or empty")
+            }
+        case "sortReverse":
+            switch value.lowercased() {
+            case "true", "1":
+                config.sortReverse = true
+            case "false", "0":
+                config.sortReverse = false
+            default:
+                throw ConfigStoreError.invalidValue(key: key, reason: "Expected true/false")
+            }
         default:
             throw ConfigStoreError.invalidValue(key: key, reason: "Unknown configuration key")
         }

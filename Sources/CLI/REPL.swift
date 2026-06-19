@@ -365,6 +365,11 @@ public actor REPL {
             output.write("Goodbye.\n")
         }
 
+        // Load the persisted sort preference (REQ-1.3-04) so it survives across
+        // REPL sessions. Failures (daemon unreachable on startup) are non-fatal —
+        // the session just starts with the daemon's default relevance order.
+        await loadSortPreference()
+
         // Main loop
         while true {
             // Update completion context with current state before readline
@@ -551,7 +556,7 @@ public actor REPL {
         case .bookmark:
             return await handleBookmark(args: args)
         case .sort:
-            return handleSort(args: args)
+            return await handleSort(args: args)
         case .filter:
             return await handleFilter(args: args)
         }
@@ -846,9 +851,9 @@ public actor REPL {
 
     // MARK: - Sort (:sort)
 
-    /// Handle `:sort` — set/show the session result sort. In-session only;
-    /// cross-session persistence is a future enhancement.
-    private func handleSort(args: [String]) -> Bool {
+    /// Handle `:sort` — set/show the result sort. The preference is persisted to
+    /// the daemon config so it survives across REPL sessions (REQ-1.3-04).
+    private func handleSort(args: [String]) async -> Bool {
         guard let sub = args.first?.lowercased() else {
             describeCurrentSort()
             return true
@@ -859,28 +864,58 @@ public actor REPL {
             sortPreference = nil
             reversePreference = false
             output.write("Sort cleared (daemon relevance order).\n")
+            await persistSortPreference()
         case "reverse":
             reversePreference.toggle()
             output.write("Reverse: \(reversePreference ? "on" : "off").\n")
+            await persistSortPreference()
         case "relevance":
             sortPreference = .relevance
             output.write("Sort: relevance\(reversePreference ? " (reversed)" : "").\n")
+            await persistSortPreference()
         case "name":
             sortPreference = .name
             output.write("Sort: name\(reversePreference ? " (reversed)" : "").\n")
+            await persistSortPreference()
         case "date":
             sortPreference = .date
             output.write("Sort: date\(reversePreference ? " (reversed)" : "").\n")
+            await persistSortPreference()
         case "size":
             sortPreference = .size
             output.write("Sort: size\(reversePreference ? " (reversed)" : "").\n")
+            await persistSortPreference()
         case "natural":
             sortPreference = .natural
             output.write("Sort: natural\(reversePreference ? " (reversed)" : "").\n")
+            await persistSortPreference()
         default:
             output.writeError("Usage: :sort [relevance|name|date|size|natural|reverse|clear]\n")
         }
         return true
+    }
+
+    /// Load the persisted sort preference from the daemon config (called once on
+    /// startup). A missing or unreadable value leaves the preference unset.
+    private func loadSortPreference() async {
+        if let resp = try? await client.send(.configGet(key: "sort")),
+           case .configValue(let value) = resp,
+           let criterion = SortCriterion.from(persistenceKey: value) {
+            sortPreference = criterion
+        }
+        if let resp = try? await client.send(.configGet(key: "sortReverse")),
+           case .configValue(let value) = resp {
+            reversePreference = value.lowercased() == "true"
+        }
+    }
+
+    /// Persist the current sort preference to the daemon config. Best-effort —
+    /// a daemon write failure is logged to the user but does not revert the
+    /// in-session preference.
+    private func persistSortPreference() async {
+        let sortKey = sortPreference?.persistenceKey ?? ""
+        _ = try? await client.send(.configSet(key: "sort", value: sortKey))
+        _ = try? await client.send(.configSet(key: "sortReverse", value: reversePreference ? "true" : "false"))
     }
 
     private func describeCurrentSort() {

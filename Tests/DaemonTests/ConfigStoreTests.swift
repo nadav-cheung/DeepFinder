@@ -214,4 +214,70 @@ struct ConfigStoreTests {
         #expect(config.indexBatchSize == 400)
         #expect(config.maxResults == 3000)
     }
+
+    // MARK: - Sort preference persistence (REQ-1.3-04)
+
+    @Test func sortPreferenceRoundTrip() async throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let path = configPath(in: dir)
+
+        let store1 = ConfigStore(configPath: path)
+        try await store1.set(key: "sort", value: "date")
+        try await store1.set(key: "sortReverse", value: "true")
+
+        let store2 = ConfigStore(configPath: path)
+        #expect(await store2.get(key: "sort") == "date")
+        #expect(await store2.get(key: "sortReverse") == "true")
+    }
+
+    @Test func sortPreferenceClearsWhenEmpty() async throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = ConfigStore(configPath: configPath(in: dir))
+
+        try await store.set(key: "sort", value: "date")
+        try await store.set(key: "sort", value: "")  // empty clears
+
+        #expect(await store.get(key: "sort") == "")
+        let config = await store.get()
+        #expect(config.sortPreference == nil)
+    }
+
+    @Test func sortPreferenceRejectsInvalidCriterion() async throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let store = ConfigStore(configPath: configPath(in: dir))
+
+        do {
+            try await store.set(key: "sort", value: "bogus")
+            Issue.record("Expected invalidValue error")
+        } catch let error as ConfigStoreError {
+            if case .invalidValue(let key, _) = error {
+                #expect(key == "sort")
+            } else {
+                Issue.record("Unexpected ConfigStoreError: \(error)")
+            }
+        } catch {
+            Issue.record("Unexpected error type: \(error)")
+        }
+    }
+
+    @Test func configWithoutSortFieldsLoadsForwardCompat() async throws {
+        // A settings.json written before sort fields existed must still decode.
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let path = configPath(in: dir)
+
+        let oldJSON = """
+            {"excludedPaths":[],"excludedVolumes":[],"indexBatchSize":100,"maxResults":1000,"configVersion":1}
+            """
+        try oldJSON.write(toFile: path, atomically: true, encoding: .utf8)
+
+        let store = ConfigStore(configPath: path)
+        let config = await store.get()
+        #expect(config.indexBatchSize == 100)
+        #expect(config.sortPreference == nil)
+        #expect(config.sortReverse == nil)
+    }
 }

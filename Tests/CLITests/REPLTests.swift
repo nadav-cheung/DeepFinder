@@ -255,6 +255,57 @@ struct REPLTests {
         #expect(results[1].record.id == 2)
     }
 
+    @Test(":sort preference loads from daemon on REPL startup")
+    func testSortPreferenceLoadedOnStartup() async {
+        let record = makeRecord(id: 1, name: "a.txt", path: "/tmp/a.txt")
+        let result = SearchResult(record: record, providerID: "test", score: 1.0, matchType: .exact)
+        let mock = MockIPCClient { request in
+            switch request {
+            case .configGet(let key):
+                return key == "sort" ? .configValue("date") : .configValue("false")
+            case .query:
+                return .results([result], queryID: "q1")
+            default:
+                return nil
+            }
+        }
+        let inputSource = MockInputSource(lines: ["a.txt", ":sort", ":quit"])
+        let output = REPLTestOutput()
+
+        let repl = await REPL(client: mock, inputSource: inputSource, output: output, historyPath: nil)
+        await repl.run()
+
+        // `:sort` with no args prints the loaded preference.
+        #expect(output.collected.contains("Sort: date"))
+    }
+
+    @Test(":sort change persists to daemon config")
+    func testSortChangePersists() async {
+        let mock = MockIPCClient { request in
+            switch request {
+            case .configGet:
+                return .configValue("")
+            case .configSet:
+                return .ack
+            default:
+                return nil
+            }
+        }
+        let inputSource = MockInputSource(lines: [":sort name", ":quit"])
+        let output = REPLTestOutput()
+
+        let repl = await REPL(client: mock, inputSource: inputSource, output: output, historyPath: nil)
+        await repl.run()
+
+        // The `:sort name` change must be persisted via a configSet("sort", "name").
+        let requests = await mock.requests
+        let persisted = requests.contains {
+            if case .configSet(let key, let value) = $0 { return key == "sort" && value == "name" }
+            return false
+        }
+        #expect(persisted)
+    }
+
     @Test(":open N validates N is valid index")
     func testOpenValidatesIndex() async {
         let record = makeRecord(id: 1, name: "hello.txt", path: "/tmp/hello.txt")
