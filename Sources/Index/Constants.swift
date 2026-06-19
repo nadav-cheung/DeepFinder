@@ -60,6 +60,8 @@ public enum Constants {
     // MARK: - File System Scanning
     public enum Scan {
         public static let defaultMaxDepth = 20
+        /// Default max name length for FullSubstringMap (memory/performance tradeoff).
+        public static let defaultSubstringMaxLength = 24
         public static let fsEventLatency: TimeInterval = 0.5
         /// Directories always skipped during file scanning.
         public static let alwaysSkippedNames: Set<String> = [

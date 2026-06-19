@@ -76,7 +76,16 @@ public actor InMemoryIndex {
 
     // MARK: - Init
 
-    public init() {}
+    /// Create an empty index.
+    /// - Parameter maxSubstringLength: Max filename length for FullSubstringMap.
+    ///   Shorter = less memory. Default 24 (~1GB for 200K files).
+    public init(maxSubstringLength: Int = Constants.Scan.defaultSubstringMaxLength) {
+        self.maxSubstringLength = maxSubstringLength
+        self.substringMap = FullSubstringMap(maxNameLength: maxSubstringLength)
+    }
+
+    /// Max filename length for FullSubstringMap. Names longer than this use TrigramIndex.
+    private let maxSubstringLength: Int
 
     // MARK: - Properties
 
@@ -140,7 +149,7 @@ public actor InMemoryIndex {
         substringMap.insert(name: name, id: id)
 
         // Insert into TrigramIndex (handles all names, but primarily useful > 64 chars)
-        if name.count > FullSubstringMap.maxNameLength {
+        if name.count > maxSubstringLength {
             trigramIndex.insert(name: name, id: id)
         }
 

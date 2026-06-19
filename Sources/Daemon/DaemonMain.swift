@@ -450,7 +450,8 @@ public actor DaemonMain {
         self.persistence = persistence
 
         // 4. Load records and rebuild in-memory index
-        let index = InMemoryIndex()
+        let cfg = ConfigStore.loadFromDisk(path: resolvedDataDir + "/settings.json") ?? .defaults
+        let index = InMemoryIndex(maxSubstringLength: cfg.substringMaxLength)
         self.index = index
         let records = try await persistence.loadAllRecords()
         Logger.shared.info("daemon", "loaded \(records.count) records from database")
@@ -724,7 +725,6 @@ public actor DaemonMain {
         let skipNames = cfg.excludedNames
         let skipFiles = cfg.excludedFiles
         let skipExts = cfg.excludedExtensions
-
         backgroundScanTask = Task.detached { [weak self = self] in
             let scanner = FileScanner()
             let homeDir = NSHomeDirectory()

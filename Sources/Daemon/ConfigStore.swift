@@ -35,6 +35,13 @@ public struct DaemonConfig: Codable, Sendable, Equatable {
     /// File extensions always skipped (e.g. "o", "pyc", "class").
     public var excludedExtensions: [String]
 
+    /// Maximum filename length for FullSubstringMap indexing (default: 24).
+    /// Shorter = less memory. Names longer than this use TrigramIndex fallback.
+    ///  24 → ~300 substrings/name → ~800 MB for 200K files
+    ///  32 → ~528 substrings/name → ~1.5 GB
+    ///  48 → ~1176 substrings/name → ~3 GB
+    public var substringMaxLength: Int
+
     /// Number of records to batch-write to SQLite at once.
     public var indexBatchSize: Int
 
@@ -59,9 +66,10 @@ public struct DaemonConfig: Codable, Sendable, Equatable {
         excludedNames: Constants.Scan.alwaysSkippedNames.sorted(),
         excludedFiles: Constants.Scan.alwaysSkippedFiles.sorted(),
         excludedExtensions: Constants.Scan.alwaysSkippedExtensions.sorted(),
+        substringMaxLength: Constants.Scan.defaultSubstringMaxLength,
         indexBatchSize: Constants.Daemon.indexBatchSize,
         maxResults: Constants.Daemon.maxResults,
-        configVersion: 2
+        configVersion: 3
     )
 
     /// Serialize every field to its string form for the IPC `config_get` wire format.
@@ -82,6 +90,7 @@ public struct DaemonConfig: Codable, Sendable, Equatable {
             "excludedNames": jsonString(excludedNames),
             "excludedFiles": jsonString(excludedFiles),
             "excludedExtensions": jsonString(excludedExtensions),
+            "substringMaxLength": String(substringMaxLength),
             "indexBatchSize": String(indexBatchSize),
             "maxResults": String(maxResults),
             "configVersion": String(configVersion),
@@ -174,6 +183,11 @@ public actor ConfigStore {
                 throw ConfigStoreError.invalidValue(key: key, reason: "Expected a JSON array of strings")
             }
             config.excludedExtensions = exts
+        case "substringMaxLength":
+            guard let v = Int(value), v >= 0, v <= 64 else {
+                throw ConfigStoreError.invalidValue(key: key, reason: "Expected integer 0-64")
+            }
+            config.substringMaxLength = v
         case "excludedVolumes":
             guard let data = value.data(using: .utf8),
                   let volumes = try? JSONDecoder().decode([String].self, from: data) else {

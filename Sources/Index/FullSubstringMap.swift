@@ -14,12 +14,19 @@
 /// (e.g. `InMemoryIndex`), no internal synchronization is needed.
 public struct FullSubstringMap {
 
+    /// Default maximum filename length for substring indexing.
+    public static let defaultMaxNameLength = 32
+
     /// Maximum filename length (in characters) that this map will index.
-    /// Longer names are handled by TrigramIndex.
-    public static let maxNameLength = 64
+    /// Configurable per instance to control memory usage.
+    public let maxNameLength: Int
 
     /// Maps lowercase substring -> set of FileRecord IDs containing that substring.
     private var index: [String: Set<UInt32>] = [:]
+
+    public init(maxNameLength: Int = defaultMaxNameLength) {
+        self.maxNameLength = max(maxNameLength, 0)
+    }
 
     /// Number of unique filename entries currently stored.
     private var _count: Int = 0
@@ -39,7 +46,7 @@ public struct FullSubstringMap {
     ///   NFC normalization here is defensive/idempotent.
     mutating func insert(name: String, id: UInt32) {
         let normalized = name.precomposedStringWithCanonicalMapping
-        guard normalized.count <= Self.maxNameLength else { return }
+        guard normalized.count <= maxNameLength else { return }
 
         let lowered = normalized.lowercased()
 
@@ -73,7 +80,7 @@ public struct FullSubstringMap {
     /// No-op if the name/id combination was never inserted.
     mutating func remove(name: String, id: UInt32) {
         let normalized = name.precomposedStringWithCanonicalMapping
-        guard normalized.count <= Self.maxNameLength else { return }
+        guard normalized.count <= maxNameLength else { return }
 
         let lowered = normalized.lowercased()
 
