@@ -55,6 +55,7 @@ struct CIndex {
     // Path → meta index hash
     PathSlot* path_hash;
     uint32_t  path_hash_mask;  // capacity - 1
+    uint32_t  path_count;      // number of used slots (for O(1) load-factor check)
 
     // Directory entries count (for fast count)
     uint32_t  file_count;
@@ -164,19 +165,41 @@ static uint32_t path_lookup(CIndex* idx, const char* path) {
     return UINT32_MAX;
 }
 
-static void path_insert(CIndex* idx, const char* path, uint32_t meta_idx) {
-    // Resize if needed (load factor > 0.5)
-    uint32_t used = 0;
-    for (uint32_t i = 0; i <= idx->path_hash_mask; i++) {
-        if (idx->path_hash[i].used) used++;
+// Double the path-hash table and rehash all live entries. Called when load
+// factor exceeds 0.5. Runs under the index mutex (caller holds it). On OOM
+// the old table is kept (lookups degrade but nothing crashes).
+static void path_hash_resize(CIndex* idx) {
+    uint32_t old_cap = idx->path_hash_mask + 1;
+    uint32_t new_cap = old_cap * 2;
+    PathSlot* new_table = (PathSlot*)calloc(new_cap, sizeof(PathSlot));
+    if (!new_table) return;
+
+    uint32_t new_mask = new_cap - 1;
+    for (uint32_t i = 0; i < old_cap; i++) {
+        if (!idx->path_hash[i].used) continue;
+        const char* path = idx->path_hash[i].path;
+        uint32_t h = path_hash_fn(path) & new_mask;
+        while (new_table[h].used) {
+            h = (h + 1) & new_mask;
+        }
+        new_table[h] = idx->path_hash[i];  // moves path ptr + meta_idx + used
     }
-    if (used > (idx->path_hash_mask + 1) / 2) {
-        // Double the hash table (not implemented for simplicity — will degrade on huge indexes)
+
+    free(idx->path_hash);  // frees the array only; path strings now owned by new_table
+    idx->path_hash = new_table;
+    idx->path_hash_mask = new_mask;
+}
+
+static void path_insert(CIndex* idx, const char* path, uint32_t meta_idx) {
+    // Resize before inserting if load factor > 0.5 (tracked incrementally — O(1),
+    // replacing the prior O(cap) recount on every insert).
+    if (idx->path_count > (idx->path_hash_mask + 1) / 2) {
+        path_hash_resize(idx);
     }
 
     uint32_t h = path_hash_fn(path) & idx->path_hash_mask;
     while (idx->path_hash[h].used) {
-        // Update existing entry for this path
+        // Update existing entry for this path (no count change).
         if (strcmp(idx->path_hash[h].path, path) == 0) {
             idx->path_hash[h].meta_idx = meta_idx;
             return;
@@ -186,6 +209,7 @@ static void path_insert(CIndex* idx, const char* path, uint32_t meta_idx) {
     idx->path_hash[h].path = strdup(path);
     idx->path_hash[h].meta_idx = meta_idx;
     idx->path_hash[h].used = true;
+    idx->path_count++;
 }
 
 static void path_remove(CIndex* idx, const char* path) {
@@ -198,6 +222,7 @@ static void path_remove(CIndex* idx, const char* path) {
             free(slot->path);
             slot->path = NULL;
             slot->used = false;
+            idx->path_count--;
             return;
         }
         h = (h + 1) & idx->path_hash_mask;
