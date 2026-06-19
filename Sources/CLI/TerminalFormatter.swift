@@ -107,12 +107,6 @@ public enum TerminalFormatter {
             )
         }
 
-        // Fallback: pinyin-based match for ASCII queries against CJK text
-        let pinyinRanges = PinyinIndex.matchRanges(in: text, query: query)
-        if !pinyinRanges.isEmpty {
-            return highlightRanges(in: text, ranges: pinyinRanges, colorCode: colorCode)
-        }
-
         return text
     }
 

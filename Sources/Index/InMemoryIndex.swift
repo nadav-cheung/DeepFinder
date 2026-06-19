@@ -12,17 +12,15 @@
 /// - ``Trie`` -- generic prefix tree for O(k) prefix lookup on Unicode scalars
 /// - ``FullSubstringMap`` -- precomputed all-substrings map for O(1) lookup (names <= 64 chars)
 /// - ``TrigramIndex`` -- trigram posting lists for long filenames (> 64 chars)
-/// - ``PinyinIndex`` -- Chinese character to pinyin mapping for CJK filename search
 /// - ``ProductConfig`` -- compile-time product name, paths, and version constants
 ///
 /// ## Search Strategy
 /// 1. Normalize query (NFC + lowercase)
 /// 2. Query Trie for prefix matches
-/// 3. Query FullSubstringMap for substring matches (names <= 64 chars)
-/// 4. Query TrigramIndex for long-name matches (names > 64 chars)
-/// 5. Query PinyinIndex for Chinese pinyin matches
-/// 6. Merge all result IDs, deduplicate
-/// 7. Look up FileRecords, return sorted by ID
+/// 3. Query FullSubstringMap for substring matches (names <= maxSubstringLength)
+/// 4. Query TrigramIndex for substring matches (all names, trigram intersection)
+/// 5. Merge all result IDs, deduplicate
+/// 6. Look up FileRecords, return sorted by ID
 ///
 /// ## Thread Safety
 /// All index structures are value types (structs). ``InMemoryIndex`` is an actor,
@@ -36,7 +34,7 @@ import Foundation
 /// The single entry point for all indexing and searching operations.
 ///
 /// An actor that composes all index structures (Trie, FullSubstringMap,
-/// TrigramIndex, PinyinIndex) and a FileRecord store. All read/write
+/// TrigramIndex) and a FileRecord store. All read/write
 /// access is via actor isolation — no internal synchronization needed
 /// for the value-type index structures.
 ///
@@ -45,7 +43,7 @@ import Foundation
 /// 2. Query Trie for prefix matches
 /// 3. Query FullSubstringMap for substring matches (names <= 64 chars)
 /// 4. Query TrigramIndex for long-name matches (names > 64 chars)
-/// 5. Query PinyinIndex for pinyin matches
+/// 
 /// 6. Merge all result IDs, deduplicate
 /// 7. Look up FileRecords, return sorted by ID
 public actor InMemoryIndex {
@@ -71,8 +69,6 @@ public actor InMemoryIndex {
     /// Trigram index for filenames > 64 characters.
     private var trigramIndex = TrigramIndex()
 
-    /// Pinyin index for Chinese filename search.
-    private var pinyinIndex = PinyinIndex()
 
     // MARK: - Init
 
@@ -153,8 +149,6 @@ public actor InMemoryIndex {
             trigramIndex.insert(name: name, id: id)
         }
 
-        // Insert into PinyinIndex (silently skips non-Chinese names)
-        pinyinIndex.insert(name: name, id: id)
     }
 
     /// Batch-insert multiple records in a single actor hop.
@@ -221,7 +215,7 @@ public actor InMemoryIndex {
     }
 
     /// Remove a record's entries from all sub-indices (Trie, substringMap,
-    /// trigramIndex, pinyinIndex) without removing it from the records dict.
+    /// trigramIndex) without removing it from the records dict.
     /// Used by both `remove(id:)` and the upsert path in `insert(_:)`.
     private func removeFromSubindices(_ record: FileRecord) {
         let id = record.id
@@ -247,8 +241,6 @@ public actor InMemoryIndex {
         // Remove from TrigramIndex
         trigramIndex.remove(name: name, id: id)
 
-        // Remove from PinyinIndex
-        pinyinIndex.remove(name: name, id: id)
     }
 
     // MARK: - Volume Operations
@@ -306,8 +298,6 @@ public actor InMemoryIndex {
         // 3. TrigramIndex matches (for long names)
         allResults.append(trigramIndex.search(substring: lowered))
 
-        // 4. PinyinIndex matches
-        allResults.append(pinyinIndex.search(pinyin: lowered))
 
         // 5. Merge all, look up records, sort by ID
         let matchedIDs = unionAll(allResults)
@@ -343,7 +333,6 @@ public actor InMemoryIndex {
             return matchedIDs.prefix(limit).compactMap { records[$0] }
         }
 
-        matchedIDs = mergeSorted(matchedIDs, pinyinIndex.search(pinyin: lowered))
         return matchedIDs.prefix(limit).compactMap { records[$0] }
     }
 
@@ -358,7 +347,7 @@ public actor InMemoryIndex {
     /// Capture an immutable snapshot of the entire index state.
     ///
     /// The snapshot is a value-type copy of all internal data structures.
-    /// Because the sub-indices (Trie, FullSubstringMap, TrigramIndex, PinyinIndex)
+    /// Because the sub-indices (Trie, FullSubstringMap, TrigramIndex)
     /// are value types, the snapshot is fully independent — mutations to the
     /// live index after `snapshot()` returns do not affect the snapshot.
     ///
@@ -373,7 +362,6 @@ public actor InMemoryIndex {
             trie: trie,
             substringMap: substringMap,
             trigramIndex: trigramIndex,
-            pinyinIndex: pinyinIndex
         )
     }
 }
@@ -407,8 +395,6 @@ public struct IndexSnapshot: @unchecked Sendable {
     /// Trigram index (names > 64 chars).
     public let trigramIndex: TrigramIndex
 
-    /// Pinyin index (CJK filenames).
-    public let pinyinIndex: PinyinIndex
 
     /// Number of indexed files in this snapshot.
     public var count: Int { records.count }
