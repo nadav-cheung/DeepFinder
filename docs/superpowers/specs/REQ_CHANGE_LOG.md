@@ -211,6 +211,19 @@
 
 ---
 
+## 2026-06-19 — content: 行级匹配经 IPC 返回
+
+### CHG-2026-06-19-03: content: 行级匹配（line:column）经 IPC 返回并渲染
+
+- **来源**: nadav（doc↔impl 残留——REQ-1.4-03 声称 `line:column` 输出，但行级 `ContentMatch` 暂存于 provider 实例、未经 IPC 返回、TerminalFormatter 未渲染）
+- **影响 REQ**: REQ-1.4-01（备注）、REQ-1.4-03（AC3 / AC5 / AC7）
+- **影响文档**: `reqs/v1.4-content-search.md`；代码 `Sources/Search/SearchTypes.swift`、`Sources/Search/ContentScanner.swift`、`Sources/Daemon/DaemonMain.swift`、`Sources/CLI/TerminalFormatter.swift`
+- **变更类型**: 新增（实现）
+- **描述**: `ContentSearchProvider` 已在 `storedMatches` 持有行级 `ContentMatch`，但 daemon contentSearchHandler 丢弃了它们、CLI 只见文件级结果。本次接线：新增 `ContentMatchWire`（Codable：`filePath`/`lineNumber`/`lineContent`/1-based `column`，将非 Codable 的 `matchRange` 转为列号）；`SearchResult` 新增可选 `contentMatches: [ContentMatchWire]?`（默认 nil，前向/后向 Codable 兼容，自定义 `==` 不变）；daemon handler 经 `contentMatches(for:)` 取回并填充；TerminalFormatter 在文件名行下渲染 `    {lineNumber}:{column}  {lineContent}`（每文件 ≤5 行 + `+N more`）。`--json` 经 Codable 自动包含 `contentMatches`；`--0` 仅路径不变。
+- **影响**: REQ-1.4-01 备注从「行级展示为未来增强」改为已实现；REQ-1.4-03 AC3/AC5/AC7 重写为反映实际渲染/行数限制/JSON 行为。测试：SearchTypesTests 1（ContentMatchWire 列号换算）+ TerminalFormatterTests 3（渲染 / JSON / 文件名结果无匹配行）；SearchTypesTests 10 全绿、CLITests 169 全绿；build clean。
+
+---
+
 ## 变更统计
 
 | 日期 | 变更数 | 类型 |
@@ -219,4 +232,4 @@
 | 2026-06-14 | 3 | 修改（格式）×1 / 修改（澄清）×1 / 修改（规格同步现实）×1 |
 | 2026-06-15 | 4 | 新增（实现）×4 |
 | 2026-06-16 | 1 | 新增（实现）×1 |
-| 2026-06-19 | 2 | 新增（实现）×2 |
+| 2026-06-19 | 3 | 新增（实现）×3 |

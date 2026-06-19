@@ -72,12 +72,22 @@ public struct SearchResult: Codable, Sendable, Equatable {
     public let score: Double
     /// How the query matched the filename.
     public let matchType: MatchType
+    /// Line-level content matches. Populated only for `content:` queries; `nil`
+    /// for filename searches. Carried over IPC so the CLI can render line:column (REQ-1.4-03).
+    public let contentMatches: [ContentMatchWire]?
 
-    public init(record: FileRecord, providerID: String, score: Double, matchType: MatchType) {
+    public init(
+        record: FileRecord,
+        providerID: String,
+        score: Double,
+        matchType: MatchType,
+        contentMatches: [ContentMatchWire]? = nil
+    ) {
         self.record = record
         self.providerID = providerID
         self.score = score
         self.matchType = matchType
+        self.contentMatches = contentMatches
     }
 
     public static func == (lhs: SearchResult, rhs: SearchResult) -> Bool {

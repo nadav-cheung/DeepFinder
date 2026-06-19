@@ -285,10 +285,34 @@ public enum TerminalFormatter {
             // Colored output
             let dim = "\u{1B}[2m"
             let reset = "\u{1B}[0m"
-            return "\(displayName) \(dim)\(displayPath) \(sizeStr) \(dateStr)\(reset)\(extras)"
+            var line = "\(displayName) \(dim)\(displayPath) \(sizeStr) \(dateStr)\(reset)\(extras)"
+            line += contentMatchLines(result.contentMatches, dim: dim, reset: reset)
+            return line
         } else {
             // Plain output — filename, path, size, date
-            return "\(fileName) \(displayPath) \(sizeStr) \(dateStr)\(extras)"
+            var line = "\(fileName) \(displayPath) \(sizeStr) \(dateStr)\(extras)"
+            line += contentMatchLines(result.contentMatches, dim: "", reset: "")
+            return line
         }
+    }
+
+    /// Render `content:` line-level matches as indented `line:column  lineContent`
+    /// lines (REQ-1.4-03). Capped at a few lines per file with a `+N more` note.
+    /// Returns "" when there are no content matches (filename search results).
+    private static func contentMatchLines(
+        _ matches: [ContentMatchWire]?,
+        dim: String,
+        reset: String
+    ) -> String {
+        guard let matches, !matches.isEmpty else { return "" }
+        let maxShown = 5
+        var out = ""
+        for m in matches.prefix(maxShown) {
+            out += "\n    \(dim)\(m.lineNumber):\(m.column)\(reset)  \(m.lineContent)"
+        }
+        if matches.count > maxShown {
+            out += "\n    \(dim)+\(matches.count - maxShown) more\(reset)"
+        }
+        return out
     }
 }

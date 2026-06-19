@@ -361,4 +361,61 @@ struct TerminalFormatterTests {
         let out = TerminalFormatter.formatDuplicates(groups, strategy: .empty, options: options)
         #expect(out.contains("Empty files/dirs (1 items)"))
     }
+
+    // MARK: - Content match rendering (content: queries, REQ-1.4-03)
+
+    @Test("Content matches render as indented line:column lines")
+    func testContentMatchesRender() {
+        let wire = ContentMatchWire(
+            filePath: "/src/a.swift", lineNumber: 12, lineContent: "let x = query", column: 9
+        )
+        let result = SearchResult(
+            record: makeRecord(name: "a.swift", path: "/src/a.swift"),
+            providerID: "content-search",
+            score: 0.6,
+            matchType: .substring,
+            contentMatches: [wire]
+        )
+        var opts = CLIOptions()
+        opts.query = "query"
+
+        let output = TerminalFormatter.format([result], options: opts, isTerminal: false)
+
+        #expect(output.contains("12:9"))
+        #expect(output.contains("let x = query"))
+    }
+
+    @Test("Content matches appear in JSON output")
+    func testContentMatchesJSON() {
+        let wire = ContentMatchWire(
+            filePath: "/src/a.swift", lineNumber: 12, lineContent: "let x = query", column: 9
+        )
+        let result = SearchResult(
+            record: makeRecord(name: "a.swift", path: "/src/a.swift"),
+            providerID: "content-search",
+            score: 0.6,
+            matchType: .substring,
+            contentMatches: [wire]
+        )
+        var opts = CLIOptions()
+        opts.jsonOutput = true
+
+        let output = TerminalFormatter.format([result], options: opts)
+
+        // Codable round-trip: the contentMatches survive into JSON.
+        #expect(output.contains("\"lineNumber\":12"))
+        #expect(output.contains("let x = query"))
+    }
+
+    @Test("Filename-only results render no content-match lines")
+    func testNoContentLinesForFilenameResults() {
+        let result = makeResult(name: "report.pdf")
+        var opts = CLIOptions()
+        opts.query = "report"
+
+        let output = TerminalFormatter.format([result], options: opts, isTerminal: false)
+
+        // No content-match lines appended: one result → exactly one output line.
+        #expect(output.components(separatedBy: "\n").count == 1)
+    }
 }

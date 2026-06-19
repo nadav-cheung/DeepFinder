@@ -562,12 +562,25 @@ public actor DaemonMain {
         // Content search (REQ-1.4). Opt-in via a `content:` query prefix; the
         // IPCServer gates the expensive scan on that prefix. A fresh provider per
         // query keeps `storedMatches` query-scoped.
+        //
+        // Line-level matches (ContentMatch) are attached to each SearchResult so
+        // the CLI can render line:column hits (REQ-1.4-03). They are converted to
+        // the Codable wire form (ContentMatchWire) since the in-process match
+        // range is not Codable.
         let contentSearchHandler: @Sendable (String) async -> [SearchResult] = { term in
             let provider = ContentSearchProvider(index: index)
             let sequence = await provider.search(query: SearchQuery(term))
             var results: [SearchResult] = []
             for await result in sequence {
-                results.append(result)
+                let lineMatches = await provider.contentMatches(for: result.record.id) ?? []
+                let wires = lineMatches.map { ContentMatchWire(contentMatch: $0) }
+                results.append(SearchResult(
+                    record: result.record,
+                    providerID: result.providerID,
+                    score: result.score,
+                    matchType: result.matchType,
+                    contentMatches: wires.isEmpty ? nil : wires
+                ))
             }
             return results
         }

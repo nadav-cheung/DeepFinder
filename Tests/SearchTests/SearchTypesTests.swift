@@ -160,4 +160,25 @@ struct SearchTypesTests {
         #expect(zeroResult.score >= 0.0)
         #expect(oneResult.score <= 1.0)
     }
+
+    // MARK: - ContentMatchWire
+
+    @Test("ContentMatchWire converts a match range to a 1-based column")
+    func testContentMatchWireColumn() {
+        let line = "hello world"
+        // "world" starts at character offset 6 (0-based).
+        let range = line.range(of: "world")!
+        let match = ContentMatch(
+            filePath: "/a.txt",
+            lineNumber: 3,
+            lineContent: line,
+            matchRange: range
+        )
+        let wire = ContentMatchWire(contentMatch: match)
+
+        #expect(wire.filePath == "/a.txt")
+        #expect(wire.lineNumber == 3)
+        #expect(wire.lineContent == "hello world")
+        #expect(wire.column == 7)  // 0-based offset 6 → 1-based column 7
+    }
 }

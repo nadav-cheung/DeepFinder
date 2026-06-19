@@ -36,6 +36,44 @@ public struct ContentMatch: Sendable, Equatable {
     public let matchRange: Range<String.Index>
 }
 
+// MARK: - ContentMatchWire
+
+/// Codable line-level match for IPC transport (REQ-1.4-03).
+///
+/// `ContentMatch.matchRange` is a `Range<String.Index>`, which is not `Codable`.
+/// The match position is therefore carried as a 1-based column offset within
+/// `lineContent`. This is the form that travels inside ``SearchResult/contentMatches``.
+public struct ContentMatchWire: Codable, Sendable, Equatable {
+    /// Absolute path of the file containing the match.
+    public let filePath: String
+    /// 1-based line number where the match was found.
+    public let lineNumber: Int
+    /// Full content of the matched line (without trailing newline).
+    public let lineContent: String
+    /// 1-based column offset of the match within `lineContent`.
+    public let column: Int
+
+    public init(filePath: String, lineNumber: Int, lineContent: String, column: Int) {
+        self.filePath = filePath
+        self.lineNumber = lineNumber
+        self.lineContent = lineContent
+        self.column = column
+    }
+
+    /// Convert an in-process ``ContentMatch`` (carrying a non-Codable range)
+    /// into the wire form, deriving `column` from the match range's lower bound.
+    /// Named `contentMatch:` to avoid colliding with the `Decodable.init(from:)` requirement.
+    public init(contentMatch match: ContentMatch) {
+        self.filePath = match.filePath
+        self.lineNumber = match.lineNumber
+        self.lineContent = match.lineContent
+        self.column = match.lineContent.distance(
+            from: match.lineContent.startIndex,
+            to: match.matchRange.lowerBound
+        ) + 1
+    }
+}
+
 // MARK: - TextFileExtensions
 
 /// Extensions considered safe to scan as text. Binary files are skipped.
