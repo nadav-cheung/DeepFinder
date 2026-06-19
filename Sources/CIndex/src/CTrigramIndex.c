@@ -8,7 +8,7 @@
 //   - pending: unsorted (trigram,id) pairs flushed lazily via sort + merge.
 //
 // SPDX-License-Identifier: MIT
-#include "include/CTrigramIndex.h"
+#include "CTrigramIndex.h"
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>   // strncasecmp

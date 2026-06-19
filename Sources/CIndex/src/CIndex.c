@@ -1,6 +1,6 @@
 // CIndex implementation — compact, Everything-style
-#include "include/CIndex.h"
-#include "include/CTrigramIndex.h"
+#include "CIndex.h"
+#include "CTrigramIndex.h"
 #include <stdlib.h>
 #include <string.h>
 #include <strings.h>  // strcasecmp, strncasecmp
@@ -458,6 +458,9 @@ uint32_t cindex_search_prefix(const CIndex* idx, const char* prefix,
 
 uint32_t cindex_search_substring(const CIndex* idx, const char* substring,
                                  uint32_t** out_ids, uint32_t max_results) {
+    // Contract: *out_ids is NULL on return when no results (matches
+    // ctrigram_search), so callers can free(*out_ids) unconditionally.
+    if (out_ids) *out_ids = NULL;
     if (!idx || !substring || !out_ids) return 0;
     if (!*substring) return 0;
 

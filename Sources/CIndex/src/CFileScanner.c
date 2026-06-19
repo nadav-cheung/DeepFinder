@@ -1,6 +1,6 @@
 // CFileScanner — Zero-allocation directory scanner using POSIX fts(3)
 // Directly inserts into CIndex, bypassing Swift entirely.
-#include "include/CFileScanner.h"
+#include "CFileScanner.h"
 #include <fts.h>
 #include <stdlib.h>
 #include <string.h>

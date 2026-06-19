@@ -1,3 +1,6 @@
+# Build artifacts
 *.o
 libdfindex.a
 dfdemo
+tests/dftest
+tests/*.dSYM/

@@ -1,8 +1,8 @@
 // demo.c — Standalone macOS C program demonstrating libdfindex
 // Build: cd Sources/CIndex && make demo
 // Usage: ./dfdemo <dir> <query>
-#include "../include/CIndex.h"
-#include "../include/CParallelScanner.h"
+#include "CIndex.h"
+#include "CParallelScanner.h"
 #include <stdio.h>
 #include <stdlib.h>
 

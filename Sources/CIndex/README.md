@@ -105,6 +105,30 @@ uint32_t    ctrigram_doc_count(const CTrigramIndex* ti);
 void        ctrigram_flush(CTrigramIndex* ti);
 ```
 
+## Project Layout
+
+```
+Sources/CIndex/          # self-contained: copy/clone this folder to use standalone
+├── include/             # public headers (the installed API surface)
+│   ├── dfindex.h        #   umbrella -- #include this one header for everything
+│   ├── cindex.h
+│   ├── ctrigramindex.h
+│   ├── cfilescanner.h
+│   └── cparallelscanner.h
+├── src/                 # implementation (.c)
+├── examples/
+│   └── demo.c           # standalone scan + substring-search demo
+├── tests/
+│   └── test_core.c      # pure-C test suite (no Swift)
+├── Makefile             # standalone build (libdfindex.a + dfdemo + tests)
+├── Package.swift        # (parent) SPM target points here
+├── README.md  LICENSE  VERSION  CHANGELOG.md
+└── .gitignore
+```
+
+This folder is its own unit: it has no dependency on DeepFinder's Swift code, and
+can be copied out of the repo and built with just `make`.
+
 ## Standalone Build
 
 ```bash
@@ -112,12 +136,22 @@ cd Sources/CIndex
 make          # builds libdfindex.a + dfdemo
 make lib      # just libdfindex.a
 make demo     # just dfdemo
+make test     # build + run the C test suite (tests/test_core.c)
+make install  # install headers + lib to /usr/local (PREFIX=... to override)
 make clean    # remove build artifacts
 ```
 
 The Makefile produces:
 - `libdfindex.a` -- static library (CIndex + CFileScanner + CParallelScanner + CTrigramIndex)
 - `dfdemo` -- standalone demo: scans a directory, then substring-searches it
+- `tests/dftest` -- the C test binary (built by `make test`)
+
+`make install` lays out headers under `$PREFIX/include/dfindex/` and the lib at
+`$PREFIX/lib/libdfindex.a`, so consumers do:
+
+```c
+#include <dfindex/dfindex.h>   // umbrella
+```
 
 ## Demo
 

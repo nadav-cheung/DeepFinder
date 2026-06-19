@@ -17,7 +17,7 @@
 // Why not per-directory work-stealing like rq: macOS APFS readdir is already
 // fast and cached; the bottleneck is stat() volume, not syscall parallelism.
 // Subtree partitioning gives the same speedup with much simpler lock-free code.
-#include "include/CParallelScanner.h"
+#include "CParallelScanner.h"
 #include <fts.h>
 #include <dispatch/dispatch.h>
 #include <stdlib.h>
