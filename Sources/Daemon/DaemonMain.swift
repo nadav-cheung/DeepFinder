@@ -764,7 +764,7 @@ public actor DaemonMain {
                     let allRecords = await bgIndex.allRecords()
                     await bgPersistence.saveRecords(allRecords)
                     await self?.setScanComplete()
-                    await MainActor.run { self?.backgroundScanTask = nil }
+                    Task { await self?.resetBackgroundScanTask() }
                     Logger.shared.info("daemon", "scan complete: \(scannedCount) files indexed, \(allRecords.count) total")
                 case .scanError(let error):
                     let log = Logger(subsystem: Product.daemonSubsystem, category: "lifecycle")
@@ -782,6 +782,7 @@ public actor DaemonMain {
     private func setScanStart(_ start: Date) { scanStartTime = start }
     private func setScannedSoFar(_ n: Int) { scannedSoFar = n }
     private func setScanComplete() { scanStartTime = nil }
+    private func resetBackgroundScanTask() { backgroundScanTask = nil }
 
     /// Lightweight recursive file count for progress estimation.
     /// Uses `nextObject()` instead of a `for`-`in` loop so the sync
