@@ -268,6 +268,25 @@ public actor DaemonMain {
         }
     }
 
+    /// Create the default configuration file if it does not already exist.
+    ///
+    /// Called during first daemon startup and by `deepfinder install`. Writes
+    /// `DaemonConfig.defaults` as pretty-printed JSON with permissions 600.
+    public static func ensureDefaultConfig(at path: String) {
+        let resolved = expandTilde(path)
+        guard !FileManager.default.fileExists(atPath: resolved) else { return }
+
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        guard let data = try? encoder.encode(DaemonConfig.defaults) else { return }
+
+        try? data.write(to: URL(fileURLWithPath: resolved), options: .atomic)
+        try? FileManager.default.setAttributes(
+            [.posixPermissions: NSNumber(value: Product.privateFilePermissions)],
+            ofItemAtPath: resolved
+        )
+    }
+
     /// Atomically acquire the PID file for singleton enforcement.
     ///
     /// Uses `O_CREAT | O_EXCL` for atomic creation — if two daemon processes start
@@ -410,6 +429,9 @@ public actor DaemonMain {
         try Self.ensureDataDir(dataDir)
         try Self.ensureDataDir(resolvedDataDir + "/session")
         try Self.ensureDataDir(resolvedDataDir + "/cache")
+
+        // 1.5. Ensure default config file exists (first-run bootstrap)
+        Self.ensureDefaultConfig(at: resolvedDataDir + "/settings.json")
 
         // 2. Atomically acquire PID file (singleton check + write + flock)
         let pidFD = try Self.acquirePIDFile(pidPath: resolvedPidPath)

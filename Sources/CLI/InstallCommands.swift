@@ -18,20 +18,24 @@ public struct InstallCommandRunner {
 
     // MARK: - install
 
-    /// Install the LaunchAgent plist.
+    /// Install the LaunchAgent plist and create the default configuration file.
     ///
-    /// Checks if already installed. If not, generates the plist and writes it
-    /// to the specified path.
+    /// Checks if already installed. If not, generates the plist, writes it
+    /// to the specified path, and creates a default `settings.json` if one
+    /// does not already exist.
     ///
     /// - Parameters:
     ///   - plistPath: File system path for the plist. Defaults to `LaunchAgent.defaultPlistPath`.
+    ///   - configPath: File system path for the config file. Defaults to `~/.deep-finder/settings.json`.
     ///   - output: Output writer for display. Defaults to `StdoutWriter`.
     /// - Returns: Exit code (0 = success, non-zero = error).
     public static func install(
         plistPath: String = LaunchAgent.defaultPlistPath,
+        configPath: String = Product.dataDir + "/settings.json",
         output: any CLIOutputWriter = StdoutWriter()
     ) throws -> Int32 {
         let resolvedPath = NSString(string: plistPath).expandingTildeInPath
+        let resolvedConfigPath = NSString(string: configPath).expandingTildeInPath
 
         // Check if already installed
         if FileManager.default.fileExists(atPath: resolvedPath) {
@@ -46,7 +50,26 @@ public struct InstallCommandRunner {
             return 1
         }
 
+        // Create default configuration file if it doesn't exist
+        if !FileManager.default.fileExists(atPath: resolvedConfigPath) {
+            let configDir = (resolvedConfigPath as NSString).deletingLastPathComponent
+            try? FileManager.default.createDirectory(atPath: configDir, withIntermediateDirectories: true)
+
+            let encoder = JSONEncoder()
+            encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+            if let data = try? encoder.encode(DaemonConfig.defaults) {
+                try? data.write(to: URL(fileURLWithPath: resolvedConfigPath), options: .atomic)
+                try? FileManager.default.setAttributes(
+                    [.posixPermissions: NSNumber(value: Product.privateFilePermissions)],
+                    ofItemAtPath: resolvedConfigPath
+                )
+            }
+        }
+
         output.write("LaunchAgent installed at \(resolvedPath)\n")
+        if FileManager.default.fileExists(atPath: resolvedConfigPath) {
+            output.write("Configuration: \(resolvedConfigPath)\n")
+        }
         output.write("The daemon will start automatically on login.\n")
         return 0
     }
