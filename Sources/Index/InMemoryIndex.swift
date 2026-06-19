@@ -238,6 +238,55 @@ public actor InMemoryIndex {
         return cscanner_scan(scanner, idx, rootPath, onProgress, onError, userData)
     }
 
+    /// Run the GCD-based parallel C scanner. Same semantics as ``runCScan`` but
+    /// partitions the top-level children of `rootPath` across GCD worker threads
+    /// (architecture inspired by github.com/seeyebe/rq). Faster on multi-core
+    /// for wide directory trees; same zero-allocation property.
+    public func runParallelCScan(
+        rootPath: String,
+        skipNames: [String],
+        skipFiles: [String],
+        skipExtensions: [String],
+        skipPaths: [String],
+        maxDepth: Int32,
+        onProgress: (@convention(c) (UInt32, UInt32, UInt32, UnsafeMutableRawPointer?) -> Bool)?,
+        onError: (@convention(c) (UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafeMutableRawPointer?) -> Void)?,
+        userData: UnsafeMutableRawPointer?
+    ) -> UInt32 {
+        guard let idx = _idx else { return 0 }
+
+        let scanner = cpscanner_create()!
+        defer { cpscanner_destroy(scanner) }
+
+        let cSkipNames = skipNames.map { UnsafePointer<CChar>?(strdup($0)) }
+        let cSkipFiles = skipFiles.map { UnsafePointer<CChar>?(strdup($0)) }
+        let cSkipExts = skipExtensions.map { UnsafePointer<CChar>?(strdup($0)) }
+        let cSkipPaths = skipPaths.map { UnsafePointer<CChar>?(strdup($0)) }
+        defer {
+            cSkipNames.forEach { free(UnsafeMutablePointer(mutating: $0)) }
+            cSkipFiles.forEach { free(UnsafeMutablePointer(mutating: $0)) }
+            cSkipExts.forEach { free(UnsafeMutablePointer(mutating: $0)) }
+            cSkipPaths.forEach { free(UnsafeMutablePointer(mutating: $0)) }
+        }
+
+        cSkipNames.withUnsafeBufferPointer { buf in
+            cpscanner_set_skip_names(scanner, buf.baseAddress, UInt32(buf.count))
+        }
+        cSkipFiles.withUnsafeBufferPointer { buf in
+            cpscanner_set_skip_files(scanner, buf.baseAddress, UInt32(buf.count))
+        }
+        cSkipExts.withUnsafeBufferPointer { buf in
+            cpscanner_set_skip_extensions(scanner, buf.baseAddress, UInt32(buf.count))
+        }
+        cSkipPaths.withUnsafeBufferPointer { buf in
+            cpscanner_set_skip_paths(scanner, buf.baseAddress, UInt32(buf.count))
+        }
+        cpscanner_set_max_depth(scanner, maxDepth)
+        cpscanner_set_follow_symlinks(scanner, false)
+
+        return cpscanner_scan(scanner, idx, rootPath, onProgress, onError, userData)
+    }
+
     /// Save all records to SQLite via a callback, using cindex_iterate to avoid
     /// creating a [FileRecord] array in memory.
     /// Calls `onRecord` for each record; the callback is responsible for batching.

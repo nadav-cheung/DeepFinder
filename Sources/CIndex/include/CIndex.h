@@ -106,5 +106,6 @@ int64_t     cindex_get_modified_at(const CIndex* idx, uint32_t id);
 
 // Sub-modules (included after CIndex type definitions)
 #include "CFileScanner.h"
+#include "CParallelScanner.h"
 
 #endif // CINDEX_H

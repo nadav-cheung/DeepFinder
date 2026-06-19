@@ -745,17 +745,17 @@ public actor DaemonMain {
             ctx.selfRef = self
             let ctxPtr = Unmanaged.passUnretained(ctx).toOpaque()
 
-            // Run C scanner via the index actor.
+            // Run parallel C scanner via the index actor (GCD-partitioned subtrees).
             // This blocks the detached thread until scan completes.
             // cindex_insert is called directly from C — zero Swift allocations.
-            let fileCount = await bgIndex.runCScan(
+            let fileCount = await bgIndex.runParallelCScan(
                 rootPath: homeDir,
                 skipNames: skipNames,
                 skipFiles: skipFiles,
                 skipExtensions: skipExts,
                 skipPaths: skipPathSuffixes,
                 maxDepth: Int32(Constants.Scan.defaultMaxDepth),
-                onProgress: { (filesScanned, _, userData) -> Bool in
+                onProgress: { (filesScanned, _, _, userData) -> Bool in
                     if Task.isCancelled { return false }
                     guard let userData else { return true }
                     let ctx = Unmanaged<ScanContext>.fromOpaque(userData).takeUnretainedValue()

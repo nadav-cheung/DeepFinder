@@ -27,7 +27,7 @@ let package = Package(
         .target(
             name: "CIndex",
             path: "Sources/CIndex",
-            sources: ["CIndex.c", "CFileScanner.c"],
+            sources: ["CIndex.c", "CFileScanner.c", "CParallelScanner.c"],
             publicHeadersPath: "include"
         ),
         .target(
