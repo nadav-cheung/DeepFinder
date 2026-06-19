@@ -16,6 +16,12 @@ public actor InMemoryIndex {
         _idx = cindex_create()
     }
 
+    /// Create an index with a custom initial path-hash capacity. For testing
+    /// resize logic at small scale; production uses `init()`.
+    internal init(pathHashCap: UInt32) {
+        _idx = cindex_create_with_path_cap(pathHashCap)
+    }
+
     // OpaquePointer isn't Sendable — use a method to avoid deinit issues
     private func _destroy() {
         if let idx = _idx {

@@ -18,6 +18,11 @@ typedef struct CIndex CIndex;
 // Create an empty index. Free with cindex_destroy().
 CIndex* cindex_create(void);
 
+// Create an empty index with a custom initial path-hash capacity (rounded up
+// to a power of two, minimum 16). Primarily for testing resize logic at small
+// scale; production should use cindex_create().
+CIndex* cindex_create_with_path_cap(uint32_t path_cap);
+
 // Destroy the index and free all memory.
 void cindex_destroy(CIndex* idx);
 

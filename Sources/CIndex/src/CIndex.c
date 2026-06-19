@@ -96,7 +96,7 @@ static uint32_t path_hash_fn(const char* s) {
 
 // ── Create / Destroy ────────────────────────────────────
 
-CIndex* cindex_create(void) {
+CIndex* cindex_create_with_path_cap(uint32_t path_cap) {
     CIndex* idx = (CIndex*)calloc(1, sizeof(CIndex));
     if (!idx) return NULL;
 
@@ -108,14 +108,23 @@ CIndex* cindex_create(void) {
     idx->meta_cap = META_INIT_CAP;
     idx->metas = (FileMeta*)calloc(idx->meta_cap, sizeof(FileMeta));
 
-    idx->path_hash_mask = PATH_HASH_CAP - 1;
-    idx->path_hash = (PathSlot*)calloc(PATH_HASH_CAP, sizeof(PathSlot));
+    // Round path_cap up to a power of two (min 16). The hash table relies on
+    // capacity being a power of two so `hash & mask` distributes uniformly.
+    uint32_t cap = 16;
+    while (cap < path_cap) cap *= 2;
+    idx->path_hash_mask = cap - 1;
+    idx->path_hash = (PathSlot*)calloc(cap, sizeof(PathSlot));
+    // path_count is 0 (calloc-zeroed).
 
     idx->next_id = 1;
 
     idx->tri = ctrigram_create();
 
     return idx;
+}
+
+CIndex* cindex_create(void) {
+    return cindex_create_with_path_cap(PATH_HASH_CAP);
 }
 
 void cindex_destroy(CIndex* idx) {
