@@ -714,6 +714,8 @@ public actor DaemonMain {
         force: Bool = false
     ) {
         guard recordsEmpty || force else { return }
+        // Don't start a second scan if one is already running
+        guard backgroundScanTask == nil else { return }
         let bgIndex = index ?? self.index!
         let bgPersistence = persistence ?? self.persistence!
 
@@ -762,8 +764,8 @@ public actor DaemonMain {
                     let allRecords = await bgIndex.allRecords()
                     await bgPersistence.saveRecords(allRecords)
                     await self?.setScanComplete()
-                    let log = Logger(subsystem: Product.daemonSubsystem, category: "lifecycle")
-                    log.info("Initial scan complete: \(scannedCount) files indexed, \(allRecords.count) total")
+                    await MainActor.run { self?.backgroundScanTask = nil }
+                    Logger.shared.info("daemon", "scan complete: \(scannedCount) files indexed, \(allRecords.count) total")
                 case .scanError(let error):
                     let log = Logger(subsystem: Product.daemonSubsystem, category: "lifecycle")
                     log.warning("Background scan error at \(error.path, privacy: .public): \(error.reason, privacy: .public)")
@@ -779,7 +781,7 @@ public actor DaemonMain {
     private func setEstimatedTotal(_ total: Int) { estimatedTotalFiles = total }
     private func setScanStart(_ start: Date) { scanStartTime = start }
     private func setScannedSoFar(_ n: Int) { scannedSoFar = n }
-    private func setScanComplete() { scanStartTime = nil; estimatedTotalFiles = nil }
+    private func setScanComplete() { scanStartTime = nil }
 
     /// Lightweight recursive file count for progress estimation.
     /// Uses `nextObject()` instead of a `for`-`in` loop so the sync
