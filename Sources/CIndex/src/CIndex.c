@@ -52,6 +52,11 @@ struct CIndex {
     uint32_t  meta_count;
     uint32_t  meta_cap;
 
+    // id → meta_idx direct map (O(1) lookup). UINT32_MAX = absent.
+    // Lazily allocated; grows with next_id. ids never reuse (next_id only grows).
+    uint32_t* id_index;
+    uint32_t  id_index_cap;
+
     // Path → meta index hash
     PathSlot* path_hash;
     uint32_t  path_hash_mask;  // capacity - 1
@@ -143,6 +148,7 @@ void cindex_destroy(CIndex* idx) {
     free(idx->names);
     free(idx->metas);
     free(idx->path_hash);
+    free(idx->id_index);
     CTrigramIndex* tri = idx->tri;
     pthread_mutex_unlock(&idx->mutex);
     pthread_mutex_destroy(&idx->mutex);
@@ -277,6 +283,10 @@ static void name_remove(CIndex* idx, const char* name, uint32_t id) {
 
 // ── Insert ──────────────────────────────────────────────
 
+// Forward declaration: id_index_ensure is defined with find_meta_by_id below,
+// but cindex_insert uses it before that point.
+static void id_index_ensure(CIndex* idx, uint32_t id);
+
 uint32_t cindex_insert(CIndex* idx,
                        const char* name,
                        const char* original_name,
@@ -336,6 +346,9 @@ uint32_t cindex_insert(CIndex* idx,
     uint32_t meta_idx = idx->meta_count++;
     uint32_t id = idx->next_id++;
 
+    id_index_ensure(idx, id);
+    if (idx->id_index) idx->id_index[id] = meta_idx;
+
     FileMeta* m = &idx->metas[meta_idx];
     m->id = id;
     m->original_name = strdup(original_name ? original_name : "");
@@ -392,9 +405,18 @@ static bool cindex_remove_locked(CIndex* idx, uint32_t id) {
             free(m->path);
             free(m->parent_path);
 
+            // Clear the removed id from the direct map.
+            if (idx->id_index && id < idx->id_index_cap) {
+                idx->id_index[id] = UINT32_MAX;
+            }
+
             // Compact metas array (swap with last)
             if (i < idx->meta_count - 1) {
                 idx->metas[i] = idx->metas[idx->meta_count - 1];
+                // The swapped record (now at index i) must point its id here.
+                if (idx->id_index && idx->metas[i].id < idx->id_index_cap) {
+                    idx->id_index[idx->metas[i].id] = i;
+                }
                 // Update path hash for the swapped entry
                 path_insert(idx, idx->metas[i].path, i);
             }
@@ -514,11 +536,31 @@ uint32_t cindex_search_substring(const CIndex* idx, const char* substring,
 
 // ── Iterate ────────────────────────────────────────────
 
-static FileMeta* find_meta_by_id(const CIndex* idx, uint32_t id) {
-    for (uint32_t i = 0; i < idx->meta_count; i++) {
-        if (idx->metas[i].id == id) return (FileMeta*)&idx->metas[i];
+// Grow id_index so it can hold index `id`. New slots are set to UINT32_MAX
+// (absent). Runs under the index mutex (caller holds it). On OOM, leaves
+// id_index as-is — find_meta_by_id will treat unmapped ids as absent.
+static void id_index_ensure(CIndex* idx, uint32_t id) {
+    if (id < idx->id_index_cap) return;
+    uint32_t new_cap = idx->id_index_cap > 0 ? idx->id_index_cap : META_INIT_CAP;
+    while (new_cap <= id) new_cap *= 2;
+    uint32_t* new_arr = (uint32_t*)malloc(new_cap * sizeof(uint32_t));
+    if (!new_arr) return;
+    // memset 0xFF sets every uint32 to UINT32_MAX (0xFFFFFFFF).
+    memset(new_arr, 0xFF, new_cap * sizeof(uint32_t));
+    if (idx->id_index) {
+        memcpy(new_arr, idx->id_index, idx->id_index_cap * sizeof(uint32_t));
+        free(idx->id_index);
     }
-    return NULL;
+    idx->id_index = new_arr;
+    idx->id_index_cap = new_cap;
+}
+
+static FileMeta* find_meta_by_id(const CIndex* idx, uint32_t id) {
+    if (id == 0 || id >= idx->id_index_cap) return NULL;
+    uint32_t mi = idx->id_index[id];
+    if (mi >= idx->meta_count) return NULL;  // UINT32_MAX or stale
+    FileMeta* m = (FileMeta*)&idx->metas[mi];
+    return m->id == id ? m : NULL;
 }
 
 uint32_t cindex_iterate(const CIndex* idx, cindex_iterate_cb cb, void* user_data) {

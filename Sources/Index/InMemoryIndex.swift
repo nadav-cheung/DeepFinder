@@ -404,6 +404,11 @@ public actor InMemoryIndex {
             extension: dfDeriveExtension(name: name, isDirectory: isDir)
         )
     }
+
+    /// Look up a single record by ID. O(1) (backed by the C id→meta direct map).
+    public func record(for id: UInt32) -> FileRecord? {
+        _lookup(id: id)
+    }
 }
 
 // MARK: - IndexSnapshot
