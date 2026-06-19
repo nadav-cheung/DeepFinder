@@ -30,7 +30,14 @@ public actor InMemoryIndex {
     }
 
     public var count: Int { _idx != nil ? Int(cindex_count(_idx)) : 0 }
+    public var totalRecords: Int { _idx != nil ? Int(cindex_total_records(_idx)) : 0 }
     public var isEmpty: Bool { count == 0 }
+
+    /// Expose the raw CIndex pointer for direct C operations (C scanner, etc.).
+    /// The pointer remains valid as long as this actor is alive.
+    public func getCIndexPointer() -> OpaquePointer? {
+        return _idx
+    }
 
     // MARK: - Insert
 
@@ -138,14 +145,116 @@ public actor InMemoryIndex {
     }
 
     public func allRecords() -> [FileRecord] {
-        // Iterate all names to get all IDs
         guard let idx = _idx else { return [] }
         var results: [FileRecord] = []
-        var seen = Set<UInt32>()
-        // Use prefix search with empty string... no, that won't work.
-        // Instead, iterate through metadata by ID.
-        // CIndex doesn't have an "all records" API. For now, use a workaround.
+        results.reserveCapacity(Int(cindex_total_records(idx)))
+
+        _ = withUnsafeMutablePointer(to: &results) { ptr in
+            cindex_iterate(idx, { (id, name, originalName, path, parentPath, isDir, size, createdAt, modifiedAt, userData) in
+                guard let userData else { return }
+                let resultsPtr = userData.assumingMemoryBound(to: [FileRecord].self)
+                let record = FileRecord(
+                    id: id,
+                    name: name != nil ? String(cString: name!).precomposedStringWithCanonicalMapping : "",
+                    originalName: originalName != nil ? String(cString: originalName!) : "",
+                    path: path != nil ? String(cString: path!) : "",
+                    parentPath: parentPath != nil ? String(cString: parentPath!) : "",
+                    isDirectory: isDir,
+                    size: size,
+                    createdAt: Date(timeIntervalSince1970: Double(createdAt)),
+                    modifiedAt: Date(timeIntervalSince1970: Double(modifiedAt)),
+                    extension: nil
+                )
+                resultsPtr.pointee.append(record)
+            }, ptr)
+        }
         return results
+    }
+
+    // MARK: - C Scanner (zero-allocation scan)
+
+    /// Run the C file scanner over `rootPath`, inserting records directly into the C index.
+    /// Zero Swift String/FileRecord allocations during the scan — fts(3) traverses the
+    /// filesystem and calls cindex_insert directly with C strings.
+    ///
+    /// This method is synchronous (blocks the calling thread). Run it from a `Task.detached`
+    /// to avoid blocking the actor or the main cooperative thread pool.
+    ///
+    /// - Parameters:
+    ///   - rootPath: The directory to scan.
+    ///   - skipNames: Directory names to skip (e.g. ".git", "node_modules").
+    ///   - skipFiles: File basenames to skip (e.g. ".DS_Store").
+    ///   - skipExtensions: File extensions to skip (e.g. "o", "pyc").
+    ///   - skipPaths: Path suffix patterns to skip (e.g. "/Library/Caches").
+    ///   - maxDepth: Maximum directory depth, or -1 for unlimited.
+    ///   - onProgress: Called every 100 files with (filesScanned, dirsScanned).
+    ///   - onError: Called for non-fatal errors with (path, reason).
+    /// - Returns: The number of files scanned (excluding directories and skipped items).
+    public func runCScan(
+        rootPath: String,
+        skipNames: [String],
+        skipFiles: [String],
+        skipExtensions: [String],
+        skipPaths: [String],
+        maxDepth: Int32,
+        onProgress: (@convention(c) (UInt32, UInt32, UnsafeMutableRawPointer?) -> Bool)?,
+        onError: (@convention(c) (UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafeMutableRawPointer?) -> Void)?,
+        userData: UnsafeMutableRawPointer?
+    ) -> UInt32 {
+        guard let idx = _idx else { return 0 }
+
+        let scanner = cscanner_create()!
+        defer { cscanner_destroy(scanner) }
+
+        // Convert Swift strings to C strings (as UnsafePointer for const char*)
+        let cSkipNames = skipNames.map { UnsafePointer<CChar>?(strdup($0)) }
+        let cSkipFiles = skipFiles.map { UnsafePointer<CChar>?(strdup($0)) }
+        let cSkipExts = skipExtensions.map { UnsafePointer<CChar>?(strdup($0)) }
+        let cSkipPaths = skipPaths.map { UnsafePointer<CChar>?(strdup($0)) }
+        defer {
+            cSkipNames.forEach { free(UnsafeMutablePointer(mutating: $0)) }
+            cSkipFiles.forEach { free(UnsafeMutablePointer(mutating: $0)) }
+            cSkipExts.forEach { free(UnsafeMutablePointer(mutating: $0)) }
+            cSkipPaths.forEach { free(UnsafeMutablePointer(mutating: $0)) }
+        }
+
+        // Configure scanner
+        cSkipNames.withUnsafeBufferPointer { buf in
+            cscanner_set_skip_names(scanner, buf.baseAddress, UInt32(buf.count))
+        }
+        cSkipFiles.withUnsafeBufferPointer { buf in
+            cscanner_set_skip_files(scanner, buf.baseAddress, UInt32(buf.count))
+        }
+        cSkipExts.withUnsafeBufferPointer { buf in
+            cscanner_set_skip_extensions(scanner, buf.baseAddress, UInt32(buf.count))
+        }
+        cSkipPaths.withUnsafeBufferPointer { buf in
+            cscanner_set_skip_paths(scanner, buf.baseAddress, UInt32(buf.count))
+        }
+        cscanner_set_max_depth(scanner, maxDepth)
+        cscanner_set_follow_symlinks(scanner, false)
+
+        // Run the scan — blocks until complete or cancelled
+        return cscanner_scan(scanner, idx, rootPath, onProgress, onError, userData)
+    }
+
+    /// Save all records to SQLite via a callback, using cindex_iterate to avoid
+    /// creating a [FileRecord] array in memory.
+    /// Calls `onRecord` for each record; the callback is responsible for batching.
+    public func forEachRecord(_ body: @escaping (UInt32, String, String, String, String, Bool, Int64, Int64, Int64) -> Void) {
+        guard let idx = _idx else { return }
+        var mutableBody = body
+        _ = withUnsafeMutablePointer(to: &mutableBody) { ptr in
+            cindex_iterate(idx, { (id, name, originalName, path, parentPath, isDir, size, createdAt, modifiedAt, userData) in
+                guard let userData else { return }
+                let bodyPtr = userData.assumingMemoryBound(to: ((UInt32, String, String, String, String, Bool, Int64, Int64, Int64) -> Void).self)
+                let n = name != nil ? String(cString: name!).precomposedStringWithCanonicalMapping : ""
+                let on = originalName != nil ? String(cString: originalName!) : ""
+                let p = path != nil ? String(cString: path!) : ""
+                let pp = parentPath != nil ? String(cString: parentPath!) : ""
+                bodyPtr.pointee(id, n, on, p, pp, isDir, size, createdAt, modifiedAt)
+            }, ptr)
+        }
     }
 
     // MARK: - Snapshot

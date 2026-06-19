@@ -4,6 +4,7 @@
 #include <string.h>
 #include <strings.h>  // strcasecmp, strncasecmp
 #include <ctype.h>
+#include <pthread.h>
 
 // ── Name entry in sorted array ──────────────────────────
 typedef struct {
@@ -37,6 +38,9 @@ typedef struct {
 #define MAX_RESULTS     10000
 
 struct CIndex {
+    // Thread safety
+    pthread_mutex_t mutex;
+
     // Sorted name array
     NameSlot* names;
     uint32_t  name_count;
@@ -104,6 +108,8 @@ CIndex* cindex_create(void) {
     CIndex* idx = (CIndex*)calloc(1, sizeof(CIndex));
     if (!idx) return NULL;
 
+    pthread_mutex_init(&idx->mutex, NULL);
+
     idx->name_cap = NAME_INIT_CAP;
     idx->names = (NameSlot*)calloc(idx->name_cap, sizeof(NameSlot));
 
@@ -119,6 +125,7 @@ CIndex* cindex_create(void) {
 
 void cindex_destroy(CIndex* idx) {
     if (!idx) return;
+    pthread_mutex_lock(&idx->mutex);
     for (uint32_t i = 0; i < idx->name_count; i++) free(idx->names[i].name);
     for (uint32_t i = 0; i < idx->meta_count; i++) {
         free(idx->metas[i].original_name);
@@ -131,6 +138,8 @@ void cindex_destroy(CIndex* idx) {
     free(idx->names);
     free(idx->metas);
     free(idx->path_hash);
+    pthread_mutex_unlock(&idx->mutex);
+    pthread_mutex_destroy(&idx->mutex);
     free(idx);
 }
 
@@ -192,7 +201,7 @@ static void path_remove(CIndex* idx, const char* path) {
 // ── Sorted name array ───────────────────────────────────
 
 // Binary search: find first index where names[i] >= name
-static uint32_t name_lower_bound(CIndex* idx, const char* name) {
+static uint32_t name_lower_bound(const CIndex* idx, const char* name) {
     uint32_t lo = 0, hi = idx->name_count;
     while (lo < hi) {
         uint32_t mid = (lo + hi) / 2;
@@ -249,6 +258,8 @@ uint32_t cindex_insert(CIndex* idx,
 {
     if (!idx || !name || !path) return 0;
 
+    pthread_mutex_lock(&idx->mutex);
+
     // Check for existing path (upsert)
     uint32_t existing = path_lookup(idx, path);
     if (existing != UINT32_MAX) {
@@ -277,6 +288,7 @@ uint32_t cindex_insert(CIndex* idx,
         uint32_t pos = name_lower_bound(idx, lower);
         name_insert_at(idx, pos, lower, m->id);
         free(lower);
+        pthread_mutex_unlock(&idx->mutex);
         return m->id;
     }
 
@@ -310,14 +322,12 @@ uint32_t cindex_insert(CIndex* idx,
     name_insert_at(idx, pos, lower, id);
     free(lower);
 
+    pthread_mutex_unlock(&idx->mutex);
     return id;
 }
 
-// ── Remove ──────────────────────────────────────────────
-
-bool cindex_remove(CIndex* idx, uint32_t id) {
-    if (!idx) return false;
-    // Find meta by ID (linear scan — for dense IDs this is fast enough)
+// Internal: remove by ID, assumes mutex is already held.
+static bool cindex_remove_locked(CIndex* idx, uint32_t id) {
     for (uint32_t i = 0; i < idx->meta_count; i++) {
         if (idx->metas[i].id == id) {
             FileMeta* m = &idx->metas[i];
@@ -351,17 +361,50 @@ bool cindex_remove(CIndex* idx, uint32_t id) {
     return false;
 }
 
+bool cindex_remove(CIndex* idx, uint32_t id) {
+    if (!idx) return false;
+    pthread_mutex_lock(&idx->mutex);
+    bool ok = cindex_remove_locked(idx, id);
+    pthread_mutex_unlock(&idx->mutex);
+    return ok;
+}
+
 bool cindex_remove_by_path(CIndex* idx, const char* path) {
     if (!idx || !path) return false;
+    pthread_mutex_lock(&idx->mutex);
     uint32_t meta_idx = path_lookup(idx, path);
-    if (meta_idx == UINT32_MAX) return false;
-    return cindex_remove(idx, idx->metas[meta_idx].id);
+    bool ok = false;
+    if (meta_idx != UINT32_MAX) {
+        ok = cindex_remove_locked(idx, idx->metas[meta_idx].id);
+    }
+    pthread_mutex_unlock(&idx->mutex);
+    return ok;
 }
 
 // ── Query ───────────────────────────────────────────────
 
 uint32_t cindex_count(const CIndex* idx) {
-    return idx ? idx->file_count : 0;
+    if (!idx) return 0;
+    pthread_mutex_lock(&((CIndex*)idx)->mutex);
+    uint32_t c = idx->file_count;
+    pthread_mutex_unlock(&((CIndex*)idx)->mutex);
+    return c;
+}
+
+uint32_t cindex_total_records(const CIndex* idx) {
+    if (!idx) return 0;
+    pthread_mutex_lock(&((CIndex*)idx)->mutex);
+    uint32_t c = idx->meta_count;
+    pthread_mutex_unlock(&((CIndex*)idx)->mutex);
+    return c;
+}
+
+uint32_t cindex_next_id(const CIndex* idx) {
+    if (!idx) return 0;
+    pthread_mutex_lock(&((CIndex*)idx)->mutex);
+    uint32_t nid = idx->next_id;
+    pthread_mutex_unlock(&((CIndex*)idx)->mutex);
+    return nid;
 }
 
 uint32_t cindex_search_prefix(const CIndex* idx, const char* prefix,
@@ -370,6 +413,8 @@ uint32_t cindex_search_prefix(const CIndex* idx, const char* prefix,
     if (!*prefix) return 0;
 
     if (max_results == 0) max_results = MAX_RESULTS;
+
+    pthread_mutex_lock(&((CIndex*)idx)->mutex);
 
     char* lower = strdup_lower(prefix);
     uint32_t pos = name_lower_bound(idx, lower);
@@ -386,6 +431,7 @@ uint32_t cindex_search_prefix(const CIndex* idx, const char* prefix,
     if (count == 0) {
         free(lower);
         *out_ids = NULL;
+        pthread_mutex_unlock(&((CIndex*)idx)->mutex);
         return 0;
     }
 
@@ -399,6 +445,7 @@ uint32_t cindex_search_prefix(const CIndex* idx, const char* prefix,
     }
 
     free(lower);
+    pthread_mutex_unlock(&((CIndex*)idx)->mutex);
     return count;
 }
 
@@ -408,6 +455,8 @@ uint32_t cindex_search_substring(const CIndex* idx, const char* substring,
     if (!*substring) return 0;
 
     if (max_results == 0) max_results = MAX_RESULTS;
+
+    pthread_mutex_lock(&((CIndex*)idx)->mutex);
 
     char* lower = strdup_lower(substring);
 
@@ -423,6 +472,7 @@ uint32_t cindex_search_substring(const CIndex* idx, const char* substring,
     if (count == 0) {
         free(lower);
         *out_ids = NULL;
+        pthread_mutex_unlock(&((CIndex*)idx)->mutex);
         return 0;
     }
 
@@ -435,20 +485,77 @@ uint32_t cindex_search_substring(const CIndex* idx, const char* substring,
     }
 
     free(lower);
+    pthread_mutex_unlock(&((CIndex*)idx)->mutex);
     return count;
 }
 
-// ── Metadata accessors ──────────────────────────────────
+// ── Iterate ────────────────────────────────────────────
 
-static FileMeta* find_meta_by_id(CIndex* idx, uint32_t id) {
+static FileMeta* find_meta_by_id(const CIndex* idx, uint32_t id) {
     for (uint32_t i = 0; i < idx->meta_count; i++) {
-        if (idx->metas[i].id == id) return &idx->metas[i];
+        if (idx->metas[i].id == id) return (FileMeta*)&idx->metas[i];
     }
     return NULL;
 }
 
+uint32_t cindex_iterate(const CIndex* idx, cindex_iterate_cb cb, void* user_data) {
+    if (!idx || !cb) return 0;
+    pthread_mutex_lock(&((CIndex*)idx)->mutex);
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < idx->meta_count; i++) {
+        FileMeta* m = &idx->metas[i];
+        // Use original_name as the display name; name is lowercased for search
+        const char* name = m->original_name;
+        // Find the lowercased name from the names array
+        // (We don't have a direct back-pointer, so pass original_name as name too —
+        //  the callback can lower-case if needed)
+        cb(m->id, m->original_name, m->original_name,
+           m->path, m->parent_path,
+           m->is_directory, m->size, m->created_at, m->modified_at,
+           user_data);
+        count++;
+    }
+    pthread_mutex_unlock(&((CIndex*)idx)->mutex);
+    return count;
+}
+
+// ── Safe record copy (for single-ID lookup) ─────────────
+
+CRecordCopy cindex_copy_record(const CIndex* idx, uint32_t id) {
+    CRecordCopy out = {0};
+    if (!idx) return out;
+    pthread_mutex_lock(&((CIndex*)idx)->mutex);
+    FileMeta* m = find_meta_by_id((CIndex*)idx, id);
+    if (m) {
+        out.name = strdup(m->original_name);
+        out.original_name = strdup(m->original_name);
+        out.path = strdup(m->path);
+        out.parent_path = strdup(m->parent_path);
+        out.size = m->size;
+        out.created_at = m->created_at;
+        out.modified_at = m->modified_at;
+        out.id = m->id;
+        out.is_directory = m->is_directory;
+        out.valid = true;
+    }
+    pthread_mutex_unlock(&((CIndex*)idx)->mutex);
+    return out;
+}
+
+void cindex_free_record_copy(CRecordCopy* r) {
+    if (!r) return;
+    free(r->name);
+    free(r->original_name);
+    free(r->path);
+    free(r->parent_path);
+    memset(r, 0, sizeof(*r));
+}
+
+// ── Metadata accessors ──────────────────────────────────
+
 const char* cindex_get_name(const CIndex* idx, uint32_t id) {
-    // Return original_name (display name)
+    // Note: returned pointer is valid only until next insert/remove.
+    // Prefer cindex_copy_record for safe access from other threads.
     FileMeta* m = find_meta_by_id((CIndex*)idx, id);
     return m ? m->original_name : NULL;
 }

@@ -714,64 +714,73 @@ public actor DaemonMain {
         force: Bool = false
     ) {
         guard recordsEmpty || force else { return }
-        // Don't start a second scan if one is already running
         guard backgroundScanTask == nil else { return }
         let bgIndex = index ?? self.index!
         let bgPersistence = persistence ?? self.persistence!
 
-        // Capture config values before detached task
         let cfg = ConfigStore.loadFromDisk(path: resolvedDataDir + "/settings.json") ?? .defaults
         let skipNames = cfg.excludedNames
         let skipFiles = cfg.excludedFiles
         let skipExts = cfg.excludedExtensions
+        let skipPathSuffixes = skipNames.map { "/" + $0 } + Constants.Scan.alwaysExcludedPrefixes
+
         backgroundScanTask = Task.detached { [weak self = self] in
-            let scanner = FileScanner()
             let homeDir = NSHomeDirectory()
 
-            // Pre-count in parallel with the scan — the count takes 10–30 s
-            // for large disks and must not block the scan from starting.
+            // Pre-count in parallel
             let preCountTask = Task { await Self.countFilesRecursively(at: homeDir) }
             Task {
                 let total = await preCountTask.value
                 await self?.setEstimatedTotal(total)
             }
 
-            let scanConfig = ScanConfiguration(
-                skipPaths: Set(skipNames.map { "/" + $0 })
-                    .union(Constants.Scan.alwaysExcludedPrefixes),
-                skipFileNames: Set(skipFiles),
-                skipExtensions: Set(skipExts),
-                maxDepth: Constants.Scan.defaultMaxDepth
-            )
-            let scanStream = await scanner.scan(
-                rootPaths: [homeDir],
-                config: scanConfig
-            )
-            var scannedCount = 0
             await self?.setScanStart(Date())
-            for await event in scanStream {
-                // Respect cancellation (daemon shutting down)
-                guard !Task.isCancelled else { return }
-                switch event {
-                case .fileFound(let record):
-                    await bgIndex.insert(record)
-                    scannedCount += 1
-                case .directoryFound(let record):
-                    await bgIndex.insert(record)
-                    scannedCount += 1
-                case .scanComplete:
-                    let allRecords = await bgIndex.allRecords()
-                    await bgPersistence.saveRecords(allRecords)
-                    await self?.setScanComplete()
-                    Task { await self?.resetBackgroundScanTask() }
-                    Logger.shared.info("daemon", "scan complete: \(scannedCount) files indexed, \(allRecords.count) total")
-                case .scanError(let error):
-                    let log = Logger(subsystem: Product.daemonSubsystem, category: "lifecycle")
-                    log.warning("Background scan error at \(error.path, privacy: .public): \(error.reason, privacy: .public)")
-                case .progress:
-                    await self?.setScannedSoFar(scannedCount)
-                }
+
+            // Progress callback context (heap-allocated to survive C callback)
+            final class ScanContext: @unchecked Sendable {
+                var filesScanned: UInt32 = 0
+                weak var selfRef: DaemonMain?
             }
+            let ctx = ScanContext()
+            ctx.selfRef = self
+            let ctxPtr = Unmanaged.passUnretained(ctx).toOpaque()
+
+            // Run C scanner via the index actor.
+            // This blocks the detached thread until scan completes.
+            // cindex_insert is called directly from C — zero Swift allocations.
+            let fileCount = await bgIndex.runCScan(
+                rootPath: homeDir,
+                skipNames: skipNames,
+                skipFiles: skipFiles,
+                skipExtensions: skipExts,
+                skipPaths: skipPathSuffixes,
+                maxDepth: Int32(Constants.Scan.defaultMaxDepth),
+                onProgress: { (filesScanned, _, userData) -> Bool in
+                    if Task.isCancelled { return false }
+                    guard let userData else { return true }
+                    let ctx = Unmanaged<ScanContext>.fromOpaque(userData).takeUnretainedValue()
+                    ctx.filesScanned = filesScanned
+                    let weakSelf = ctx.selfRef
+                    Task { await weakSelf?.setScannedSoFar(Int(filesScanned)) }
+                    return true
+                },
+                onError: { (path, reason, _) in
+                    let log = Logger(subsystem: Product.daemonSubsystem, category: "lifecycle")
+                    let pathStr = path != nil ? String(cString: path!) : "unknown"
+                    let reasonStr = reason != nil ? String(cString: reason!) : "unknown"
+                    log.warning("Background scan error at \(pathStr, privacy: .public): \(reasonStr, privacy: .public)")
+                },
+                userData: ctxPtr
+            )
+
+            Logger.shared.info("daemon", "C scan complete: \(fileCount) files scanned")
+
+            // Persist to SQLite
+            let allRecords = await bgIndex.allRecords()
+            await bgPersistence.saveRecords(allRecords)
+            await self?.setScanComplete()
+            Task { await self?.resetBackgroundScanTask() }
+            Logger.shared.info("daemon", "scan complete: \(fileCount) files indexed, \(allRecords.count) total records")
         }
     }
 

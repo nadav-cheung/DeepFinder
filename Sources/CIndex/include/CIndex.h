@@ -41,8 +41,14 @@ bool cindex_remove(CIndex* idx, uint32_t id);
 // Remove a file by path. Returns true if found.
 bool cindex_remove_by_path(CIndex* idx, const char* path);
 
-// Number of indexed files.
+// Number of indexed files (non-directories only).
 uint32_t cindex_count(const CIndex* idx);
+
+// Total number of records (files + directories).
+uint32_t cindex_total_records(const CIndex* idx);
+
+// Get the next auto-increment ID (for coordinating ID ranges).
+uint32_t cindex_next_id(const CIndex* idx);
 
 // Prefix search: find all IDs whose name starts with `prefix` (case-insensitive).
 // Returns the number of matches. `out_ids` receives the matching IDs (caller frees with free()).
@@ -53,6 +59,35 @@ uint32_t cindex_search_prefix(const CIndex* idx, const char* prefix,
 // Substring search: find all IDs whose name contains `substring` (case-insensitive).
 uint32_t cindex_search_substring(const CIndex* idx, const char* substring,
                                  uint32_t** out_ids, uint32_t max_results);
+
+// Iterate all records. Calls `cb` for each record with the record's fields.
+// `user_data` is passed through to the callback. Returns the number of records iterated.
+// The pointers passed to the callback are valid only for the duration of the callback.
+typedef void (*cindex_iterate_cb)(
+    uint32_t id, const char* name, const char* original_name,
+    const char* path, const char* parent_path,
+    bool is_directory, int64_t size, int64_t created_at, int64_t modified_at,
+    void* user_data
+);
+uint32_t cindex_iterate(const CIndex* idx, cindex_iterate_cb cb, void* user_data);
+
+// Safe record copy (for cross-thread single-ID lookup).
+// Caller must call cindex_free_record_copy when done.
+typedef struct {
+    char* name;
+    char* original_name;
+    char* path;
+    char* parent_path;
+    int64_t size;
+    int64_t created_at;
+    int64_t modified_at;
+    uint32_t id;
+    bool is_directory;
+    bool valid;
+} CRecordCopy;
+
+CRecordCopy cindex_copy_record(const CIndex* idx, uint32_t id);
+void cindex_free_record_copy(CRecordCopy* r);
 
 // Get a file's metadata by ID. Returns NULL if not found.
 // The returned pointer is valid until the next insert/remove.
@@ -68,5 +103,8 @@ int64_t     cindex_get_modified_at(const CIndex* idx, uint32_t id);
 #ifdef __cplusplus
 }
 #endif
+
+// Sub-modules (included after CIndex type definitions)
+#include "CFileScanner.h"
 
 #endif // CINDEX_H
