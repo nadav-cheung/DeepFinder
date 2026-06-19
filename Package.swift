@@ -25,7 +25,14 @@ let package = Package(
         // MARK: - Leaf modules (no internal dependencies)
 
         .target(
+            name: "CIndex",
+            path: "Sources/CIndex",
+            sources: ["CIndex.c"],
+            publicHeadersPath: "include"
+        ),
+        .target(
             name: "DeepFinderIndex",
+            dependencies: ["CIndex"],
             path: "Sources/Index"
         ),
         .target(
