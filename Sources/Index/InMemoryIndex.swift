@@ -355,7 +355,7 @@ public actor InMemoryIndex {
     // MARK: - Snapshot
 
     public func snapshot() -> IndexSnapshot {
-        IndexSnapshot()
+        IndexSnapshot(records: allRecords())
     }
 
     // MARK: - Private
@@ -388,10 +388,23 @@ public actor InMemoryIndex {
     }
 }
 
-// MARK: - IndexSnapshot (stub)
+// MARK: - IndexSnapshot
 
-public struct IndexSnapshot: @unchecked Sendable {
-    public init() {}
-    public var count: Int { 0 }
-    public var isEmpty: Bool { true }
+/// An immutable point-in-time copy of the index. Captured eagerly at
+/// ``InMemoryIndex/snapshot()`` call time, so later mutations to the live
+/// index do not affect it (snapshot isolation).
+public struct IndexSnapshot: Sendable {
+    private let records: [FileRecord]
+
+    public init() { self.records = [] }
+    init(records: [FileRecord]) { self.records = records }
+
+    public var count: Int { records.count }
+    public var isEmpty: Bool { records.isEmpty }
+
+    public func allRecords() -> [FileRecord] { records }
+
+    public func record(atPath path: String) -> FileRecord? {
+        records.first { $0.path == path }
+    }
 }

@@ -19,8 +19,8 @@
 ///
 /// ## Startup
 /// On daemon startup, all FileRecords are loaded from SQLite and the in-memory
-/// index structures (Trie, FullSubstringMap, TrigramIndex, PinyinIndex) are rebuilt.
-/// This typically takes < 1 second on M4 hardware.
+/// C index (sorted NameSlot array for prefix search + trigram inverted index for
+/// substring search) is rebuilt. This typically takes < 1 second on M4 hardware.
 ///
 /// ## Single-Process Assumption
 /// Only one DeepFinder process should write to the database at a time.

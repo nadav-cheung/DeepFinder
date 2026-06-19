@@ -35,8 +35,11 @@ public struct DaemonConfig: Codable, Sendable, Equatable {
     /// File extensions always skipped (e.g. "o", "pyc", "class").
     public var excludedExtensions: [String] = Constants.Scan.alwaysSkippedExtensions.sorted()
 
-    /// Maximum filename length for FullSubstringMap indexing (default: 24).
-    /// Shorter = less memory. Names longer than this use TrigramIndex fallback.
+    /// Maximum filename length for substring indexing (default: 24).
+    /// Reserved: the legacy Swift backend used this to cap FullSubstringMap and
+    /// fall back to a trigram index for longer names. The current C backend
+    /// indexes every name through the trigram inverted index, so this field is
+    /// retained for config-schema compatibility but not consulted at indexing time.
     public var substringMaxLength: Int = Constants.Scan.defaultSubstringMaxLength
 
     /// Number of records to batch-write to SQLite at once.
