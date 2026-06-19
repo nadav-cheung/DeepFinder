@@ -160,6 +160,44 @@ struct CLIMainTests {
         #expect(exitCode == .success)
         #expect(output.stdout.contains("file.txt"))
     }
+
+    // MARK: - 11. --bookmark NAME resolves the saved query and runs it
+
+    @Test("--bookmark NAME resolves the saved query and runs it")
+    func testBookmarkResolvesAndRuns() async {
+        let record = makeRecord(id: 1, name: "report.pdf", path: "/docs/report.pdf")
+        let result = SearchResult(record: record, providerID: "test", score: 1.0, matchType: .exact)
+        let mock = MockIPCClient { request in
+            switch request {
+            case .bookmarkList:
+                return .bookmarks([SearchBookmark(name: "docs", query: "report")])
+            case .query(let query, _):
+                return query == "report" ? .results([result], queryID: "q1") : .results([], queryID: "q2")
+            default:
+                return nil
+            }
+        }
+
+        let (output, exitCode) = await CLIMain.run(args: ["--bookmark", "docs"], clientProvider: mock)
+        #expect(exitCode == .success)
+        #expect(output.stdout.contains("report.pdf"))
+    }
+
+    @Test("--bookmark with an unknown name errors")
+    func testBookmarkUnknownName() async {
+        let mock = MockIPCClient { request in
+            switch request {
+            case .bookmarkList:
+                return .bookmarks([SearchBookmark(name: "docs", query: "report")])
+            default:
+                return nil
+            }
+        }
+
+        let (output, exitCode) = await CLIMain.run(args: ["--bookmark", "missing"], clientProvider: mock)
+        #expect(exitCode == .queryError)
+        #expect(output.stderr.contains("no bookmark"))
+    }
 }
 
 // MARK: - Mock IPCClientProtocol
@@ -168,17 +206,28 @@ struct CLIMainTests {
 actor MockIPCClient: IPCClientProtocol {
     let response: IPCResponse?
     let error: Error?
+    let handler: (@Sendable (IPCRequest) -> IPCResponse?)?
     var lastRequest: IPCRequest?
     var requests: [IPCRequest] = []
 
     init(response: IPCResponse) {
         self.response = response
         self.error = nil
+        self.handler = nil
     }
 
     init(error: Error) {
         self.response = nil
         self.error = error
+        self.handler = nil
+    }
+
+    /// Dispatch responses by request type — for tests whose flow sends
+    /// multiple distinct IPC requests (e.g. `--bookmark` lists then queries).
+    init(handler: @escaping @Sendable (IPCRequest) -> IPCResponse?) {
+        self.response = nil
+        self.error = nil
+        self.handler = handler
     }
 
     func send(_ request: IPCRequest) async throws -> IPCResponse {
@@ -186,6 +235,9 @@ actor MockIPCClient: IPCClientProtocol {
         self.requests.append(request)
         if let error {
             throw error
+        }
+        if let handler, let r = handler(request) {
+            return r
         }
         return response!
     }

@@ -102,6 +102,32 @@ struct ArgParserTests {
         #expect(opts.showVersion == true)
     }
 
+    // MARK: - --bookmark NAME
+
+    @Test("--bookmark NAME")
+    func testBookmarkFlag() throws {
+        let opts = try ArgParser.parse(["--bookmark", "docs"])
+        #expect(opts.bookmark == "docs")
+        // No positional query needed in bookmark mode.
+        #expect(opts.query == nil)
+    }
+
+    @Test("--bookmark requires a value")
+    func testBookmarkMissingValue() {
+        do {
+            _ = try ArgParser.parse(["--bookmark"])
+            Issue.record("Expected missingValue error")
+        } catch let error as CLIError {
+            if case .missingValue(let flag) = error {
+                #expect(flag == "--bookmark")
+            } else {
+                Issue.record("Expected missingValue, got \(error)")
+            }
+        } catch {
+            Issue.record("Unexpected error type: \(error)")
+        }
+    }
+
     // MARK: - Combined flags
 
     @Test("Combined flags: --json --limit 10 --sort date 'query'")

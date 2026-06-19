@@ -38,6 +38,9 @@ public struct CLIOptions: Sendable, Equatable {
     public var port: Int = Product.defaultHTTPPort
     /// Subcommand for v0.7+ (e.g. "daemon", "config").
     public var subcommand: String?
+    /// Recall a saved bookmark by name (--bookmark NAME).
+    /// Resolves the bookmark's stored query and runs it as a single-shot search.
+    public var bookmark: String?
 }
 
 // MARK: - SortOption
@@ -144,6 +147,14 @@ public struct ArgParser {
                     opts.port = n
                     i += 1
 
+                case "--bookmark":
+                    let value = try nextValue(after: i, in: args, flag: arg)
+                    guard !value.isEmpty else {
+                        throw CLIError.invalidValue(flag: "--bookmark", value: value)
+                    }
+                    opts.bookmark = value
+                    i += 1
+
                 default:
                     throw CLIError.unknownFlag(arg)
                 }
@@ -193,6 +204,7 @@ public struct ArgParser {
           --offset <n>        Number of results to skip
           --reverse           Reverse sort order
           --verbose           Show match type and relevance score per result
+          --bookmark <name>   Recall a saved bookmark's query (see :bm in REPL)
           --serve             Start HTTP search service (no query needed)
           --port <n>          Port for --serve mode (default: 7654)
           --help              Show this help text

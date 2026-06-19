@@ -185,6 +185,19 @@
 
 ---
 
+## 2026-06-19 — single-shot --bookmark flag 接线
+
+### CHG-2026-06-19-01: --bookmark NAME single-shot flag 端到端接线
+
+- **来源**: nadav（doc↔impl 残留——REQ-1.3-01 备注与 REQ_STATUS 声称 "CLI --bookmark" 但实测缺失）
+- **影响 REQ**: REQ-1.3-01（新增 AC9）
+- **影响文档**: `reqs/v1.3-search-exp.md`；代码 `Sources/CLI/ArgParser.swift`、`Sources/CLI/CLIMain.swift`
+- **变更类型**: 新增（实现）
+- **描述**: `BookmarkStore` + IPC `bookmarkList` + REPL `:bm` 已端到端可用，但 single-shot `--bookmark NAME` flag 缺失（审计标为残留过度声明）。本次接线：ArgParser 新增 `--bookmark NAME` 值 flag → `CLIOptions.bookmark`；CLIMain 在子命令派发后、REPL 守卫前新增 bookmark 分支，经 `.bookmarkList` 取回书签按名称解析其 `query`，再走正常 single-shot 路径（复用 `SingleShot.execute`，可与 `--json`/`--limit`/`--sort` 组合）。未知名称 → exit code 3（queryError）。
+- **影响**: REQ-1.3-01 新增 AC9；备注从「未实现——未来增强」改为已接入；REQ_STATUS「CLI --bookmark」描述名副其实。测试：ArgParserTests 2（解析 + 缺值报错）+ CLIMainTests 2（解析并运行 / 未知名称报错），CLITests 164 全绿；build clean。
+
+---
+
 ## 变更统计
 
 | 日期 | 变更数 | 类型 |
@@ -193,3 +206,4 @@
 | 2026-06-14 | 3 | 修改（格式）×1 / 修改（澄清）×1 / 修改（规格同步现实）×1 |
 | 2026-06-15 | 4 | 新增（实现）×4 |
 | 2026-06-16 | 1 | 新增（实现）×1 |
+| 2026-06-19 | 1 | 新增（实现）×1 |

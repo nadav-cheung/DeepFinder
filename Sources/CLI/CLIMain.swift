@@ -180,7 +180,17 @@ public struct CLIMain {
             }
         }
 
-        // 6. Handle no query → REPL mode
+        // 6. Handle --bookmark NAME: resolve the saved bookmark's query from the
+        //    daemon and run it as a single-shot search (REQ-1.3-01).
+        if let bookmarkName = options.bookmark {
+            return await handleBookmarkRun(
+                name: bookmarkName,
+                options: options,
+                clientProvider: clientProvider
+            )
+        }
+
+        // 7. Handle no query → REPL mode
         guard let query = options.query else {
             return (
                 CLIOutput(stdout: "\(Product.name) \(Product.version) — interactive REPL\n"),
@@ -188,7 +198,7 @@ public struct CLIMain {
             )
         }
 
-        // 7. Create IPC client
+        // 8. Create IPC client
         let client: any IPCClientProtocol
         if let provider = clientProvider {
             client = provider
@@ -208,7 +218,7 @@ public struct CLIMain {
             client = ipcClient
         }
 
-        // 8. Execute single-shot query
+        // 9. Execute single-shot query
         let (resultOutput, exitCode) = await SingleShot.execute(
             query: query,
             options: options,
@@ -216,6 +226,60 @@ public struct CLIMain {
         )
 
         return (resultOutput, exitCode)
+    }
+
+    // MARK: - Bookmark Run (--bookmark NAME)
+
+    /// Handle `--bookmark NAME` single-shot mode: create the IPC client, resolve
+    /// the named bookmark's stored query from the daemon, then run it as a
+    /// normal single-shot search. An unknown bookmark name is a user error.
+    private static func handleBookmarkRun(
+        name: String,
+        options: CLIOptions,
+        clientProvider: (any IPCClientProtocol)?
+    ) async -> (CLIOutput, CLIExitCode) {
+        // Create IPC client (auto-spawn daemon).
+        let client: any IPCClientProtocol
+        if let provider = clientProvider {
+            client = provider
+        } else {
+            let ipcClient = IPCClient(socketPath: Product.socketPath)
+            do {
+                try await ipcClient.ensureDaemonRunning()
+            } catch {
+                return (
+                    CLIOutput(stderr: "Error: could not start daemon — \(error.localizedDescription)\n"),
+                    .daemonError
+                )
+            }
+            client = ipcClient
+        }
+
+        // Fetch the bookmark list and find the one matching `name`.
+        // Equality is by `id`, so names may collide — the first match wins.
+        let response: IPCResponse
+        do {
+            response = try await client.send(.bookmarkList)
+        } catch {
+            return (
+                CLIOutput(stderr: "Error: could not reach daemon — \(error.localizedDescription)\n"),
+                .daemonError
+            )
+        }
+
+        guard case .bookmarks(let bookmarks) = response else {
+            return (CLIOutput(stderr: "Error: unexpected response from daemon\n"), .daemonError)
+        }
+
+        guard let bookmark = bookmarks.first(where: { $0.name == name }) else {
+            return (
+                CLIOutput(stderr: "Error: no bookmark named '\(name)'. List saved bookmarks with :bm in the REPL.\n"),
+                .queryError
+            )
+        }
+
+        // Run the bookmark's stored query as a normal single-shot search.
+        return await SingleShot.execute(query: bookmark.query, options: options, client: client)
     }
 
     // MARK: - Subcommand Handlers
@@ -365,7 +429,7 @@ public struct CLIMain {
             if arg.hasPrefix("--") {
                 // Skip the flag and its value (if it takes one)
                 switch arg {
-                case "--sort", "--limit", "--offset", "--port":
+                case "--sort", "--limit", "--offset", "--port", "--bookmark":
                     i += 2 // skip flag + value
                 default:
                     i += 1 // boolean flag
