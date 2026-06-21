@@ -3,62 +3,57 @@
 
 /// # IndexRecovery
 ///
-/// Startup recovery logic for the SQLite index database.
+/// Startup recovery logic for the binary `index.bin` snapshot (P3 refactor —
+/// replaces the previous SQLite WAL recovery).
 ///
 /// Runs before ``IndexPersistence`` is opened to detect and repair problems:
-/// - WAL/SHM file cleanup from unclean shutdown
-/// - Database integrity verification via `PRAGMA integrity_check`
-/// - Auto-rebuild from scratch when corruption is detected
-/// - Schema incompatibility detection (downgrade protection)
-/// - Stale lock file detection (crashed daemon PID file)
+/// - Stale lock file detection (crashed daemon PID file) — FS-level, unchanged
+/// - Binary header validation (DFIX magic + supported version)
+/// - Auto-rebuild from scratch when `index.bin` exists but is corrupt or an
+///   unsupported version (delete `index.bin` + `index.cursor`, let the daemon
+///   rescan)
+///
+/// Corruption = a bad DFIX magic header, a truncated file, or a version newer
+/// than this build can read. Recovery deletes the snapshot + cursor sidecar;
+/// the daemon performs a full rescan to repopulate. (Legacy `.db` / `.db-wal`
+/// / `.db-shm` files from a pre-migration install are ignored here — P4 /
+/// migration handles them.)
 ///
 /// All recovery actions are logged via OSLog for debugging.
 import Foundation
 import OSLog
-import SQLite3
 import DeepFinderIndex
 
 // MARK: - IndexRecoveryError
 
 /// Failure modes detected or thrown during index recovery.
 public enum IndexRecoveryError: Error, CustomStringConvertible {
-    /// The database file is corrupted and cannot be repaired.
+    /// The index file is corrupted and cannot be repaired.
     case corruptionDetected(String)
-    /// The database schema is from a newer version of the app.
-    case schemaIncompatibility(current: Int, required: Int)
-    /// WAL checkpoint failed during cleanup.
-    case checkpointFailed(String)
-    /// Recovery completed by deleting and recreating the database.
+    /// Recovery completed by deleting the snapshot and cursor sidecar.
     case rebuiltFromScratch(String)
 
     public var description: String {
         switch self {
         case .corruptionDetected(let detail):
-            return "Database corruption detected: \(detail)"
-        case .schemaIncompatibility(let current, let required):
-            return "Database schema v\(current) is newer than app v\(required). Please delete the index and rebuild."
-        case .checkpointFailed(let detail):
-            return "WAL checkpoint failed: \(detail)"
+            return "Index corruption detected: \(detail)"
         case .rebuiltFromScratch(let path):
-            return "Database rebuilt from scratch: \(path)"
+            return "Index rebuilt from scratch: \(path)"
         }
     }
 }
 
 // MARK: - IndexRecovery
 
-/// Static utility for detecting and recovering from index database problems.
+/// Static utility for detecting and recovering from binary index problems.
 ///
-/// Called during daemon startup, before ``IndexPersistence`` opens the database.
+/// Called during daemon startup, before ``IndexPersistence`` is opened.
 /// All methods are static — no instance state needed.
 ///
 /// ## Usage in DaemonMain
 /// ```swift
 /// // Before opening IndexPersistence:
-/// try IndexRecovery.cleanupWALFiles(dbDirectory: dbDir)
-/// if !IndexRecovery.verifyIntegrity(dbPath: dbPath) {
-///     try IndexRecovery.recover(dbPath: dbPath, dbDirectory: dbDir)
-/// }
+/// try IndexRecovery.runStartupRecovery(dbPath: dbPath, dbDirectory: dbDir, pidPath: pidPath)
 /// ```
 public enum IndexRecovery {
 
@@ -66,191 +61,96 @@ public enum IndexRecovery {
 
     private static let logger = Logger(subsystem: Product.daemonSubsystem, category: "recovery")
 
-    // MARK: - Integrity Check
+    // MARK: - Path Helpers
 
-    /// Verify the SQLite database at the given path is readable and not corrupted.
-    ///
-    /// Opens the database, runs `PRAGMA integrity_check`, and closes it.
-    /// Returns `false` if the file doesn't exist (not an error — first run),
-    /// the database can't be opened, or the integrity check returns anything other than "ok".
-    ///
-    /// Uses `SQLITE_OPEN_READWRITE` (not read-only) because WAL-mode databases need
-    /// to create/access the SHM file, which requires write access. This is safe because
-    /// the daemon holds the PID file lock exclusively when recovery runs.
-    ///
-    /// - Parameter dbPath: Absolute path to the SQLite database file.
-    /// - Returns: `true` if the database is healthy, `false` if missing or corrupted.
-    public static func verifyIntegrity(dbPath: String) -> Bool {
-        let fm = FileManager.default
-
-        // Missing database is not corruption — first run or clean state
-        guard fm.fileExists(atPath: dbPath) else {
-            logger.info("No database file at \(dbPath, privacy: .public) — first run or clean state")
-            return true
-        }
-
-        logger.debug("Verifying database integrity: \(dbPath, privacy: .public)")
-
-        var db: OpaquePointer?
-        let flags = SQLITE_OPEN_READWRITE
-        let rc = sqlite3_open_v2(dbPath, &db, flags, nil)
-        guard rc == SQLITE_OK, let db else {
-            let msg = db.map { String(cString: sqlite3_errmsg($0)) } ?? "unknown"
-            logger.error("Cannot open database for integrity check: \(msg, privacy: .public)")
-            sqlite3_close(db)
-            return false
-        }
-        defer { sqlite3_close(db) }
-
-        // Run PRAGMA integrity_check
-        var stmt: OpaquePointer?
-        let sql = "PRAGMA integrity_check"
-        guard sqlite3_prepare_v3(db, sql, -1, 0, &stmt, nil) == SQLITE_OK, let stmt else {
-            logger.error("Failed to prepare integrity_check statement")
-            return false
-        }
-        defer { sqlite3_finalize(stmt) }
-
-        let stepRC = sqlite3_step(stmt)
-        guard stepRC == SQLITE_ROW else {
-            logger.error("integrity_check returned no rows (code \(stepRC))")
-            return false
-        }
-
-        let result = String(cString: sqlite3_column_text(stmt, 0))
-        if result == "ok" {
-            logger.debug("Database integrity check passed")
-            return true
-        } else {
-            logger.error("Database integrity check FAILED: \(result, privacy: .public)")
-            return false
-        }
+    /// Derive the `index.bin` path from a logical `.db` path. Mirrors
+    /// ``IndexPersistence.binPath(for:)`` exactly so both layers agree.
+    static func binPath(for dbPath: String) -> String {
+        IndexPersistence.binPath(for: dbPath)
     }
 
-    // MARK: - Schema Compatibility
+    /// Derive the cursor sidecar path from the bin path, matching
+    /// ``BinaryIndex``'s naming: strip the path extension and append `.cursor`.
+    private static func cursorPath(for binPath: String) -> String {
+        let url = URL(fileURLWithPath: binPath)
+        let dir = url.deletingLastPathComponent()
+        let base = url.deletingPathExtension().lastPathComponent
+        return dir.appendingPathComponent("\(base).cursor").path
+    }
 
-    /// Check if the database schema version is compatible with this version of the app.
-    ///
-    /// Returns `true` if the schema is compatible (same version or older).
-    /// Returns `false` if the schema is from a newer version (downgrade scenario)
-    /// or if the database cannot be read.
-    ///
-    /// Uses `SQLITE_OPEN_READWRITE` because WAL-mode databases need write access
-    /// to create/access the SHM file. Safe because the daemon holds the PID lock.
-    ///
-    /// - Parameter dbPath: Absolute path to the SQLite database file.
-    /// - Returns: `true` if the schema is compatible.
-    public static func verifySchemaCompatibility(dbPath: String) -> Bool {
-        let fm = FileManager.default
-        guard fm.fileExists(atPath: dbPath) else { return true }
+    // MARK: - Integrity Check
 
-        var db: OpaquePointer?
-        let flags = SQLITE_OPEN_READWRITE
-        let rc = sqlite3_open_v2(dbPath, &db, flags, nil)
-        guard rc == SQLITE_OK, let db else {
-            sqlite3_close(db)
-            return false
+    /// Verify the binary index at the given logical `.db` path is healthy.
+    ///
+    /// Returns `true` if `index.bin` is absent (first run or clean state) OR
+    /// has a valid DFIX header + supported version. Returns `false` if the file
+    /// exists but is truncated, has a bad magic, or is an unsupported version.
+    ///
+    /// - Parameter dbPath: Absolute logical database path (the `.db` path; the
+    ///   `.bin` path is derived from it).
+    /// - Returns: `true` if the index is usable (or absent), `false` if corrupt.
+    public static func verifyIntegrity(dbPath: String) -> Bool {
+        let bin = binPath(for: dbPath)
+        if !FileManager.default.fileExists(atPath: bin) {
+            logger.info("No index.bin at \(bin, privacy: .public) — first run or clean state")
+            return true
         }
-        defer { sqlite3_close(db) }
-
-        let version = SchemaMigrator.readSchemaVersion(on: db)
-        let currentVersion = SchemaMigrator.currentSchemaVersion
-
-        if version > currentVersion {
-            logger.error("Schema incompatibility: database v\(version) > app v\(currentVersion)")
-            return false
+        logger.debug("Verifying binary header: \(bin, privacy: .public)")
+        let ok = BinaryIndex.validateHeader(at: bin)
+        if ok {
+            logger.debug("Binary header valid")
+        } else {
+            logger.error("Binary header invalid / unsupported version: \(bin, privacy: .public)")
         }
-
-        logger.debug("Schema compatible: database v\(version), app v\(currentVersion)")
-        return true
+        return ok
     }
 
     // MARK: - Recovery
 
-    /// Recover from database corruption by deleting and recreating from scratch.
-    ///
-    /// This removes the main database file, WAL file, and SHM file, then lets
-    /// ``IndexPersistence`` create a fresh database on the next open.
+    /// Recover from index corruption by deleting `index.bin` and the
+    /// `index.cursor` sidecar, letting ``IndexPersistence`` create a fresh
+    /// snapshot on the next save (the daemon then rescans).
     ///
     /// - Parameters:
-    ///   - dbPath: Absolute path to the SQLite database file.
-    ///   - dbDirectory: Directory containing the database file (for WAL/SHM cleanup).
-    /// - Throws: ``IndexRecoveryError`` if recovery fails.
+    ///   - dbPath: Absolute logical database path (the `.db` path).
+    ///   - dbDirectory: Directory containing the index (accepted for signature
+    ///     compatibility; the sidecar paths are derived from `dbPath`).
+    /// - Throws: ``IndexRecoveryError`` if the corrupt file cannot be removed.
     public static func recover(dbPath: String, dbDirectory: String) throws {
-        logger.warning("Starting database recovery for \(dbPath, privacy: .public)")
+        let bin = binPath(for: dbPath)
+        let cursor = cursorPath(for: bin)
+        logger.warning("Starting binary index recovery for \(bin, privacy: .public)")
 
         let fm = FileManager.default
 
-        // Remove the main database file
-        if fm.fileExists(atPath: dbPath) {
+        if fm.fileExists(atPath: bin) {
             do {
-                try fm.removeItem(atPath: dbPath)
-                logger.info("Removed corrupted database: \(dbPath, privacy: .public)")
+                try fm.removeItem(atPath: bin)
+                logger.info("Removed corrupt index.bin: \(bin, privacy: .public)")
             } catch {
-                logger.error("Failed to remove corrupted database: \(error.localizedDescription, privacy: .public)")
-                throw IndexRecoveryError.corruptionDetected("Cannot remove database file: \(error.localizedDescription)")
+                logger.error("Failed to remove corrupt index.bin: \(error.localizedDescription, privacy: .public)")
+                throw IndexRecoveryError.corruptionDetected(
+                    "Cannot remove index.bin: \(error.localizedDescription)"
+                )
             }
         }
 
-        // Remove WAL and SHM files
-        cleanupWALFiles(dbDirectory: dbDirectory)
-
-        // Verify the files are gone
-        if fm.fileExists(atPath: dbPath) {
-            throw IndexRecoveryError.corruptionDetected("Database file still exists after deletion")
-        }
-
-        logger.info("Database recovery complete — index will rebuild from scratch")
-    }
-
-    // MARK: - WAL Cleanup
-
-    /// Remove WAL and SHM files left over from an unclean shutdown.
-    ///
-    /// SQLite normally replays the WAL on the next open, but if the WAL itself
-    /// is corrupted, removing it allows a clean start (data in the WAL is lost,
-    /// but the main database file is intact).
-    ///
-    /// Also attempts a WAL checkpoint before removing files, as a best-effort
-    /// attempt to preserve data. If the checkpoint fails, falls back to deletion.
-    ///
-    /// - Parameter dbDirectory: Directory containing the database and its WAL/SHM files.
-    public static func cleanupWALFiles(dbDirectory: String) {
-        let fm = FileManager.default
-        let dbName = "index.db"
-
-        let walPath = (dbDirectory as NSString).appendingPathComponent(dbName + "-wal")
-        let shmPath = (dbDirectory as NSString).appendingPathComponent(dbName + "-shm")
-        let dbPath = (dbDirectory as NSString).appendingPathComponent(dbName)
-
-        // Attempt checkpoint if the database and WAL exist
-        if fm.fileExists(atPath: dbPath) && fm.fileExists(atPath: walPath) {
-            if checkpointWAL(dbPath: dbPath) {
-                logger.debug("WAL checkpoint succeeded — WAL data preserved")
-            } else {
-                logger.warning("WAL checkpoint failed — will delete WAL files (uncommitted data lost)")
-            }
-        }
-
-        // Remove WAL file
-        if fm.fileExists(atPath: walPath) {
+        if fm.fileExists(atPath: cursor) {
             do {
-                try fm.removeItem(atPath: walPath)
-                logger.info("Removed WAL file: \(walPath, privacy: .public)")
+                try fm.removeItem(atPath: cursor)
+                logger.info("Removed index.cursor sidecar: \(cursor, privacy: .public)")
             } catch {
-                logger.warning("Failed to remove WAL file: \(error.localizedDescription, privacy: .public)")
+                // Non-critical: a stale cursor just means we may rescan more
+                // aggressively on the next start. Log and continue.
+                logger.warning("Failed to remove index.cursor: \(error.localizedDescription, privacy: .public)")
             }
         }
 
-        // Remove SHM file
-        if fm.fileExists(atPath: shmPath) {
-            do {
-                try fm.removeItem(atPath: shmPath)
-                logger.info("Removed SHM file: \(shmPath, privacy: .public)")
-            } catch {
-                logger.warning("Failed to remove SHM file: \(error.localizedDescription, privacy: .public)")
-            }
+        if fm.fileExists(atPath: bin) {
+            throw IndexRecoveryError.corruptionDetected("index.bin still exists after deletion")
         }
+
+        logger.info("Binary index recovery complete — index will rebuild from scratch")
     }
 
     // MARK: - Stale Lock Detection
@@ -296,20 +196,19 @@ public enum IndexRecovery {
 
     // MARK: - Full Startup Recovery
 
-    /// Run the full recovery sequence on the database directory.
+    /// Run the full recovery sequence on the index directory.
     ///
     /// This is the main entry point for daemon startup. It:
-    /// 1. Cleans up stale lock files
-    /// 2. Cleans up WAL/SHM files
-    /// 3. Checks database integrity
-    /// 4. Checks schema compatibility
-    /// 5. Auto-recovers from corruption if needed
+    /// 1. Detects and cleans stale lock files.
+    /// 2. Validates the binary index header (first run → absent → healthy).
+    /// 3. Auto-recovers from corruption if the header is invalid AND a bin
+    ///    file exists (corruption, not first run).
     ///
     /// - Parameters:
-    ///   - dbPath: Absolute path to the SQLite database file.
-    ///   - dbDirectory: Directory containing the database file.
+    ///   - dbPath: Absolute logical database path (the `.db` path).
+    ///   - dbDirectory: Directory containing the index file.
     ///   - pidPath: Absolute path to the PID file.
-    /// - Throws: ``IndexRecoveryError`` if recovery fails or schema is incompatible.
+    /// - Throws: ``IndexRecoveryError`` if recovery fails.
     public static func runStartupRecovery(dbPath: String, dbDirectory: String, pidPath: String) throws {
         logger.info("Running startup recovery sequence")
 
@@ -319,62 +218,15 @@ public enum IndexRecovery {
             logger.info("Cleaned up stale daemon lock file")
         }
 
-        // 2. Clean up WAL and SHM files
-        cleanupWALFiles(dbDirectory: dbDirectory)
-
-        // 3. Check schema compatibility before integrity check
-        //    (newer schema is unrecoverable — must not auto-delete)
-        if !verifySchemaCompatibility(dbPath: dbPath) {
-            var version = 0
-            var compatDB: OpaquePointer?
-            if sqlite3_open_v2(dbPath, &compatDB, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK,
-               let compatDB {
-                version = SchemaMigrator.readSchemaVersion(on: compatDB)
-                sqlite3_close(compatDB)
-            }
-            throw IndexRecoveryError.schemaIncompatibility(
-                current: version,
-                required: SchemaMigrator.currentSchemaVersion
-            )
-        }
-
-        // 4. Check database integrity
-        if !verifyIntegrity(dbPath: dbPath) {
-            logger.warning("Database integrity check failed — initiating auto-rebuild")
+        // 2. Validate binary header. Absent file = first run (healthy).
+        let bin = binPath(for: dbPath)
+        let binExists = FileManager.default.fileExists(atPath: bin)
+        if binExists && !verifyIntegrity(dbPath: dbPath) {
+            // Header is invalid AND a file exists → corruption. Auto-rebuild.
+            logger.warning("Binary index corrupt — initiating auto-rebuild")
             try recover(dbPath: dbPath, dbDirectory: dbDirectory)
         }
 
         logger.info("Startup recovery sequence complete")
-    }
-
-    // MARK: - Private Helpers
-
-    /// Attempt a WAL checkpoint (TRUNCATE mode) on the given database.
-    ///
-    /// Returns `true` on success, `false` on any failure. Failures are logged
-    /// but not thrown — the caller falls back to deleting WAL files.
-    ///
-    /// - Parameter dbPath: Absolute path to the SQLite database file.
-    /// - Returns: `true` if the checkpoint succeeded.
-    private static func checkpointWAL(dbPath: String) -> Bool {
-        var db: OpaquePointer?
-        let flags = SQLITE_OPEN_READWRITE
-        let rc = sqlite3_open_v2(dbPath, &db, flags, nil)
-        guard rc == SQLITE_OK, let db else {
-            logger.warning("Cannot open database for WAL checkpoint")
-            sqlite3_close(db)
-            return false
-        }
-        defer { sqlite3_close(db) }
-
-        let checkpointRC = sqlite3_wal_checkpoint_v2(
-            db, nil, SQLITE_CHECKPOINT_TRUNCATE, nil, nil
-        )
-        if checkpointRC != SQLITE_OK {
-            logger.warning("WAL checkpoint failed: code \(checkpointRC)")
-            return false
-        }
-
-        return true
     }
 }
