@@ -7,29 +7,88 @@
 #include <ctype.h>
 #include <pthread.h>
 
-// ── Name entry in sorted array ──────────────────────────
+// ── Single-allocation entry ─────────────────────────────
+// All per-record strings are inlined in data[] so each record is exactly ONE
+// calloc (was: 5 mallocs across FileMeta/NameSlot/PathSlot).
+// data[] layout: [name\0][lower_name\0][path\0][parent_path\0]
+//   name       = original-case display name (NFC)
+//   lower_name = lowercased name, for the sorted prefix array
+//   path       = full path (the single copy — path hash points here too)
+//   parent_path= full parent path
 typedef struct {
-    char*    name;       // lowercased, NFC, null-terminated (owned)
-    uint32_t record_id;
-} NameSlot;
-
-// ── File metadata ───────────────────────────────────────
-typedef struct {
-    char*    original_name;  // owned
-    char*    path;           // owned
-    char*    parent_path;    // owned
+    uint32_t id;
+    uint32_t name_len;       // bytes of name (excl. NUL)
+    uint32_t lower_len;      // bytes of lower_name (excl. NUL)
+    uint32_t path_len;       // bytes of path (excl. NUL); parent is the remainder
     int64_t  size;
     int64_t  created_at;
     int64_t  modified_at;
-    uint32_t id;
-    bool     is_directory;
-} FileMeta;
+    uint8_t  is_directory;
+    char     data[];
+} DFileMeta;
+
+static inline const char* dmeta_name(const DFileMeta* m)   { return m->data; }
+static inline const char* dmeta_lower(const DFileMeta* m)  { return m->data + m->name_len + 1; }
+static inline const char* dmeta_path(const DFileMeta* m)   {
+    return m->data + m->name_len + 1 + m->lower_len + 1;
+}
+static inline const char* dmeta_parent(const DFileMeta* m) {
+    return dmeta_path(m) + m->path_len + 1;
+}
+
+// One calloc; returns NULL on bad input / OOM. Treats NULL strings as empty.
+static DFileMeta* dmeta_create(uint32_t id, const char* name, const char* lower_name,
+                               const char* path, const char* parent_path,
+                               bool is_directory, int64_t size,
+                               int64_t created_at, int64_t modified_at) {
+    if (!name)        name        = "";
+    if (!lower_name)  lower_name  = "";
+    if (!path)        path        = "";
+    if (!parent_path) parent_path = "";
+
+    uint32_t name_len   = (uint32_t)strlen(name);
+    uint32_t lower_len  = (uint32_t)strlen(lower_name);
+    uint32_t path_len   = (uint32_t)strlen(path);
+    uint32_t parent_len = (uint32_t)strlen(parent_path);
+
+    size_t total = sizeof(DFileMeta)
+                 + (size_t)name_len + 1
+                 + (size_t)lower_len + 1
+                 + (size_t)path_len + 1
+                 + (size_t)parent_len + 1;
+    DFileMeta* m = (DFileMeta*)calloc(1, total);
+    if (!m) return NULL;
+
+    m->id          = id;
+    m->name_len    = name_len;
+    m->lower_len   = lower_len;
+    m->path_len    = path_len;
+    m->size        = size;
+    m->created_at  = created_at;
+    m->modified_at = modified_at;
+    m->is_directory = is_directory ? 1 : 0;
+
+    char* p = m->data;
+    memcpy(p, name, name_len);        p[name_len] = '\0';   p += name_len + 1;
+    memcpy(p, lower_name, lower_len); p[lower_len] = '\0';  p += lower_len + 1;
+    memcpy(p, path, path_len);        p[path_len] = '\0';   p += path_len + 1;
+    memcpy(p, parent_path, parent_len); p[parent_len] = '\0';
+    return m;
+}
+
+// ── Name entry in sorted array ──────────────────────────
+// name is NON-OWNING: it points into a DFileMeta.data lower_name.
+typedef struct {
+    const char* name;
+    uint32_t    record_id;
+} NameSlot;
 
 // ── Path → record index hash entry ──────────────────────
+// path is NON-OWNING: it points into a DFileMeta.data path.
 typedef struct {
-    char*    path;       // owned key
-    uint32_t meta_idx;   // index into metas[] array
-    bool     used;
+    const char* path;
+    uint32_t    meta_idx;   // index into metas[] array
+    bool        used;
 } PathSlot;
 
 // ── Main index struct ───────────────────────────────────
@@ -47,10 +106,10 @@ struct CIndex {
     uint32_t  name_count;
     uint32_t  name_cap;
 
-    // Dense metadata array
-    FileMeta* metas;
-    uint32_t  meta_count;
-    uint32_t  meta_cap;
+    // Dense metadata array: array of pointers to single-allocation entries.
+    DFileMeta** metas;
+    uint32_t    meta_count;
+    uint32_t    meta_cap;
 
     // id → meta_idx direct map (O(1) lookup). UINT32_MAX = absent.
     // Lazily allocated; grows with next_id. ids never reuse (next_id only grows).
@@ -112,7 +171,7 @@ CIndex* cindex_create_with_path_cap(uint32_t path_cap) {
     idx->names = (NameSlot*)calloc(idx->name_cap, sizeof(NameSlot));
 
     idx->meta_cap = META_INIT_CAP;
-    idx->metas = (FileMeta*)calloc(idx->meta_cap, sizeof(FileMeta));
+    idx->metas = (DFileMeta**)calloc(idx->meta_cap, sizeof(DFileMeta*));
 
     // Round path_cap up to a power of two (min 16). The hash table relies on
     // capacity being a power of two so `hash & mask` distributes uniformly.
@@ -136,18 +195,15 @@ CIndex* cindex_create(void) {
 void cindex_destroy(CIndex* idx) {
     if (!idx) return;
     pthread_mutex_lock(&idx->mutex);
-    for (uint32_t i = 0; i < idx->name_count; i++) free(idx->names[i].name);
+    // Each DFileMeta owns all its strings; freeing it frees them. NameSlot.name
+    // and PathSlot.path are non-owning pointers into a DFileMeta, so do NOT free
+    // them here — just free the arrays.
     for (uint32_t i = 0; i < idx->meta_count; i++) {
-        free(idx->metas[i].original_name);
-        free(idx->metas[i].path);
-        free(idx->metas[i].parent_path);
-    }
-    for (uint32_t i = 0; i <= idx->path_hash_mask; i++) {
-        free(idx->path_hash[i].path);
+        free(idx->metas[i]);
     }
     free(idx->names);
     free(idx->metas);
-    free(idx->path_hash);
+    free(idx->path_hash);   // array only; path strings owned by DFileMeta
     free(idx->id_index);
     CTrigramIndex* tri = idx->tri;
     pthread_mutex_unlock(&idx->mutex);
@@ -212,7 +268,7 @@ static void path_insert(CIndex* idx, const char* path, uint32_t meta_idx) {
         }
         h = (h + 1) & idx->path_hash_mask;
     }
-    idx->path_hash[h].path = strdup(path);
+    idx->path_hash[h].path = path;   // non-owning: points into a DFileMeta
     idx->path_hash[h].meta_idx = meta_idx;
     idx->path_hash[h].used = true;
     idx->path_count++;
@@ -240,8 +296,8 @@ static void path_remove(CIndex* idx, const char* path) {
     }
     if (!found) return;
 
-    // 2. Free the entry, creating a gap at slot t.
-    free(idx->path_hash[t].path);
+    // 2. Vacate the entry, creating a gap at slot t. The path string is owned
+    //    by its DFileMeta — do NOT free it here; just drop the non-owning pointer.
     idx->path_hash[t].path = NULL;
     idx->path_hash[t].used = false;
     idx->path_hash[t].meta_idx = 0;
@@ -292,7 +348,8 @@ static void name_insert_at(CIndex* idx, uint32_t pos, const char* name, uint32_t
     // Shift right
     memmove(&idx->names[pos + 1], &idx->names[pos],
             (idx->name_count - pos) * sizeof(NameSlot));
-    idx->names[pos].name = strdup(name);
+    // Non-owning: `name` points into a DFileMeta.data lower_name.
+    idx->names[pos].name = name;
     idx->names[pos].record_id = id;
     idx->name_count++;
 }
@@ -301,7 +358,7 @@ static void name_remove(CIndex* idx, const char* name, uint32_t id) {
     uint32_t pos = name_lower_bound(idx, name);
     while (pos < idx->name_count && strcmp(idx->names[pos].name, name) == 0) {
         if (idx->names[pos].record_id == id) {
-            free(idx->names[pos].name);
+            // Non-owning name pointer; do NOT free it (owned by DFileMeta).
             // Shift left
             if (pos < idx->name_count - 1) {
                 memmove(&idx->names[pos], &idx->names[pos + 1],
@@ -334,34 +391,38 @@ uint32_t cindex_insert(CIndex* idx,
 
     pthread_mutex_lock(&idx->mutex);
 
+    // Pre-build the lowercased name (dmeta_create copies it into the entry).
+    char* lower = strdup_lower(name);
+    if (!lower) {
+        pthread_mutex_unlock(&idx->mutex);
+        return 0;
+    }
+
     // Check for existing path (upsert)
     uint32_t existing = path_lookup(idx, path);
     if (existing != UINT32_MAX) {
-        FileMeta* m = &idx->metas[existing];
-        // Remove old name entry
-        char* old_lower = strdup_lower(m->original_name);
-        if (old_lower) {
-            name_remove(idx, old_lower, m->id);
-            free(old_lower);
-        }
-        free(m->original_name);
-        free(m->path);
-        free(m->parent_path);
+        DFileMeta* old = idx->metas[existing];
+        uint32_t   old_id = old->id;
 
-        // Update metadata
-        m->original_name = strdup(original_name ? original_name : "");
-        m->path = strdup(path);
-        m->parent_path = strdup(parent_path ? parent_path : "");
-        m->size = size;
-        m->created_at = created_at;
-        m->modified_at = modified_at;
-        m->is_directory = is_directory;
+        // Remove old name + path entries BEFORE freeing old.
+        name_remove(idx, dmeta_lower(old), old_id);
+        path_remove(idx, dmeta_path(old));
 
-        // Re-insert name
-        char* lower = strdup_lower(name);
-        uint32_t pos = name_lower_bound(idx, lower);
-        name_insert_at(idx, pos, lower, m->id);
+        DFileMeta* m = dmeta_create(old_id, original_name ? original_name : "",
+                                    lower, path, parent_path ? parent_path : "",
+                                    is_directory, size, created_at, modified_at);
         free(lower);
+        if (!m) {
+            pthread_mutex_unlock(&idx->mutex);
+            return 0;
+        }
+        free(old);
+        idx->metas[existing] = m;
+
+        // Re-insert name + path pointing into the new DFileMeta.
+        path_insert(idx, dmeta_path(m), existing);
+        uint32_t pos = name_lower_bound(idx, dmeta_lower(m));
+        name_insert_at(idx, pos, dmeta_lower(m), m->id);
 
         // Update trigram index (re-insert updates the stored name for this id).
         if (idx->tri) ctrigram_insert(idx->tri, name, m->id);
@@ -373,35 +434,35 @@ uint32_t cindex_insert(CIndex* idx,
     // Expand metas if needed
     if (idx->meta_count >= idx->meta_cap) {
         idx->meta_cap *= 2;
-        idx->metas = (FileMeta*)realloc(idx->metas, idx->meta_cap * sizeof(FileMeta));
+        idx->metas = (DFileMeta**)realloc(idx->metas, idx->meta_cap * sizeof(DFileMeta*));
     }
 
     uint32_t meta_idx = idx->meta_count++;
     uint32_t id = idx->next_id++;
 
+    DFileMeta* m = dmeta_create(id, original_name ? original_name : "",
+                                lower, path, parent_path ? parent_path : "",
+                                is_directory, size, created_at, modified_at);
+    free(lower);
+    if (!m) {
+        // Roll back the meta_count/next_id bump; id_index not yet registered.
+        idx->meta_count--;
+        idx->next_id--;
+        pthread_mutex_unlock(&idx->mutex);
+        return 0;
+    }
+
     id_index_ensure(idx, id);
     if (idx->id_index) idx->id_index[id] = meta_idx;
 
-    FileMeta* m = &idx->metas[meta_idx];
-    m->id = id;
-    m->original_name = strdup(original_name ? original_name : "");
-    m->path = strdup(path);
-    m->parent_path = strdup(parent_path ? parent_path : "");
-    m->size = size;
-    m->created_at = created_at;
-    m->modified_at = modified_at;
-    m->is_directory = is_directory;
+    idx->metas[meta_idx] = m;
 
     if (!is_directory) idx->file_count++;
 
-    // Insert into path hash
-    path_insert(idx, path, meta_idx);
-
-    // Insert into sorted names
-    char* lower = strdup_lower(name);
-    uint32_t pos = name_lower_bound(idx, lower);
-    name_insert_at(idx, pos, lower, id);
-    free(lower);
+    // Insert into path hash + sorted names (both point into the new DFileMeta).
+    path_insert(idx, dmeta_path(m), meta_idx);
+    uint32_t pos = name_lower_bound(idx, dmeta_lower(m));
+    name_insert_at(idx, pos, dmeta_lower(m), id);
 
     // Insert into trigram index.
     if (idx->tri) ctrigram_insert(idx->tri, name, id);
@@ -411,54 +472,45 @@ uint32_t cindex_insert(CIndex* idx,
 }
 
 // Internal: remove by ID, assumes mutex is already held.
+// O(1) via the id→meta_idx direct map. Behavior matches the prior linear scan.
 static bool cindex_remove_locked(CIndex* idx, uint32_t id) {
-    for (uint32_t i = 0; i < idx->meta_count; i++) {
-        if (idx->metas[i].id == id) {
-            FileMeta* m = &idx->metas[i];
+    if (id == 0 || id >= idx->id_index_cap) return false;
+    uint32_t i = idx->id_index[id];
+    if (i >= idx->meta_count) return false;       // UINT32_MAX or stale
+    DFileMeta* m = idx->metas[i];
+    if (m->id != id) return false;                // stale
 
-            // Capture the removed record's flags BEFORE the swap-with-last below,
-            // which overwrites *m with a different record.
-            bool was_directory = m->is_directory;
+    bool was_directory = m->is_directory != 0;
 
-            // Remove from names
-            char* lower = strdup_lower(m->original_name);
-            if (lower) {
-                name_remove(idx, lower, id);
-                free(lower);
-            }
+    // Remove from names + path hash (read pointers out of m, which is still live).
+    name_remove(idx, dmeta_lower(m), id);
+    path_remove(idx, dmeta_path(m));
 
-            // Remove from path hash
-            path_remove(idx, m->path);
+    // Remove from trigram index.
+    if (idx->tri) ctrigram_remove(idx->tri, id);
 
-            // Remove from trigram index.
-            if (idx->tri) ctrigram_remove(idx->tri, id);
+    // Clear the removed id from the direct map.
+    idx->id_index[id] = UINT32_MAX;
 
-            // Free strings
-            free(m->original_name);
-            free(m->path);
-            free(m->parent_path);
-
-            // Clear the removed id from the direct map.
-            if (idx->id_index && id < idx->id_index_cap) {
-                idx->id_index[id] = UINT32_MAX;
-            }
-
-            // Compact metas array (swap with last)
-            if (i < idx->meta_count - 1) {
-                idx->metas[i] = idx->metas[idx->meta_count - 1];
-                // The swapped record (now at index i) must point its id here.
-                if (idx->id_index && idx->metas[i].id < idx->id_index_cap) {
-                    idx->id_index[idx->metas[i].id] = i;
-                }
-                // Update path hash for the swapped entry
-                path_insert(idx, idx->metas[i].path, i);
-            }
-            idx->meta_count--;
-            if (!was_directory) idx->file_count--;
-            return true;
+    // Compact metas array (swap with last). If a record was swapped into slot i,
+    // fix its id_index mapping and its PathSlot.meta_idx (path string is still the
+    // swapped record's own, only the index moved).
+    if (i < idx->meta_count - 1) {
+        DFileMeta* moved = idx->metas[idx->meta_count - 1];
+        idx->metas[i] = moved;
+        if (moved->id < idx->id_index_cap) {
+            idx->id_index[moved->id] = i;
         }
+        path_insert(idx, dmeta_path(moved), i);
     }
-    return false;
+    idx->meta_count--;
+
+    // Free the removed DFileMeta LAST — it owns all its strings, and nothing
+    // above references it after name_remove/path_remove/path_insert returned.
+    free(m);
+
+    if (!was_directory) idx->file_count--;
+    return true;
 }
 
 bool cindex_remove(CIndex* idx, uint32_t id) {
@@ -475,7 +527,7 @@ bool cindex_remove_by_path(CIndex* idx, const char* path) {
     uint32_t meta_idx = path_lookup(idx, path);
     bool ok = false;
     if (meta_idx != UINT32_MAX) {
-        ok = cindex_remove_locked(idx, idx->metas[meta_idx].id);
+        ok = cindex_remove_locked(idx, idx->metas[meta_idx]->id);
     }
     pthread_mutex_unlock(&idx->mutex);
     return ok;
@@ -588,11 +640,11 @@ static void id_index_ensure(CIndex* idx, uint32_t id) {
     idx->id_index_cap = new_cap;
 }
 
-static FileMeta* find_meta_by_id(const CIndex* idx, uint32_t id) {
+static DFileMeta* find_meta_by_id(const CIndex* idx, uint32_t id) {
     if (id == 0 || id >= idx->id_index_cap) return NULL;
     uint32_t mi = idx->id_index[id];
     if (mi >= idx->meta_count) return NULL;  // UINT32_MAX or stale
-    FileMeta* m = (FileMeta*)&idx->metas[mi];
+    DFileMeta* m = idx->metas[mi];
     return m->id == id ? m : NULL;
 }
 
@@ -601,15 +653,13 @@ uint32_t cindex_iterate(const CIndex* idx, cindex_iterate_cb cb, void* user_data
     pthread_mutex_lock(&((CIndex*)idx)->mutex);
     uint32_t count = 0;
     for (uint32_t i = 0; i < idx->meta_count; i++) {
-        FileMeta* m = &idx->metas[i];
-        // Use original_name as the display name; name is lowercased for search
-        const char* name = m->original_name;
-        // Find the lowercased name from the names array
-        // (We don't have a direct back-pointer, so pass original_name as name too —
-        //  the callback can lower-case if needed)
-        cb(m->id, m->original_name, m->original_name,
-           m->path, m->parent_path,
-           m->is_directory, m->size, m->created_at, m->modified_at,
+        DFileMeta* m = idx->metas[i];
+        // name and original_name both = dmeta_name, matching the prior behavior
+        // (the lowercased name is for internal search only; callers display the
+        // original-case name).
+        cb(m->id, dmeta_name(m), dmeta_name(m),
+           dmeta_path(m), dmeta_parent(m),
+           m->is_directory != 0, m->size, m->created_at, m->modified_at,
            user_data);
         count++;
     }
@@ -623,18 +673,20 @@ CRecordCopy cindex_copy_record(const CIndex* idx, uint32_t id) {
     CRecordCopy out = {0};
     if (!idx) return out;
     pthread_mutex_lock(&((CIndex*)idx)->mutex);
-    FileMeta* m = find_meta_by_id((CIndex*)idx, id);
+    DFileMeta* m = find_meta_by_id((CIndex*)idx, id);
     if (m) {
-        out.name = strdup(m->original_name);
-        out.original_name = strdup(m->original_name);
-        out.path = strdup(m->path);
-        out.parent_path = strdup(m->parent_path);
-        out.size = m->size;
-        out.created_at = m->created_at;
-        out.modified_at = m->modified_at;
-        out.id = m->id;
-        out.is_directory = m->is_directory;
-        out.valid = true;
+        // CRecordCopy owns its strdup'd copies (cross-thread safe). The DFileMeta's
+        // strings are not freed by this copy.
+        out.name         = strdup(dmeta_name(m));
+        out.original_name = strdup(dmeta_name(m));
+        out.path         = strdup(dmeta_path(m));
+        out.parent_path  = strdup(dmeta_parent(m));
+        out.size         = m->size;
+        out.created_at   = m->created_at;
+        out.modified_at  = m->modified_at;
+        out.id           = m->id;
+        out.is_directory = m->is_directory != 0;
+        out.valid        = true;
     }
     pthread_mutex_unlock(&((CIndex*)idx)->mutex);
     return out;
@@ -654,41 +706,41 @@ void cindex_free_record_copy(CRecordCopy* r) {
 const char* cindex_get_name(const CIndex* idx, uint32_t id) {
     // Note: returned pointer is valid only until next insert/remove.
     // Prefer cindex_copy_record for safe access from other threads.
-    FileMeta* m = find_meta_by_id((CIndex*)idx, id);
-    return m ? m->original_name : NULL;
+    DFileMeta* m = find_meta_by_id((CIndex*)idx, id);
+    return m ? dmeta_name(m) : NULL;
 }
 
 const char* cindex_get_original_name(const CIndex* idx, uint32_t id) {
-    FileMeta* m = find_meta_by_id((CIndex*)idx, id);
-    return m ? m->original_name : NULL;
+    DFileMeta* m = find_meta_by_id((CIndex*)idx, id);
+    return m ? dmeta_name(m) : NULL;
 }
 
 const char* cindex_get_path(const CIndex* idx, uint32_t id) {
-    FileMeta* m = find_meta_by_id((CIndex*)idx, id);
-    return m ? m->path : NULL;
+    DFileMeta* m = find_meta_by_id((CIndex*)idx, id);
+    return m ? dmeta_path(m) : NULL;
 }
 
 const char* cindex_get_parent_path(const CIndex* idx, uint32_t id) {
-    FileMeta* m = find_meta_by_id((CIndex*)idx, id);
-    return m ? m->parent_path : NULL;
+    DFileMeta* m = find_meta_by_id((CIndex*)idx, id);
+    return m ? dmeta_parent(m) : NULL;
 }
 
 bool cindex_is_directory(const CIndex* idx, uint32_t id) {
-    FileMeta* m = find_meta_by_id((CIndex*)idx, id);
-    return m ? m->is_directory : false;
+    DFileMeta* m = find_meta_by_id((CIndex*)idx, id);
+    return m ? (m->is_directory != 0) : false;
 }
 
 int64_t cindex_get_size(const CIndex* idx, uint32_t id) {
-    FileMeta* m = find_meta_by_id((CIndex*)idx, id);
+    DFileMeta* m = find_meta_by_id((CIndex*)idx, id);
     return m ? m->size : 0;
 }
 
 int64_t cindex_get_created_at(const CIndex* idx, uint32_t id) {
-    FileMeta* m = find_meta_by_id((CIndex*)idx, id);
+    DFileMeta* m = find_meta_by_id((CIndex*)idx, id);
     return m ? m->created_at : 0;
 }
 
 int64_t cindex_get_modified_at(const CIndex* idx, uint32_t id) {
-    FileMeta* m = find_meta_by_id((CIndex*)idx, id);
+    DFileMeta* m = find_meta_by_id((CIndex*)idx, id);
     return m ? m->modified_at : 0;
 }
