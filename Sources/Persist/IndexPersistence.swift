@@ -245,7 +245,23 @@ public actor IndexPersistence {
             logger.warning("loadAllRecords called after close; returning []")
             return []
         }
-        let records = try engine.load()
+        let records: [FileRecord]
+        do {
+            records = try engine.load()
+        } catch {
+            // A header-valid but body-corrupt index.bin passes IndexRecovery's
+            // 16-byte header check but throws here. Self-heal: delete the corrupt
+            // snapshot (bin + cursor) and return [] so the daemon rescans — the
+            // same fallback used for a missing index. Without this the throw
+            // propagates to DaemonMain and crash-loops the daemon (recovery still
+            // passes the header on the next launch).
+            logger.error("index.bin failed to load (\(error.localizedDescription)); deleting and rescanning")
+            if let dbPath = _dbPath {
+                let dir = (dbPath as NSString).deletingLastPathComponent
+                try? IndexRecovery.recover(dbPath: dbPath, dbDirectory: dir)
+            }
+            return []
+        }
         logger.info("Loaded \(records.count) records from binary index")
         return records
     }

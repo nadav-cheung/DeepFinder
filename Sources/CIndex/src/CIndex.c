@@ -342,8 +342,11 @@ static uint32_t name_lower_bound(const CIndex* idx, const char* name) {
 
 static void name_insert_at(CIndex* idx, uint32_t pos, const char* name, uint32_t id) {
     if (idx->name_count >= idx->name_cap) {
-        idx->name_cap *= 2;
-        idx->names = (NameSlot*)realloc(idx->names, idx->name_cap * sizeof(NameSlot));
+        uint32_t new_cap = idx->name_cap * 2;
+        NameSlot* grown = (NameSlot*)realloc(idx->names, new_cap * sizeof(NameSlot));
+        if (!grown) return;  // OOM: don't clobber idx->names (leak) or NULL-deref; skip this insert
+        idx->names = grown;
+        idx->name_cap = new_cap;
     }
     // Shift right
     memmove(&idx->names[pos + 1], &idx->names[pos],
@@ -413,6 +416,12 @@ uint32_t cindex_insert(CIndex* idx,
                                     is_directory, size, created_at, modified_at);
         free(lower);
         if (!m) {
+            // OOM allocating the replacement: restore old's registration (we
+            // removed it above) so the index stays consistent — old remains
+            // findable by path/name/id. (The trigram span for old_id was never
+            // cleared on the upsert path, so it needs no restore.)
+            path_insert(idx, dmeta_path(old), existing);
+            name_insert_at(idx, name_lower_bound(idx, dmeta_lower(old)), dmeta_lower(old), old_id);
             pthread_mutex_unlock(&idx->mutex);
             return 0;
         }
@@ -435,8 +444,15 @@ uint32_t cindex_insert(CIndex* idx,
 
     // Expand metas if needed
     if (idx->meta_count >= idx->meta_cap) {
-        idx->meta_cap *= 2;
-        idx->metas = (DFileMeta**)realloc(idx->metas, idx->meta_cap * sizeof(DFileMeta*));
+        uint32_t new_cap = idx->meta_cap * 2;
+        DFileMeta** grown = (DFileMeta**)realloc(idx->metas, new_cap * sizeof(DFileMeta*));
+        if (!grown) {  // OOM: bail before bumping meta_count/next_id; don't leak idx->metas
+            free(lower);
+            pthread_mutex_unlock(&idx->mutex);
+            return 0;
+        }
+        idx->metas = grown;
+        idx->meta_cap = new_cap;
     }
 
     uint32_t meta_idx = idx->meta_count++;
@@ -604,14 +620,18 @@ uint32_t cindex_search_substring(const CIndex* idx, const char* substring,
     if (!idx || !substring || !out_ids) return 0;
     if (!*substring) return 0;
 
-    // Delegate to the trigram inverted index. Its own mutex serializes access;
-    // acquiring the CIndex mutex first (in callers of cindex_remove/insert) and
-    // then the trigram mutex inside is a strict, acyclic lock order (the trigram
-    // index never calls back into CIndex). Cast away const exactly as the other
-    // const query functions do for their mutex acquisition.
+    // The trigram index stores NON-OWNING pointers into DFileMeta.lower_name,
+    // and those entries are allocated/freed/relocated by cindex_insert/remove
+    // under idx->mutex. This query must hold idx->mutex while ctrigram_search
+    // dereferences them — for pointer-LIFETIME safety, not deadlock-avoidance.
+    // (ctrigram_search then takes tri->mutex; lock order is strictly
+    // CIndex→CTrigram, acyclic.) Cast away const as the other const query funcs do.
     CIndex* mut = (CIndex*)idx;
     if (!mut->tri) return 0;
-    return ctrigram_search(mut->tri, substring, out_ids, max_results);
+    pthread_mutex_lock(&mut->mutex);
+    uint32_t found = ctrigram_search(mut->tri, substring, out_ids, max_results);
+    pthread_mutex_unlock(&mut->mutex);
+    return found;
 }
 
 // ── Iterate ────────────────────────────────────────────
