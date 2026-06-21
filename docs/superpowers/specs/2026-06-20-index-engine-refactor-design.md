@@ -1,7 +1,7 @@
 # Index 引擎重构 — 设计
 
 **日期**: 2026-06-20
-**状态**: Draft(待 review)
+**状态**: Implemented(P0–P4 完成于 `refactor/index-engine` 分支,2026-06-21;IndexTests 48 + PersistTests 71 全绿;未合并 main。REQ 内联状态图标更新留作后续)
 **范围**: 重构 DeepFinder 的索引后端,对标两个开源参考(Cling = macOS 原生 Everything;FSearch = C 版 Everything 克隆)。核心目标:**单分配 entry + 字符串去重 + 修两个潜在 bug + 用二进制格式替换 SQLite 持久化**。**保留** Trie + FullSubstringMap + trigram 查询路径(经核实比两个参考都强)。
 
 参考项目已 clone 到 `~/IdeaProjects/references/{Cling,fsearch}`,4 个 agent 精读 + 1 个 agent 核实当前 CIndex 真实状态。本设计所有结论均带 file:line,经交叉验证。
