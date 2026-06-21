@@ -218,21 +218,54 @@ static void path_insert(CIndex* idx, const char* path, uint32_t meta_idx) {
     idx->path_count++;
 }
 
+// Remove `path` from the open-addressing table using backward-shift deletion
+// (Knuth TAOCP §6.4, Algorithm R). Naive "mark empty" deletion leaves a gap in
+// a collision chain that makes path_lookup stop early and miss later chain-mates;
+// cindex_remove_locked's swap-with-last reinsert masks it in some cases but not
+// all — a swapped record whose home is in a different bucket leaves the gap, so
+// any record that probed past it is lost. Backshift relocates each following
+// cluster entry into the gap whenever the gap lies within that entry's legal
+// probe range, keeping every cluster contiguous.
 static void path_remove(CIndex* idx, const char* path) {
-    uint32_t h = path_hash_fn(path) & idx->path_hash_mask;
-    uint32_t original = h;
-    do {
-        PathSlot* slot = &idx->path_hash[h];
-        if (!slot->used) return;
-        if (strcmp(slot->path, path) == 0) {
-            free(slot->path);
-            slot->path = NULL;
-            slot->used = false;
-            idx->path_count--;
-            return;
+    uint32_t mask = idx->path_hash_mask;
+
+    // 1. Find the slot index holding `path`.
+    uint32_t t = path_hash_fn(path) & mask;
+    bool found = false;
+    for (uint32_t steps = 0, cap = mask + 1; steps < cap; steps++) {
+        PathSlot* slot = &idx->path_hash[t];
+        if (!slot->used) return;                       // not found
+        if (strcmp(slot->path, path) == 0) { found = true; break; }
+        t = (t + 1) & mask;
+    }
+    if (!found) return;
+
+    // 2. Free the entry, creating a gap at slot t.
+    free(idx->path_hash[t].path);
+    idx->path_hash[t].path = NULL;
+    idx->path_hash[t].used = false;
+    idx->path_hash[t].meta_idx = 0;
+    idx->path_count--;
+
+    // 3. Walk the cluster past the gap and relocate each entry into the gap when
+    //    the gap lies within that entry's legal linear-probe range. The cyclic
+    //    test (gap-home) mod m ≤ (j-home) mod m holds iff the gap is on entry j's
+    //    probe path, so moving it back fills the gap without breaking invariants.
+    uint32_t gap = t;
+    uint32_t j = t;
+    for (;;) {
+        j = (j + 1) & mask;
+        PathSlot* js = &idx->path_hash[j];
+        if (!js->used) break;                          // end of cluster
+        uint32_t home = path_hash_fn(js->path) & mask;
+        if (((gap - home) & mask) <= ((j - home) & mask)) {
+            idx->path_hash[gap] = *js;                 // relocate (path ptr owned)
+            js->path = NULL;
+            js->used = false;
+            js->meta_idx = 0;
+            gap = j;
         }
-        h = (h + 1) & idx->path_hash_mask;
-    } while (h != original);
+    }
 }
 
 // ── Sorted name array ───────────────────────────────────
