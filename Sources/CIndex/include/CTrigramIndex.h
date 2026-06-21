@@ -46,16 +46,8 @@ bool ctrigram_remove(CTrigramIndex* ti, uint32_t id);
 uint32_t ctrigram_search(CTrigramIndex* ti, const char* query,
                          uint32_t** out_ids, uint32_t max_results);
 
-// Return a pointer to the lowercased stored name for `id`, or NULL if absent.
-// The pointer is the non-owning pointer the caller passed to ctrigram_insert;
-// it is valid as long as the caller's backing storage is live.
-const char* ctrigram_name(CTrigramIndex* ti, uint32_t id);
-
 // Number of documents currently indexed.
 uint32_t ctrigram_doc_count(const CTrigramIndex* ti);
-
-// Force a merge of any pending insertions into the block index. Thread-safe.
-void ctrigram_flush(CTrigramIndex* ti);
 
 #ifdef __cplusplus
 }

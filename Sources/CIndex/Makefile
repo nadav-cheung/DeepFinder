@@ -18,8 +18,8 @@ PREFIX   ?= /usr/local
 SRCDIR   := src
 INCDIR   := include
 
-OBJS = $(SRCDIR)/CIndex.o $(SRCDIR)/CFileScanner.o $(SRCDIR)/CParallelScanner.o $(SRCDIR)/CTrigramIndex.o
-HEADERS = $(INCDIR)/CIndex.h $(INCDIR)/CTrigramIndex.h $(INCDIR)/CFileScanner.h $(INCDIR)/CParallelScanner.h $(INCDIR)/dfindex.h
+OBJS = $(SRCDIR)/CIndex.o $(SRCDIR)/CParallelScanner.o $(SRCDIR)/CTrigramIndex.o
+HEADERS = $(INCDIR)/CIndex.h $(INCDIR)/CTrigramIndex.h $(INCDIR)/CParallelScanner.h $(INCDIR)/dfindex.h
 
 .PHONY: all lib demo test install clean
 

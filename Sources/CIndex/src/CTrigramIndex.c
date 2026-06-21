@@ -331,26 +331,13 @@ bool ctrigram_remove(CTrigramIndex* ti, uint32_t id) {
         if (ti->doc_count > 0) ti->doc_count--;
         found = true;
         // Note: stale posting entries for this id may remain until a rebuild;
-        // they are inert because ctrigram_name()/verification returns NULL.
+        // they are inert because verification rejects tombstoned spans.
     }
     pthread_mutex_unlock(&ti->mutex);
     return found;
 }
 
-// ── name / doc_count ────────────────────────────────────
-
-const char* ctrigram_name(CTrigramIndex* ti, uint32_t id) {
-    if (!ti) return NULL;
-    // Read-only fast path: caller holds no other lock, and our public contract
-    // is "valid until next rebuild". Lock briefly to get a consistent view.
-    pthread_mutex_lock(&ti->mutex);
-    const char* result = NULL;
-    if (id < ti->spans_cap && ti->spans[id].len > 0) {
-        result = ti->spans[id].name;   // non-owning pointer into caller's storage
-    }
-    pthread_mutex_unlock(&ti->mutex);
-    return result;
-}
+// ── doc_count ───────────────────────────────────────────
 
 uint32_t ctrigram_doc_count(const CTrigramIndex* ti) {
     if (!ti) return 0;
@@ -358,13 +345,6 @@ uint32_t ctrigram_doc_count(const CTrigramIndex* ti) {
     uint32_t c = ti->doc_count;
     pthread_mutex_unlock(&((CTrigramIndex*)ti)->mutex);
     return c;
-}
-
-void ctrigram_flush(CTrigramIndex* ti) {
-    if (!ti) return;
-    pthread_mutex_lock(&ti->mutex);
-    ctrigram_flush_locked(ti);
-    pthread_mutex_unlock(&ti->mutex);
 }
 
 // ── Search ──────────────────────────────────────────────

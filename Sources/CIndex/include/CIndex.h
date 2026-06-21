@@ -52,9 +52,6 @@ uint32_t cindex_count(const CIndex* idx);
 // Total number of records (files + directories).
 uint32_t cindex_total_records(const CIndex* idx);
 
-// Get the next auto-increment ID (for coordinating ID ranges).
-uint32_t cindex_next_id(const CIndex* idx);
-
 // Prefix search: find all IDs whose name starts with `prefix` (case-insensitive).
 // Returns the number of matches. `out_ids` receives the matching IDs (caller frees with free()).
 // Pass `max_results` to limit; 0 = unlimited.
@@ -76,27 +73,8 @@ typedef void (*cindex_iterate_cb)(
 );
 uint32_t cindex_iterate(const CIndex* idx, cindex_iterate_cb cb, void* user_data);
 
-// Safe record copy (for cross-thread single-ID lookup).
-// Caller must call cindex_free_record_copy when done.
-typedef struct {
-    char* name;
-    char* original_name;
-    char* path;
-    char* parent_path;
-    int64_t size;
-    int64_t created_at;
-    int64_t modified_at;
-    uint32_t id;
-    bool is_directory;
-    bool valid;
-} CRecordCopy;
-
-CRecordCopy cindex_copy_record(const CIndex* idx, uint32_t id);
-void cindex_free_record_copy(CRecordCopy* r);
-
 // Get a file's metadata by ID. Returns NULL if not found.
 // The returned pointer is valid until the next insert/remove.
-const char* cindex_get_name(const CIndex* idx, uint32_t id);
 const char* cindex_get_original_name(const CIndex* idx, uint32_t id);
 const char* cindex_get_path(const CIndex* idx, uint32_t id);
 const char* cindex_get_parent_path(const CIndex* idx, uint32_t id);
@@ -110,7 +88,6 @@ int64_t     cindex_get_modified_at(const CIndex* idx, uint32_t id);
 #endif
 
 // Sub-modules (included after CIndex type definitions)
-#include "CFileScanner.h"
 #include "CParallelScanner.h"
 
 #endif // CINDEX_H

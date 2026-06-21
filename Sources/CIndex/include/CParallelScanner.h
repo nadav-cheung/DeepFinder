@@ -49,13 +49,6 @@ void cpscanner_set_skip_paths(CParallelScanner* s, const char* const* paths,
 void cpscanner_set_max_depth(CParallelScanner* s, int max_depth);
 void cpscanner_set_follow_symlinks(CParallelScanner* s, bool follow);
 
-// Number of parallel workers. 0 = auto (physical CPU cores).
-void cpscanner_set_worker_count(CParallelScanner* s, uint32_t count);
-
-// Batch size for CIndex insertion (reduces mutex contention).
-// Default: 256. Larger = less locking but more stack memory per worker.
-void cpscanner_set_batch_size(CParallelScanner* s, uint32_t size);
-
 // ── Scan ─────────────────────────────────────────────────
 
 // Scan root_path, inserting all files/dirs into idx.

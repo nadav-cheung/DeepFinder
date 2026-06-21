@@ -554,14 +554,6 @@ uint32_t cindex_total_records(const CIndex* idx) {
     return c;
 }
 
-uint32_t cindex_next_id(const CIndex* idx) {
-    if (!idx) return 0;
-    pthread_mutex_lock(&((CIndex*)idx)->mutex);
-    uint32_t nid = idx->next_id;
-    pthread_mutex_unlock(&((CIndex*)idx)->mutex);
-    return nid;
-}
-
 uint32_t cindex_search_prefix(const CIndex* idx, const char* prefix,
                               uint32_t** out_ids, uint32_t max_results) {
     if (!idx || !prefix || !out_ids) return 0;
@@ -670,48 +662,7 @@ uint32_t cindex_iterate(const CIndex* idx, cindex_iterate_cb cb, void* user_data
     return count;
 }
 
-// ── Safe record copy (for single-ID lookup) ─────────────
-
-CRecordCopy cindex_copy_record(const CIndex* idx, uint32_t id) {
-    CRecordCopy out = {0};
-    if (!idx) return out;
-    pthread_mutex_lock(&((CIndex*)idx)->mutex);
-    DFileMeta* m = find_meta_by_id((CIndex*)idx, id);
-    if (m) {
-        // CRecordCopy owns its strdup'd copies (cross-thread safe). The DFileMeta's
-        // strings are not freed by this copy.
-        out.name         = strdup(dmeta_name(m));
-        out.original_name = strdup(dmeta_name(m));
-        out.path         = strdup(dmeta_path(m));
-        out.parent_path  = strdup(dmeta_parent(m));
-        out.size         = m->size;
-        out.created_at   = m->created_at;
-        out.modified_at  = m->modified_at;
-        out.id           = m->id;
-        out.is_directory = m->is_directory != 0;
-        out.valid        = true;
-    }
-    pthread_mutex_unlock(&((CIndex*)idx)->mutex);
-    return out;
-}
-
-void cindex_free_record_copy(CRecordCopy* r) {
-    if (!r) return;
-    free(r->name);
-    free(r->original_name);
-    free(r->path);
-    free(r->parent_path);
-    memset(r, 0, sizeof(*r));
-}
-
 // ── Metadata accessors ──────────────────────────────────
-
-const char* cindex_get_name(const CIndex* idx, uint32_t id) {
-    // Note: returned pointer is valid only until next insert/remove.
-    // Prefer cindex_copy_record for safe access from other threads.
-    DFileMeta* m = find_meta_by_id((CIndex*)idx, id);
-    return m ? dmeta_name(m) : NULL;
-}
 
 const char* cindex_get_original_name(const CIndex* idx, uint32_t id) {
     DFileMeta* m = find_meta_by_id((CIndex*)idx, id);
