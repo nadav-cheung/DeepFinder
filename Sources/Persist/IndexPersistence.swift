@@ -157,8 +157,32 @@ public actor IndexPersistence {
             }
         }
 
-        self.engine = try BinaryIndex(path: binPath, pathEncryption: pathEncryption)
+        let engine = try BinaryIndex(path: binPath, pathEncryption: pathEncryption)
+        self.engine = engine
         logger.info("Binary index ready at \(self.binPath, privacy: .public)")
+
+        // One-time SQLite→binary migration (P4): if no index.bin yet but a
+        // legacy index.db exists at the same location, read it once and seed
+        // index.bin so the user keeps their index across the upgrade. Only
+        // applies to on-disk dbs (`:memory:` never had a legacy SQLite file).
+        // Non-fatal on every failure path — a corrupt / unreadable legacy db
+        // is left in place and the daemon falls back to a full rescan, the
+        // same recovery used for a missing or corrupt index.bin.
+        if dbPath != ":memory:",
+           !BinaryIndex.exists(at: binPath),
+           FileManager.default.fileExists(atPath: dbPath) {
+            do {
+                let records = try LegacySQLiteReader.readRecords(
+                    at: dbPath, pathEncryption: pathEncryption
+                )
+                if !records.isEmpty {
+                    try engine.save(records)
+                    logger.info("Migrated \(records.count) records from legacy SQLite index.db → index.bin")
+                }
+            } catch {
+                logger.warning("SQLite→binary migration failed (\(error.localizedDescription, privacy: .public)); will rescan from scratch")
+            }
+        }
     }
 
     deinit {
