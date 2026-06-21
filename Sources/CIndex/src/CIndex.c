@@ -425,7 +425,9 @@ uint32_t cindex_insert(CIndex* idx,
         name_insert_at(idx, pos, dmeta_lower(m), m->id);
 
         // Update trigram index (re-insert updates the stored name for this id).
-        if (idx->tri) ctrigram_insert(idx->tri, name, m->id);
+        // Pass the already-lowercased lower_name; ctrigram_insert now stores a
+        // non-owning pointer into DFileMeta.data (no copy).
+        if (idx->tri) ctrigram_insert(idx->tri, dmeta_lower(m), m->id);
 
         pthread_mutex_unlock(&idx->mutex);
         return m->id;
@@ -464,8 +466,9 @@ uint32_t cindex_insert(CIndex* idx,
     uint32_t pos = name_lower_bound(idx, dmeta_lower(m));
     name_insert_at(idx, pos, dmeta_lower(m), id);
 
-    // Insert into trigram index.
-    if (idx->tri) ctrigram_insert(idx->tri, name, id);
+    // Insert into trigram index. Pass the already-lowercased lower_name;
+    // ctrigram_insert now stores a non-owning pointer into DFileMeta.data (no copy).
+    if (idx->tri) ctrigram_insert(idx->tri, dmeta_lower(m), id);
 
     pthread_mutex_unlock(&idx->mutex);
     return id;

@@ -1,8 +1,9 @@
 // CTrigramIndex implementation — standalone trigram inverted index.
 //
 // Memory layout:
-//   - arena: contiguous uint8_t buffer holding lowercased names; geometric growth.
 //   - spans: dense Span array indexed by `id` (sparse ids waste slots but are correct).
+//     Each Span holds a NON-OWNING pointer to the caller's already-lowercased name
+//     (DFileMeta.lower_name); the index does not copy or own name bytes.
 //   - postings: flat uint32_t array; all posting lists concatenated, each sorted by id.
 //   - blocks: PostingBlock array sorted by trigram => binary search slices into postings.
 //   - pending: unsorted (trigram,id) pairs flushed lazily via sort + merge.
@@ -16,15 +17,14 @@
 #include <pthread.h>
 
 // ── Tunables ────────────────────────────────────────────
-#define TRI_ARENA_INIT_CAP    4096u
 #define TRI_SPANS_INIT_CAP    1024u
 #define TRI_PENDING_AUTOFLUSH 8192u
 #define TRI_MAX_QUERY_TRIGRAMS 64u
 
 // ── Types ───────────────────────────────────────────────
 typedef struct {
-    uint32_t offset;   // into arena
-    uint8_t  len;      // filename <=255 bytes => fits u8; 0 == tombstone / empty
+    const char* name;   // NON-OWNING: points at the caller's lowercased name (DFileMeta.lower_name)
+    uint8_t  len;       // lowercased name bytes (<=255); 0 == tombstone / empty
 } Span;
 
 typedef struct {
@@ -41,12 +41,8 @@ typedef struct {
 struct CTrigramIndex {
     pthread_mutex_t mutex;
 
-    // Arena of lowercased names (no zero-init on growth).
-    uint8_t* arena;
-    uint32_t arena_used;
-    uint32_t arena_cap;
-
-    // Dense id -> Span table.
+    // Dense id -> Span table. Each Span.name is a non-owning pointer into the
+    // caller's storage (DFileMeta.lower_name); the index does not copy or own it.
     Span*    spans;
     uint32_t spans_cap;     // capacity (>= max id + 1)
     uint32_t doc_count;     // live docs (span with len>0)
@@ -68,27 +64,6 @@ struct CTrigramIndex {
 };
 
 // ── Helpers ─────────────────────────────────────────────
-
-// Lowercase a byte. Bytes >=0x80 are returned unchanged (CJK has no case;
-// tolower in the C locale is a no-op there anyway, and casting to unsigned
-// char keeps the argument in the safe range).
-static uint8_t lc_byte(unsigned char c) {
-    if (c < 0x80) return (uint8_t)tolower(c);
-    return c;
-}
-
-static bool arena_ensure(CTrigramIndex* ti, uint32_t extra) {
-    if ((uint64_t)ti->arena_used + extra <= ti->arena_cap) return true;
-    uint64_t need = (uint64_t)ti->arena_used + (uint64_t)extra;
-    uint64_t cap  = ti->arena_cap ? ti->arena_cap : TRI_ARENA_INIT_CAP;
-    while (cap < need) cap *= 2;
-    if (cap > 0xffffffffu) cap = 0xffffffffu;
-    uint8_t* nb = (uint8_t*)realloc(ti->arena, (size_t)cap);
-    if (!nb) return false;
-    ti->arena = nb;
-    ti->arena_cap = (uint32_t)cap;
-    return true;
-}
 
 static bool spans_ensure(CTrigramIndex* ti, uint32_t id) {
     if (id < ti->spans_cap) return true;
@@ -283,7 +258,6 @@ CTrigramIndex* ctrigram_create(void) {
 void ctrigram_destroy(CTrigramIndex* ti) {
     if (!ti) return;
     pthread_mutex_lock(&ti->mutex);
-    free(ti->arena);
     free(ti->spans);
     free(ti->postings);
     free(ti->blocks);
@@ -296,30 +270,25 @@ void ctrigram_destroy(CTrigramIndex* ti) {
 // ── Insert ──────────────────────────────────────────────
 
 void ctrigram_insert(CTrigramIndex* ti, const char* name, uint32_t id) {
+    // CONTRACT: `name` must already be lowercased by the caller and stable for
+    // the lifetime of the index (we store a NON-OWNING pointer — no copy).
     if (!ti || !name) return;
 
     pthread_mutex_lock(&ti->mutex);
 
     if (!spans_ensure(ti, id)) { pthread_mutex_unlock(&ti->mutex); return; }
 
-    // Compute length and lowercase into the arena.
+    // Compute length (capped at 255). The caller's lowercased bytes are read
+    // AS-IS — no re-lowercasing, no arena copy.
     size_t raw_len = strlen(name);
     if (raw_len > 255) raw_len = 255;            // filename cap
     uint32_t n = (uint32_t)raw_len;
 
-    if (!arena_ensure(ti, n)) { pthread_mutex_unlock(&ti->mutex); return; }
-
-    uint32_t off = ti->arena_used;
-    for (uint32_t i = 0; i < n; i++) {
-        ti->arena[off + i] = lc_byte((unsigned char)name[i]);
-    }
-    ti->arena_used += n;
-
     // Track document count: if this id previously had no live span, it's new.
     Span* sp = &ti->spans[id];
     if (sp->len == 0) ti->doc_count++;
-    sp->offset = off;
-    sp->len = (uint8_t)n;
+    sp->name = name;
+    sp->len  = (uint8_t)n;
 
     // Append trigrams to the pending buffer (one entry per trigram position;
     // duplicate trigrams within the same name are intentional — the merge dedups).
@@ -333,7 +302,7 @@ void ctrigram_insert(CTrigramIndex* ti, const char* name, uint32_t id) {
                 return;
             }
         }
-        const uint8_t* s = ti->arena + off;
+        const uint8_t* s = (const uint8_t*)name;
         for (uint32_t i = 0; i < nt; i++) {
             uint32_t t;
             if (!make_trigram(s, n, i, &t)) break;
@@ -357,8 +326,8 @@ bool ctrigram_remove(CTrigramIndex* ti, uint32_t id) {
     pthread_mutex_lock(&ti->mutex);
     bool found = false;
     if (id < ti->spans_cap && ti->spans[id].len > 0) {
-        ti->spans[id].len = 0;        // tombstone: verification will reject
-        ti->spans[id].offset = 0;
+        ti->spans[id].len  = 0;        // tombstone: verification will reject
+        ti->spans[id].name = NULL;     // non-owning — do NOT free
         if (ti->doc_count > 0) ti->doc_count--;
         found = true;
         // Note: stale posting entries for this id may remain until a rebuild;
@@ -377,7 +346,7 @@ const char* ctrigram_name(CTrigramIndex* ti, uint32_t id) {
     pthread_mutex_lock(&ti->mutex);
     const char* result = NULL;
     if (id < ti->spans_cap && ti->spans[id].len > 0) {
-        result = (const char*)(ti->arena + ti->spans[id].offset);
+        result = ti->spans[id].name;   // non-owning pointer into caller's storage
     }
     pthread_mutex_unlock(&ti->mutex);
     return result;
@@ -455,15 +424,17 @@ uint32_t ctrigram_search(CTrigramIndex* ti, const char* query,
     size_t qlen = strlen(query);
     if (qlen == 0) { pthread_mutex_unlock(&ti->mutex); return 0; }
 
-    // Build lowercased query buffer (verbatim bytes >=0x80 preserved).
+    // Build lowercased query buffer. Use tolower over ALL bytes so the query
+    // is normalized identically to the caller-provided lowercased stored names
+    // (CIndex.c strdup_lower lowercases every byte via tolower).
     uint8_t qbuf[256];
     if (qlen > 255) qlen = 255;
     uint32_t qn = (uint32_t)qlen;
     for (uint32_t i = 0; i < qn; i++) {
-        qbuf[i] = lc_byte((unsigned char)query[i]);
+        qbuf[i] = (uint8_t)tolower((unsigned char)query[i]);
     }
 
-    // <3-byte query: linear-scan the arena via the spans table.
+    // <3-byte query: linear-scan the names via the spans table.
     if (qn < 3) {
         // Cap candidate walk: scan up to spans_cap slots; collect matches.
         uint32_t cap_guess = ti->doc_count;
@@ -474,8 +445,8 @@ uint32_t ctrigram_search(CTrigramIndex* ti, const char* query,
         for (uint32_t id = 0; id < ti->spans_cap; id++) {
             Span* sp = &ti->spans[id];
             if (sp->len == 0) continue;
-            // Verify: the lowercased arena name contains qbuf.
-            const uint8_t* nm = ti->arena + sp->offset;
+            // Verify: the stored (already-lowercased) name contains qbuf.
+            const uint8_t* nm = (const uint8_t*)sp->name;
             uint32_t nl = sp->len;
             bool match = false;
             if (nl >= qn) {
@@ -529,7 +500,7 @@ uint32_t ctrigram_search(CTrigramIndex* ti, const char* query,
     uint32_t cand_count = intersect_slices(ti, slice_offs, slice_lens, k, &candidates);
     if (cand_count == 0) { pthread_mutex_unlock(&ti->mutex); return 0; }
 
-    // Verify each candidate by strncasecmp against its arena name.
+    // Verify each candidate by strncasecmp against its stored (lowercased) name.
     uint32_t* results = (uint32_t*)malloc((size_t)cand_count * sizeof(uint32_t));
     if (!results) { free(candidates); pthread_mutex_unlock(&ti->mutex); return 0; }
     uint32_t rcount = 0;
@@ -539,7 +510,7 @@ uint32_t ctrigram_search(CTrigramIndex* ti, const char* query,
         Span* sp = &ti->spans[id];
         if (sp->len == 0) continue;                   // tombstoned
         if (sp->len < qn) continue;                   // too short to contain query
-        const char* nm = (const char*)(ti->arena + sp->offset);
+        const char* nm = sp->name;                    // non-owning pointer
         bool match = false;
         uint32_t nl = sp->len;
         for (uint32_t p = 0; p + qn <= nl; p++) {
