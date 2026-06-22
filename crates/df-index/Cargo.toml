@@ -7,5 +7,9 @@ license.workspace = true
 
 [dependencies]
 df-core = { workspace = true }
+ignore = { workspace = true }
 thiserror = { workspace = true }
-# `ignore` (parallel traversal) and `zstd` (filename blocks) are added in Step 2.
+
+[dev-dependencies]
+df-core = { workspace = true }
+tempfile = { workspace = true }
