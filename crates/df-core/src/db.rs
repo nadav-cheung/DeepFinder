@@ -1,23 +1,27 @@
 // SPDX-License-Identifier: MIT
 //! Single-file index DB: builder + reader.
 //!
-//! Step 6 format — on-disk Robin Hood hash for trigram→posting, lazy pread
-//! decode (low RSS: the reader never loads the whole table or all postings):
+//! Step 7 format — zstd-compressed filename blocks + trained dictionary
+//! (plocate-style), on top of the Step 6 Robin Hood hash + TurboPFor postings:
 //! - Postings: TurboPFor PFor-delta.
-//! - Trigram lookup: Robin Hood open-addressed hash (2^k slots), pread per query.
-//! - Filenames: raw length-prefixed bytes (Step 7 → zstd blocks + dict).
+//! - Trigram lookup: Robin Hood open-addressed hash, lazy pread decode.
+//! - Filenames: grouped into blocks of 256 paths, each zstd-compressed with a
+//!   dictionary trained on the path corpus (stored once in the DOCS section).
 //!
 //! Layout (all integers little-endian):
 //! ```text
 //! HEADER (40 B): magic[4] | version:u32 | num_docs:u32
 //!                docs_off:u64 | try_off:u64 | post_off:u64 | slots_log2:u32
-//! DOCS    : per doc (DocID = order): path_len:u32 | path bytes (UTF-8)
+//! DOCS    : dict_len:u32 | dict[dict_len]
+//!           num_blocks:u32 | num_blocks × (block_off:u64 | clen:u32 | count:u32)
+//!           blocks × zstd(blob)
 //! HASH    : slots × [key:u32 | count:u32 | post_off:u64 | enc_len:u32]  (20 B)
-//!           empty slot: key = 0xFFFFFFFF (never a real 24-bit trigram)
-//! POSTINGS: concatenated TurboPFor blobs (each referenced by a hash slot)
+//!           empty slot: key = 0xFFFFFFFF
+//! POSTINGS: concatenated TurboPFor blobs
 //! ```
 
 use std::collections::BTreeMap;
+use std::io::{Read, Write};
 
 use crate::error::CoreError;
 use crate::{trigram::trigrams, turbopfor, DbSource, Result};
@@ -27,6 +31,11 @@ const VERSION: u32 = 1;
 const HEADER_LEN: usize = 40;
 const EMPTY_KEY: u32 = 0xFFFF_FFFF;
 const SLOT_LEN: usize = 20;
+
+const BLOCK_PATHS: usize = 256;
+const ZSTD_LEVEL: i32 = 3;
+const MIN_DICT_CORPUS: usize = 8192;
+const DICT_SIZE: usize = 112_640;
 
 fn le_u32(buf: &[u8], at: usize) -> u32 {
     u32::from_le_bytes(buf[at..at + 4].try_into().unwrap())
@@ -43,14 +52,54 @@ fn hash(x: u32) -> u32 {
     z ^ (z >> 16)
 }
 
+fn zstd_encode(data: &[u8], dict: &[u8]) -> Vec<u8> {
+    if dict.is_empty() {
+        zstd::encode_all(data, ZSTD_LEVEL).unwrap_or_default()
+    } else {
+        match zstd::Encoder::with_dictionary(Vec::new(), ZSTD_LEVEL, dict) {
+            Ok(mut enc) => {
+                let _ = enc.write_all(data);
+                enc.finish().unwrap_or_default()
+            }
+            Err(_) => zstd::encode_all(data, ZSTD_LEVEL).unwrap_or_default(),
+        }
+    }
+}
+
+fn zstd_decode(comp: &[u8], dict: &[u8]) -> Result<Vec<u8>> {
+    if dict.is_empty() {
+        return zstd::decode_all(comp).map_err(|e| CoreError::Codec(format!("zstd decode: {e}")));
+    }
+    let mut dec = zstd::Decoder::with_dictionary(comp, dict)
+        .map_err(|e| CoreError::Codec(format!("zstd decoder: {e}")))?;
+    let mut out = Vec::new();
+    dec.read_to_end(&mut out)
+        .map_err(|e| CoreError::Codec(format!("zstd read: {e}")))?;
+    Ok(out)
+}
+
+/// Train a dictionary on the path corpus. Returns empty when the corpus is too
+/// small to train (blocks then use plain zstd).
+fn train_dict(paths: &[String]) -> Vec<u8> {
+    let total: usize = paths.iter().map(|p| p.len() + 4).sum();
+    if total < MIN_DICT_CORPUS {
+        return Vec::new();
+    }
+    let sizes: Vec<usize> = paths.iter().map(|p| p.len()).collect();
+    let mut buf = Vec::with_capacity(total);
+    for p in paths {
+        buf.extend_from_slice(p.as_bytes());
+    }
+    zstd::dict::from_continuous(&buf[..], &sizes, DICT_SIZE).unwrap_or_default()
+}
+
 // ---------------------------------------------------------------------------
 // Builder
 // ---------------------------------------------------------------------------
 
-/// Accumulates paths + trigram→posting map, then serializes to one buffer.
 pub struct DbBuilder {
     paths: Vec<String>,
-    try_map: BTreeMap<u32, Vec<u32>>, // trigram -> sorted-unique DocIDs
+    try_map: BTreeMap<u32, Vec<u32>>,
 }
 
 impl DbBuilder {
@@ -61,7 +110,6 @@ impl DbBuilder {
         }
     }
 
-    /// Insert a path (caller dedups). Returns the assigned DocID.
     pub fn insert(&mut self, path: &str) -> u32 {
         let id = self.paths.len() as u32;
         self.paths.push(path.to_string());
@@ -79,21 +127,45 @@ impl DbBuilder {
         self.paths.len() as u32
     }
 
-    /// Serialize to a self-contained byte buffer.
     pub fn finish(self) -> Vec<u8> {
         let num_docs = self.paths.len() as u32;
+        let docs_off = HEADER_LEN as u64;
 
-        let mut docs = Vec::new();
-        for p in &self.paths {
-            let b = p.as_bytes();
-            docs.extend_from_slice(&(b.len() as u32).to_le_bytes());
-            docs.extend_from_slice(b);
+        // --- DOCS section: dict + block index + compressed blocks ---
+        let dict = train_dict(&self.paths);
+        let num_blocks = self.paths.len().div_ceil(BLOCK_PATHS);
+        let front_len = 4 + dict.len() + 4 + num_blocks * 16;
+        let blocks_base = docs_off + front_len as u64;
+
+        let mut blocks_bytes = Vec::new();
+        let mut index: Vec<(u64, u32, u32)> = Vec::with_capacity(num_blocks);
+        for chunk in self.paths.chunks(BLOCK_PATHS) {
+            let mut blk = Vec::new();
+            for p in chunk {
+                let b = p.as_bytes();
+                blk.extend_from_slice(&(b.len() as u32).to_le_bytes());
+                blk.extend_from_slice(b);
+            }
+            let comp = zstd_encode(&blk, &dict);
+            let off = blocks_base + blocks_bytes.len() as u64;
+            index.push((off, comp.len() as u32, chunk.len() as u32));
+            blocks_bytes.extend_from_slice(&comp);
         }
 
-        let docs_off = HEADER_LEN as u64;
+        let mut docs = Vec::with_capacity(front_len + blocks_bytes.len());
+        docs.extend_from_slice(&(dict.len() as u32).to_le_bytes());
+        docs.extend_from_slice(&dict);
+        docs.extend_from_slice(&(num_blocks as u32).to_le_bytes());
+        for (off, clen, count) in &index {
+            docs.extend_from_slice(&off.to_le_bytes());
+            docs.extend_from_slice(&clen.to_le_bytes());
+            docs.extend_from_slice(&count.to_le_bytes());
+        }
+        docs.extend_from_slice(&blocks_bytes);
+
         let try_off = docs_off + docs.len() as u64;
 
-        // Hash table size: power-of-two with load factor ≤ 0.5.
+        // --- HASH table + POSTINGS ---
         let n_entries = self.try_map.len() as u64;
         let slots = if n_entries == 0 {
             0
@@ -103,7 +175,6 @@ impl DbBuilder {
         let table_bytes = slots as usize * SLOT_LEN;
         let post_off = try_off + table_bytes as u64;
 
-        // Encode postings, recording each trigram's (count, absolute offset, len).
         let mut post_sec = Vec::new();
         let mut entries: Vec<(u32, u32, u64, u32)> = Vec::with_capacity(n_entries as usize);
         for (key, post) in &self.try_map {
@@ -118,7 +189,6 @@ impl DbBuilder {
             entries.push((*key, post.len() as u32, abs_off, enc.len() as u32));
             post_sec.extend_from_slice(&enc);
         }
-
         let table = build_robin_hood(&entries, slots);
         let slots_log2: u32 = if slots == 0 {
             0
@@ -155,8 +225,6 @@ fn write_slot(table: &mut [u8], idx: usize, key: u32, count: u32, off: u64, len:
     table[b + 16..b + 20].copy_from_slice(&len.to_le_bytes());
 }
 
-/// Build a Robin Hood (displacement-stealing) open-addressed table. `slots`
-/// must be a power of two (or 0). Each slot holds (key, count, post_off, enc_len).
 fn build_robin_hood(entries: &[(u32, u32, u64, u32)], slots: u64) -> Vec<u8> {
     if slots == 0 {
         return Vec::new();
@@ -169,7 +237,6 @@ fn build_robin_hood(entries: &[(u32, u32, u64, u32)], slots: u64) -> Vec<u8> {
     }
     for &(key, count, off, len) in entries {
         let mut idx = (hash(key) as usize) & mask;
-        // current entry being placed + its probe distance from its ideal slot
         let (mut e_key, mut e_count, mut e_off, mut e_len) = (key, count, off, len);
         let mut e_probe = 0usize;
         loop {
@@ -181,7 +248,6 @@ fn build_robin_hood(entries: &[(u32, u32, u64, u32)], slots: u64) -> Vec<u8> {
             let ideal = (hash(slot_key) as usize) & mask;
             let their_probe = ((idx + slots) - ideal) & mask;
             if e_probe > their_probe {
-                // steal the slot; continue inserting the evicted resident
                 let (r_key, r_count, r_off, r_len) = (
                     slot_key,
                     le_u32(&table, idx * SLOT_LEN + 4),
@@ -206,16 +272,15 @@ fn build_robin_hood(entries: &[(u32, u32, u64, u32)], slots: u64) -> Vec<u8> {
 // Reader
 // ---------------------------------------------------------------------------
 
-/// Reads an index DB through a [`DbSource`] (pread/low-RSS in the daemon,
-/// `&[u8]` in tests). Trigram lookups are lazy: each [`DbReader::posting`] does
-/// a Robin Hood probe + a single posting pread + TurboPFor decode.
 pub struct DbReader<S> {
     src: S,
     num_docs: u32,
-    doc_off: Vec<u64>,
     try_off: u64,
     slots: u64,
     mask: u64,
+    dict: Vec<u8>,
+    blocks: Vec<(u64, u32, u32)>, // (abs_off, clen, count)
+    block_start: Vec<u32>,        // first docid of each block
 }
 
 impl<S: DbSource> DbReader<S> {
@@ -240,32 +305,34 @@ impl<S: DbSource> DbReader<S> {
             1u64 << slots_log2
         };
 
-        // Per-doc filename offsets (eager; Step 7 moves filenames to zstd blocks).
-        let docs_len = try_off
-            .checked_sub(docs_off)
-            .ok_or_else(|| CoreError::DbFormat("try_off < docs_off".into()))?;
-        let docs_bytes = src.read_at(docs_off, docs_len as usize)?;
-        let mut doc_off = Vec::with_capacity(num_docs as usize);
-        let mut p = 0usize;
-        for _ in 0..num_docs {
-            if p + 4 > docs_bytes.len() {
-                return Err(CoreError::DbFormat("truncated docs section".into()));
-            }
-            doc_off.push(docs_off + p as u64);
-            let len = le_u32(&docs_bytes, p) as usize;
-            p += 4 + len;
-            if p > docs_bytes.len() {
-                return Err(CoreError::DbFormat("doc path overruns docs section".into()));
-            }
+        // DOCS front matter: dict + block index.
+        let dict_len = le_u32(&src.read_at(docs_off, 4)?, 0);
+        let dict = src.read_at(docs_off + 4, dict_len as usize)?;
+        let idx_base = docs_off + 4 + dict_len as u64;
+        let num_blocks = le_u32(&src.read_at(idx_base, 4)?, 0) as usize;
+        let idx_bytes = src.read_at(idx_base + 4, num_blocks * 16)?;
+        let mut blocks = Vec::with_capacity(num_blocks);
+        let mut block_start = Vec::with_capacity(num_blocks);
+        let mut start = 0u32;
+        for i in 0..num_blocks {
+            let b = i * 16;
+            let off = le_u64(&idx_bytes, b);
+            let clen = le_u32(&idx_bytes, b + 8);
+            let count = le_u32(&idx_bytes, b + 12);
+            block_start.push(start);
+            blocks.push((off, clen, count));
+            start += count;
         }
 
         Ok(Self {
             src,
             num_docs,
-            doc_off,
             try_off,
             slots,
             mask: if slots == 0 { 0 } else { slots - 1 },
+            dict,
+            blocks,
+            block_start,
         })
     }
 
@@ -273,20 +340,40 @@ impl<S: DbSource> DbReader<S> {
         self.num_docs
     }
 
-    /// Fetch the original-case path for `docid`.
+    /// Fetch the original-case path for `docid` (decompresses its filename block).
     pub fn doc_path(&self, docid: u32) -> Result<String> {
-        let off = *self
-            .doc_off
-            .get(docid as usize)
-            .ok_or_else(|| CoreError::Query(format!("docid {docid} out of range")))?;
-        let len_bytes = self.src.read_at(off, 4)?;
-        let len = le_u32(&len_bytes, 0) as usize;
-        let pb = self.src.read_at(off + 4, len)?;
-        String::from_utf8(pb).map_err(|e| CoreError::DbFormat(format!("non-utf8 path: {e}")))
+        if self.block_start.is_empty() {
+            return Err(CoreError::Query("no docs indexed".into()));
+        }
+        let i = self.block_start.partition_point(|&s| s <= docid);
+        let i = if i == 0 { 0 } else { i - 1 };
+        let (off, clen, count) = self.blocks[i];
+        let local = docid.saturating_sub(self.block_start[i]);
+        if local >= count {
+            return Err(CoreError::Query(format!("docid {docid} out of range")));
+        }
+        let comp = self.src.read_at(off, clen as usize)?;
+        let block = zstd_decode(&comp, &self.dict)?;
+        let mut p = 0usize;
+        for j in 0..=local as usize {
+            if p + 4 > block.len() {
+                return Err(CoreError::DbFormat("truncated filename block".into()));
+            }
+            let plen = le_u32(&block, p) as usize;
+            p += 4;
+            if p + plen > block.len() {
+                return Err(CoreError::DbFormat("path overruns filename block".into()));
+            }
+            if j == local as usize {
+                return String::from_utf8(block[p..p + plen].to_vec())
+                    .map_err(|e| CoreError::DbFormat(format!("non-utf8 path: {e}")));
+            }
+            p += plen;
+        }
+        Err(CoreError::DbFormat("doc not found in block".into()))
     }
 
-    /// Robin Hood lookup of `trig`; on hit, pread + TurboPFor-decode the posting
-    /// list (sorted-unique DocIDs). Returns `Ok(None)` if `trig` is not indexed.
+    /// Robin Hood lookup of `trig`; on hit, pread + TurboPFor-decode the posting.
     pub fn posting(&self, trig: u32) -> Result<Option<Vec<u32>>> {
         if self.slots == 0 {
             return Ok(None);
@@ -302,8 +389,6 @@ impl<S: DbSource> DbReader<S> {
             }
             let ideal = (hash(key) as u64) & self.mask;
             let their_probe = ((idx + self.slots) - ideal) & self.mask;
-            // Robin Hood: if the resident is closer to its ideal slot than we are
-            // to ours, our key can't be further along → absent.
             if probe > their_probe {
                 return Ok(None);
             }
