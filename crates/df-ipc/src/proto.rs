@@ -26,7 +26,7 @@ pub struct SearchOptions {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ResponseFrame {
     Batch {
-        paths: Vec<PathBuf>,
+        paths: Vec<String>,
         meta: Vec<LiteMeta>,
     },
     Done {

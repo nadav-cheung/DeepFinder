@@ -10,10 +10,11 @@ name = "deepfind"
 path = "src/main.rs"
 
 [dependencies]
-df-core = { workspace = true }
+df-index = { workspace = true }
 df-ipc = { workspace = true }
+deepfindd = { workspace = true }
 clap = { workspace = true }
 tokio = { workspace = true }
-tracing = { workspace = true }
+ignore = { workspace = true }
+futures = { workspace = true }
 tracing-subscriber = { workspace = true }
-# `ignore` (for --direct online scan) is added in Step 4.

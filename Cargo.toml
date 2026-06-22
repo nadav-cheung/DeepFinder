@@ -23,6 +23,7 @@ description = "Fast local file search for macOS — trigram index + daemon + CLI
 df-core = { path = "crates/df-core" }
 df-index = { path = "crates/df-index" }
 df-ipc = { path = "crates/df-ipc" }
+deepfindd = { path = "crates/deepfindd" }
 
 # External (used by the Step 0 scaffold; more added per build step)
 serde = { version = "1", features = ["derive"] }
