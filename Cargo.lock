@@ -320,7 +320,6 @@ name = "df-content"
 version = "0.1.0"
 dependencies = [
  "df-core",
- "memchr",
  "tempfile",
 ]
 
