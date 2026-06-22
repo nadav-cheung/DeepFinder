@@ -13,8 +13,6 @@
 /// ## Components
 /// - ``IndexPersistence`` -- actor-isolated facade over ``BinaryIndex``
 /// - ``BinaryIndex`` -- standalone binary snapshot engine (`index.bin`)
-/// - ``SchemaMigrator`` -- retained for the P4 SQLite→binary migration; no
-///   longer used by the live write path
 ///
 /// ## Files
 /// - `~/.deep-finder/cache/index.bin` -- full FileRecord snapshot (atomic
@@ -32,17 +30,7 @@
 /// like SQLite WAL provided; the daemon is the sole writer and reader.
 import Foundation
 import OSLog
-import SQLite3
 import DeepFinderIndex
-
-// MARK: - SQLite Transient Constant
-
-/// SQLite destructor constant that tells SQLite to copy the data before returning.
-/// Equivalent to `SQLITE_TRANSIENT` from the C API.
-/// Retained for the P4 SQLite→binary migration: ``SchemaMigrator`` (still
-/// referenced by the migration path) depends on it. Once P4 removes
-/// SchemaMigrator this can be deleted along with the `import SQLite3`.
-public let SQLTransient = unsafeBitCast(-1, to: sqlite3_destructor_type.self)
 
 // MARK: - IndexPersistence Errors
 
@@ -160,29 +148,6 @@ public actor IndexPersistence {
         let engine = try BinaryIndex(path: binPath, pathEncryption: pathEncryption)
         self.engine = engine
         logger.info("Binary index ready at \(self.binPath, privacy: .public)")
-
-        // One-time SQLite→binary migration (P4): if no index.bin yet but a
-        // legacy index.db exists at the same location, read it once and seed
-        // index.bin so the user keeps their index across the upgrade. Only
-        // applies to on-disk dbs (`:memory:` never had a legacy SQLite file).
-        // Non-fatal on every failure path — a corrupt / unreadable legacy db
-        // is left in place and the daemon falls back to a full rescan, the
-        // same recovery used for a missing or corrupt index.bin.
-        if dbPath != ":memory:",
-           !BinaryIndex.exists(at: binPath),
-           FileManager.default.fileExists(atPath: dbPath) {
-            do {
-                let records = try LegacySQLiteReader.readRecords(
-                    at: dbPath, pathEncryption: pathEncryption
-                )
-                if !records.isEmpty {
-                    try engine.save(records)
-                    logger.info("Migrated \(records.count) records from legacy SQLite index.db → index.bin")
-                }
-            } catch {
-                logger.warning("SQLite→binary migration failed (\(error.localizedDescription, privacy: .public)); will rescan from scratch")
-            }
-        }
     }
 
     deinit {

@@ -246,6 +246,19 @@
 
 ---
 
+## 2026-06-22 — 移除全部 SQLite 逻辑
+
+### CHG-2026-06-22-01: 删除 SQLite 依赖（放弃迁移，纯二进制持久化）
+
+- **来源**: nadav（用户决策——索引引擎重构后彻底去除 SQLite）
+- **影响 REQ**: REQ-v0.1 持久化相关
+- **影响文档**: `CLAUDE.md`（Project / Directory / Persistence 段去除 SQLite / migration 表述）；`REQ_CHANGE_LOG`
+- **变更类型**: 废除
+- **描述**: P4 的 SQLite→binary 迁移（`LegacySQLiteReader`）连同 `SchemaMigrator`、`SQLTransient`、`import SQLite3`、`SQLiteMigrationTests` 一并删除。`Package.swift` 本无 sqlite3 linker（仅 `linkedLibrary("edit")` for readline），故删掉所有 `import SQLite3` 即彻底去除 SQLite 依赖。后果：旧的 `index.db` 不再迁移，daemon 重扫一次写入 `index.bin`（与缺失/损坏索引相同的安全回退）。
+- **影响**: 零 SQLite 依赖（恢复 "zero external dependencies" 初衷）。IndexTests 60 + PersistTests 66（删 5 个迁移测试）全绿。
+
+---
+
 ## 变更统计
 
 | 日期 | 变更数 | 类型 |
@@ -256,3 +269,4 @@
 | 2026-06-16 | 1 | 新增（实现）×1 |
 | 2026-06-19 | 3 | 新增（实现）×3 |
 | 2026-06-21 | 1 | 修改（架构重构）×1 |
+| 2026-06-22 | 1 | 废除×1 |
