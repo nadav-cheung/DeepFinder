@@ -4,10 +4,12 @@
 //! Also provides [`FileSource`], a pread-backed [`DbSource`] for low-RSS reads
 //! (used by the daemon in Step 4).
 
+use std::error::Error;
 use std::fs::File;
 use std::io::{self, Write};
 use std::os::unix::fs::FileExt;
 use std::path::Path;
+use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -39,32 +41,49 @@ struct DocRec {
     mtime: i64,
 }
 
+/// Outcome of an index build: indexed doc count plus permission-denied entries.
+#[derive(Debug, Clone, Copy)]
+pub struct IndexReport {
+    pub docs: u32,
+    pub denied: u32,
+}
+
 /// Build (or rebuild) the index DB for `root` with the default skip-list,
 /// writing atomically to `out_db`. Returns the number of indexed entries.
 pub fn build_index(root: &Path, out_db: &Path) -> Result<u32> {
-    build_index_with(root, out_db, &[])
+    Ok(build_index_report(root, out_db, &[])?.docs)
 }
 
 /// Like [`build_index`] but with `extra_skip` directory names pruned in addition
 /// to [`DEFAULT_SKIP`] (REVIEW §8.1 #3: configurable skip-list). Extras are
 /// deduped against the defaults.
 pub fn build_index_with(root: &Path, out_db: &Path, extra_skip: &[String]) -> Result<u32> {
+    Ok(build_index_report(root, out_db, extra_skip)?.docs)
+}
+
+/// Build and return a full [`IndexReport`] (doc count + permission-denied count
+/// — the latter drives Full Disk Access guidance, REVIEW §8.2).
+pub fn build_index_report(
+    root: &Path,
+    out_db: &Path,
+    extra_skip: &[String],
+) -> Result<IndexReport> {
     let mut skip: Vec<&str> = DEFAULT_SKIP.to_vec();
     for e in extra_skip {
         if !e.is_empty() && !skip.contains(&e.as_str()) {
             skip.push(e.as_str());
         }
     }
-    let recs = collect_records(root, &skip)?;
+    let (recs, denied) = collect_records(root, &skip)?;
     let mut builder = DbBuilder::new();
     builder.set_build_time(now_secs());
     for r in &recs {
         builder.insert_with(&r.path, r.is_dir, r.size, r.mtime);
     }
-    let count = builder.doc_count();
+    let docs = builder.doc_count();
     let bytes = builder.finish();
     atomic_write(out_db, &bytes)?;
-    Ok(count)
+    Ok(IndexReport { docs, denied })
 }
 
 fn now_secs() -> u64 {
@@ -74,20 +93,44 @@ fn now_secs() -> u64 {
         .unwrap_or(0)
 }
 
+/// True if the error chain contains a permission-denied I/O error (macOS TCC
+/// denials surface as EPERM/EACCES → `PermissionDenied`).
+fn is_permission_denied(e: &ignore::Error) -> bool {
+    let mut cur: Option<&(dyn Error + 'static)> = Some(e);
+    while let Some(c) = cur {
+        if let Some(io) = c.downcast_ref::<io::Error>() {
+            if io.kind() == io::ErrorKind::PermissionDenied {
+                return true;
+            }
+        }
+        cur = c.source();
+    }
+    false
+}
+
 /// Walk `root` in parallel (gitignore + hidden + `skip` dir names), returning
-/// sorted-unique, valid-UTF-8 records with per-file metadata.
-fn collect_records(root: &Path, skip: &[&str]) -> Result<Vec<DocRec>> {
+/// sorted-unique, valid-UTF-8 records with per-file metadata, plus a count of
+/// permission-denied entries (FDA signal).
+fn collect_records(root: &Path, skip: &[&str]) -> Result<(Vec<DocRec>, u32)> {
     let mut walker = WalkBuilder::new(root);
     walker.standard_filters(true).hidden(true);
 
     let collected: Arc<Mutex<Vec<DocRec>>> = Arc::new(Mutex::new(Vec::new()));
+    let denied: Arc<AtomicU32> = Arc::new(AtomicU32::new(0));
     let sink = collected.clone();
+    let denied_c = denied.clone();
     walker.build_parallel().run(move || {
         let sink = sink.clone();
+        let denied_c = denied_c.clone();
         Box::new(move |result| {
             let entry = match result {
                 Ok(e) => e,
-                Err(_) => return WalkState::Continue,
+                Err(e) => {
+                    if is_permission_denied(&e) {
+                        denied_c.fetch_add(1, Ordering::Relaxed);
+                    }
+                    return WalkState::Continue;
+                }
             };
             // Prune build/cache dirs (don't descend), per REVIEW §8.1 #3.
             let name = entry.file_name().to_string_lossy();
@@ -128,7 +171,8 @@ fn collect_records(root: &Path, skip: &[&str]) -> Result<Vec<DocRec>> {
         .expect("collector lock poisoned");
     recs.sort_by(|a, b| a.path.cmp(&b.path));
     recs.dedup_by(|a, b| a.path == b.path);
-    Ok(recs)
+    let denied = denied.load(Ordering::Relaxed);
+    Ok((recs, denied))
 }
 
 /// Write `data` to `path` atomically: create parent, write `<name>.tmp`, fsync,

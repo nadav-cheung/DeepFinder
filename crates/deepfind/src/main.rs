@@ -103,8 +103,23 @@ fn cmd_index(root: &Path, force: bool, mut skip: Vec<String>) {
             }
         }
     }
-    match df_index::build_index_with(root, &db, &skip) {
-        Ok(n) => println!("indexed {n} entries -> {}", db.display()),
+    match df_index::build_index_report(root, &db, &skip) {
+        Ok(report) => {
+            println!("indexed {} entries -> {}", report.docs, db.display());
+            // REVIEW §8.2: surface Full Disk Access denials (can't be granted
+            // programmatically — only detected and guided).
+            if report.denied > 0 {
+                eprintln!(
+                    "warning: {} entr{} skipped due to permission errors.",
+                    report.denied,
+                    if report.denied == 1 { "y" } else { "ies" }
+                );
+                eprintln!(
+                    "  To index protected locations, grant Full Disk Access to this\n  \
+                     binary in System Settings → Privacy & Security → Full Disk Access."
+                );
+            }
+        }
         Err(e) => {
             eprintln!("index failed: {e}");
             std::process::exit(1);
