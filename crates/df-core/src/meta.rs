@@ -4,7 +4,7 @@
 use serde::{Deserialize, Serialize};
 
 /// Lightweight per-file metadata returned with each match.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct LiteMeta {
     pub is_dir: bool,
     pub size: i64,

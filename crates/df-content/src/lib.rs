@@ -6,4 +6,4 @@
 pub mod fold;
 pub mod shard;
 
-pub use shard::ShardBuilder;
+pub use shard::{ShardBuilder, ShardReader};

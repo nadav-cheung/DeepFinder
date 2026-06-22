@@ -190,3 +190,219 @@ impl ShardBuilder {
         out
     }
 }
+
+// ---------------------------------------------------------------------------
+// Reader
+// ---------------------------------------------------------------------------
+
+fn rd_u32(b: &[u8], at: usize) -> u32 {
+    u32::from_le_bytes(b[at..at + 4].try_into().unwrap())
+}
+fn rd_u64(b: &[u8], at: usize) -> u64 {
+    u64::from_le_bytes(b[at..at + 8].try_into().unwrap())
+}
+fn rd_i64(b: &[u8], at: usize) -> i64 {
+    i64::from_le_bytes(b[at..at + 8].try_into().unwrap())
+}
+
+/// Read-only view over a `.dfcs` byte slice (borrowed; the daemon owns the mmap).
+pub struct ShardReader<'a> {
+    bytes: &'a [u8],
+    num_docs: u32,
+    base_docid: u32,
+    slots: u64,
+    mask: u64,
+    sect: std::collections::HashMap<&'static str, (u32, u32)>, // tag -> (off, sz)
+}
+
+impl<'a> ShardReader<'a> {
+    /// Parse a shard from a borrowed byte slice.
+    pub fn open(bytes: &'a [u8]) -> df_core::Result<Self> {
+        use df_core::error::CoreError;
+        if bytes.len() < 8 {
+            return Err(CoreError::DbFormat("shard too short".into()));
+        }
+        let footer = bytes.len() - 8;
+        let toc_off = rd_u32(bytes, footer) as usize;
+        let toc_sz = rd_u32(bytes, footer + 4) as usize;
+        let toc_end = toc_off
+            .checked_add(toc_sz)
+            .ok_or_else(|| CoreError::DbFormat("shard TOC overruns file".into()))?;
+        if toc_end != footer {
+            return Err(CoreError::DbFormat("shard TOC/end mismatch".into()));
+        }
+        let toc = &bytes[toc_off..toc_end];
+
+        let mut p = 0usize;
+        let count = rd_u32(toc, p) as usize;
+        p += 4;
+        let mut sect = std::collections::HashMap::new();
+        for _ in 0..count {
+            let tag_len = df_core::varint::decode_u32(toc, &mut p)
+                .ok_or_else(|| CoreError::DbFormat("bad tag varint".into()))?
+                as usize;
+            let tag_bytes = &toc[p..p + tag_len];
+            p += tag_len;
+            let _kind = toc[p];
+            p += 1;
+            let off = rd_u32(toc, p);
+            p += 4;
+            let sz = rd_u32(toc, p);
+            p += 4;
+            let tag: &'static str = match std::str::from_utf8(tag_bytes) {
+                Ok("metaData") => "metaData",
+                Ok("fileNames") => "fileNames",
+                Ok("fileMeta") => "fileMeta",
+                Ok("contentOffsets") => "contentOffsets",
+                Ok("contentCorpus") => "contentCorpus",
+                Ok("ctHash") => "ctHash",
+                Ok("ctPostings") => "ctPostings",
+                _ => continue, // unknown tag → skip (forward-compat)
+            };
+            sect.insert(tag, (off, sz));
+        }
+
+        let md = sect
+            .get("metaData")
+            .ok_or_else(|| CoreError::DbFormat("missing metaData".into()))?;
+        let md = &bytes[md.0 as usize..(md.0 + md.1) as usize];
+        let num_docs = rd_u32(md, 18);
+        let base_docid = rd_u32(md, 14);
+        let slots_log2 = rd_u32(md, 22);
+        let slots: u64 = if slots_log2 == 0 {
+            0
+        } else {
+            1u64 << slots_log2
+        };
+
+        Ok(Self {
+            bytes,
+            num_docs,
+            base_docid,
+            slots,
+            mask: if slots == 0 { 0 } else { slots - 1 },
+            sect,
+        })
+    }
+
+    pub fn num_docs(&self) -> u32 {
+        self.num_docs
+    }
+    pub fn base_docid(&self) -> u32 {
+        self.base_docid
+    }
+
+    fn section(&self, tag: &'static str) -> df_core::Result<&[u8]> {
+        use df_core::error::CoreError;
+        let (off, sz) = self
+            .sect
+            .get(tag)
+            .ok_or_else(|| CoreError::DbFormat(format!("missing section {tag}")))?;
+        Ok(&self.bytes[*off as usize..(*off as usize + *sz as usize)])
+    }
+
+    /// Path for a LOCAL docid (sequential scan of length-prefixed fileNames).
+    pub fn path(&self, local_docid: u32) -> df_core::Result<String> {
+        use df_core::error::CoreError;
+        let fns = self.section("fileNames")?;
+        let mut p = 0usize;
+        for i in 0..=local_docid as usize {
+            if p + 4 > fns.len() {
+                return Err(CoreError::DbFormat("fileNames truncated".into()));
+            }
+            let len = rd_u32(fns, p) as usize;
+            p += 4;
+            if p + len > fns.len() {
+                return Err(CoreError::DbFormat("path overruns fileNames".into()));
+            }
+            if i == local_docid as usize {
+                return String::from_utf8(fns[p..p + len].to_vec())
+                    .map_err(|e| CoreError::DbFormat(format!("non-utf8 path: {e}")));
+            }
+            p += len;
+        }
+        Err(CoreError::DbFormat("docid not in fileNames".into()))
+    }
+
+    /// Per-doc metadata.
+    pub fn meta(&self, local_docid: u32) -> df_core::Result<df_core::LiteMeta> {
+        use df_core::error::CoreError;
+        let fm = self.section("fileMeta")?;
+        let at = local_docid as usize * 17;
+        if at + 17 > fm.len() {
+            return Err(CoreError::Query("docid out of range".into()));
+        }
+        Ok(df_core::LiteMeta {
+            is_dir: fm[at] != 0,
+            size: rd_i64(fm, at + 1),
+            mtime: rd_i64(fm, at + 9),
+        })
+    }
+
+    /// The indexed content bytes for a LOCAL docid (slice of contentCorpus).
+    pub fn content(&self, local_docid: u32) -> df_core::Result<&[u8]> {
+        use df_core::error::CoreError;
+        let co = self.section("contentOffsets")?;
+        let at = local_docid as usize * 12;
+        if at + 12 > co.len() {
+            return Err(CoreError::Query("docid out of range".into()));
+        }
+        let off = rd_u64(co, at) as usize;
+        let len = rd_u32(co, at + 8) as usize;
+        let corpus = self.section("contentCorpus")?;
+        if off + len > corpus.len() {
+            return Err(CoreError::DbFormat("content slice overruns corpus".into()));
+        }
+        Ok(&corpus[off..off + len])
+    }
+
+    /// Robin Hood lookup of a content trigram → local docid posting (decoded).
+    pub fn posting(&self, trig: u32) -> df_core::Result<Option<Vec<u32>>> {
+        use df_core::error::CoreError;
+        if self.slots == 0 {
+            return Ok(None);
+        }
+        let hash = self.section("ctHash")?;
+        let postings = self.section("ctPostings")?;
+        let mut idx = (df_core::db::hash(trig) as u64) & self.mask;
+        let mut probe = 0u64;
+        loop {
+            let slot_off = idx as usize * df_core::db::SLOT_LEN;
+            if slot_off + df_core::db::SLOT_LEN > hash.len() {
+                return Err(CoreError::DbFormat("ctHash truncated".into()));
+            }
+            let key = rd_u32(hash, slot_off);
+            if key == df_core::db::EMPTY_KEY {
+                return Ok(None);
+            }
+            let ideal = (df_core::db::hash(key) as u64) & self.mask;
+            let their_probe = ((idx + self.slots) - ideal) & self.mask;
+            if probe > their_probe {
+                return Ok(None);
+            }
+            if key == trig {
+                let count = rd_u32(hash, slot_off + 4);
+                let post_off = rd_u64(hash, slot_off + 8) as usize;
+                let enc_len = rd_u32(hash, slot_off + 16) as usize;
+                if post_off + enc_len > postings.len() {
+                    return Err(CoreError::DbFormat("posting overruns ctPostings".into()));
+                }
+                let deltas = df_core::turbopfor::decode(
+                    &postings[post_off..post_off + enc_len],
+                    count as usize,
+                );
+                let mut post = Vec::with_capacity(count as usize);
+                let mut prev = 0u32;
+                for d in deltas {
+                    prev = prev
+                        .checked_add(d)
+                        .ok_or_else(|| CoreError::Codec("docid overflow".into()))?;
+                    post.push(prev);
+                }
+                return Ok(Some(post));
+            }
+            idx = (idx + 1) & self.mask;
+            probe += 1;
+        }
+    }
+}
