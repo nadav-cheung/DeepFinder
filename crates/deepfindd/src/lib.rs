@@ -63,7 +63,15 @@ pub async fn serve(socket_path: &Path, db_path: &Path) -> std::io::Result<()> {
                 break;
             }
             res = listener.accept() => {
-                let (stream, _) = res?;
+                // Transient accept errors (EMFILE, ECONNABORTED, …) must not
+                // tear down the daemon or skip the graceful drain; log + continue.
+                let (stream, _) = match res {
+                    Ok(v) => v,
+                    Err(e) => {
+                        tracing::warn!(error = %e, "accept failed; continuing");
+                        continue;
+                    }
+                };
                 let db = db.clone();
                 join_set.spawn(async move {
                     if let Err(e) = handle_conn(stream, db).await {

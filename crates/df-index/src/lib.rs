@@ -4,7 +4,6 @@
 //! Also provides [`FileSource`], a pread-backed [`DbSource`] for low-RSS reads
 //! (used by the daemon in Step 4).
 
-use std::error::Error;
 use std::fs::File;
 use std::io::{self, Write};
 use std::os::unix::fs::FileExt;
@@ -93,19 +92,12 @@ fn now_secs() -> u64 {
         .unwrap_or(0)
 }
 
-/// True if the error chain contains a permission-denied I/O error (macOS TCC
-/// denials surface as EPERM/EACCES → `PermissionDenied`).
+/// True if the error is a permission-denied I/O error (macOS TCC denials
+/// surface as EPERM/EACCES → `PermissionDenied`). Uses ignore's own accessor,
+/// which unwraps its WithPath/WithDepth wrappers to reach the inner io::Error.
 fn is_permission_denied(e: &ignore::Error) -> bool {
-    let mut cur: Option<&(dyn Error + 'static)> = Some(e);
-    while let Some(c) = cur {
-        if let Some(io) = c.downcast_ref::<io::Error>() {
-            if io.kind() == io::ErrorKind::PermissionDenied {
-                return true;
-            }
-        }
-        cur = c.source();
-    }
-    false
+    e.io_error()
+        .is_some_and(|io| io.kind() == io::ErrorKind::PermissionDenied)
 }
 
 /// Walk `root` in parallel (gitignore + hidden + `skip` dir names), returning
@@ -222,5 +214,23 @@ impl DbSource for FileSource {
             read += n;
         }
         Ok(buf)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_permission_denied;
+    use std::io;
+
+    #[test]
+    fn detects_permission_denied() {
+        let e = ignore::Error::Io(io::Error::new(io::ErrorKind::PermissionDenied, "denied"));
+        assert!(is_permission_denied(&e));
+    }
+
+    #[test]
+    fn ignores_other_io_errors() {
+        let e = ignore::Error::Io(io::Error::new(io::ErrorKind::NotFound, "missing"));
+        assert!(!is_permission_denied(&e));
     }
 }

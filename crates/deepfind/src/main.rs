@@ -267,6 +267,7 @@ async fn daemon_search(
     };
     f.send(encode_request(&req)?).await?;
     let mut out = Vec::new();
+    let mut done_total: Option<u32> = None;
     while let Some(frame) = f.next().await {
         match decode_frame(&frame?)? {
             ResponseFrame::Batch { paths, meta } => {
@@ -276,9 +277,24 @@ async fn daemon_search(
                     out.push((p, m));
                 }
             }
-            ResponseFrame::Done { .. } => break,
+            ResponseFrame::Done { total } => {
+                done_total = Some(total);
+                break;
+            }
             ResponseFrame::Error { message } => return Err(message.into()),
         }
+    }
+    match done_total {
+        // Stream ended without Done (daemon crash / socket reset): fall back to
+        // --direct so the user gets complete results, not silent partial ones.
+        None => return Err("daemon stream ended early".into()),
+        Some(total) if (total as usize) != out.len() => {
+            eprintln!(
+                "warning: daemon reported {total} results but delivered {}",
+                out.len()
+            );
+        }
+        _ => {}
     }
     Ok(out)
 }
@@ -293,14 +309,14 @@ async fn direct_scan(
     let root = scope.unwrap_or_else(|| PathBuf::from("."));
     let mut out = Vec::new();
     for result in ignore::Walk::new(&root) {
+        if out.len() >= cap {
+            break;
+        }
         let entry = result?;
         if let Some(s) = entry.path().to_str() {
             if s.to_lowercase().contains(q.as_str()) {
                 let is_dir = entry.file_type().is_some_and(|t| t.is_dir());
                 out.push((s.to_string(), LiteMeta { is_dir, size: 0, mtime: 0 }));
-                if out.len() >= cap {
-                    break;
-                }
             }
         }
     }

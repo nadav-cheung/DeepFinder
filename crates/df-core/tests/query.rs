@@ -45,6 +45,10 @@ fn substring_among_100_paths() {
 
     // limit
     assert_eq!(query(&r, "file_04", Some(3)).unwrap().len(), 3);
+    // limit 0 returns nothing (cap is checked before any push).
+    assert_eq!(query(&r, "file_04", Some(0)).unwrap().len(), 0);
+    // short-query scan path also honors limit 0.
+    assert_eq!(query(&r, "ab", Some(0)).unwrap().len(), 0);
 }
 
 #[test]

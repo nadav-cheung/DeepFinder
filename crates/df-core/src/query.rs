@@ -75,12 +75,12 @@ fn single_docids<S: DbSource>(
 
     let mut out = Vec::new();
     for d in cands {
+        if out.len() >= cap {
+            break;
+        }
         let p = db.doc_path(d)?;
         if p.to_lowercase().contains(needle) {
             out.push(d);
-            if out.len() >= cap {
-                break;
-            }
         }
     }
     Ok(out)
@@ -89,12 +89,12 @@ fn single_docids<S: DbSource>(
 fn scan_docids<S: DbSource>(db: &DbReader<S>, needle: &str, cap: usize) -> Result<Vec<u32>> {
     let mut out = Vec::new();
     for d in 0..db.num_docs() {
+        if out.len() >= cap {
+            break;
+        }
         let p = db.doc_path(d)?;
         if p.to_lowercase().contains(needle) {
             out.push(d);
-            if out.len() >= cap {
-                break;
-            }
         }
     }
     Ok(out)
