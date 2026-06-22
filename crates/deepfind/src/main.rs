@@ -3,6 +3,7 @@
 //! online scan when the daemon is down.
 
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Parser, Subcommand};
 use df_core::LiteMeta;
@@ -24,6 +25,9 @@ enum Cmd {
     Index {
         #[arg(long, default_value = ".")]
         root: PathBuf,
+        /// Rebuild even if the index is fresh (< 60s old).
+        #[arg(long)]
+        force: bool,
     },
     /// Run the resident daemon.
     Daemon,
@@ -50,7 +54,7 @@ enum Cmd {
 async fn main() {
     let cli = Cli::parse();
     match cli.cmd {
-        Cmd::Index { root } => cmd_index(&root),
+        Cmd::Index { root, force } => cmd_index(&root, force),
         Cmd::Daemon => cmd_daemon().await,
         Cmd::Status => cmd_status().await,
         Cmd::Search {
@@ -63,14 +67,65 @@ async fn main() {
     }
 }
 
-fn cmd_index(root: &Path) {
+/// An index built within this window is considered "fresh" (manual re-index is
+/// skipped unless `--force`).
+const FRESH_THRESHOLD_SECS: u64 = 60;
+/// An index older than this is "stale" — searches warn so results aren't
+/// silently out of date (REVIEW §6.2).
+const STALE_THRESHOLD_SECS: u64 = 7 * 86_400;
+
+fn cmd_index(root: &Path, force: bool) {
     let db = default_db();
+    if !force {
+        if let Some(age) = index_build_age(&db) {
+            if age < FRESH_THRESHOLD_SECS {
+                println!(
+                    "index is fresh (built {age}s ago), skipping. Use --force to rebuild."
+                );
+                return;
+            }
+        }
+    }
     match df_index::build_index(root, &db) {
         Ok(n) => println!("indexed {n} entries -> {}", db.display()),
         Err(e) => {
             eprintln!("index failed: {e}");
             std::process::exit(1);
         }
+    }
+}
+
+/// Open the on-disk DB read-only (None if missing/unreadable/not yet built).
+fn open_reader(path: &Path) -> Option<df_core::DbReader<df_index::FileSource>> {
+    let src = df_index::FileSource::open(path).ok()?;
+    df_core::DbReader::open(src).ok()
+}
+
+/// Seconds since the index was built, or None if unknown/missing.
+fn index_build_age(db_path: &Path) -> Option<u64> {
+    let r = open_reader(db_path)?;
+    let bt = r.build_time();
+    if bt == 0 {
+        return None;
+    }
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .ok()?
+        .as_secs();
+    Some(now.saturating_sub(bt))
+}
+
+/// Warn on stderr when the index is stale, so results are never silently
+/// out of date (REVIEW §6.2).
+fn warn_if_stale(db_path: &Path) {
+    let Some(age) = index_build_age(db_path) else {
+        return;
+    };
+    if age > STALE_THRESHOLD_SECS {
+        let days = age / 86_400;
+        eprintln!(
+            "warning: index is {days} days old; results may be stale. Run 'deepfind index' to refresh."
+        );
     }
 }
 
@@ -90,11 +145,25 @@ async fn cmd_daemon() {
 async fn cmd_status() {
     let sock = default_socket();
     match UnixStream::connect(&sock).await {
-        Ok(_) => println!("daemon reachable: {}", sock.display()),
-        Err(e) => println!("daemon NOT reachable: {} ({e})", sock.display()),
+        Ok(_) => println!("daemon: reachable ({})", sock.display()),
+        Err(_) => println!("daemon: NOT reachable ({})", sock.display()),
     }
     let db = default_db();
-    println!("db: {} (exists={})", db.display(), db.exists());
+    match open_reader(&db) {
+        Some(r) => {
+            let age = match index_build_age(&db) {
+                Some(s) => format!("{s}s ago"),
+                None => "unknown".into(),
+            };
+            println!(
+                "db: {} | {} docs | built {}",
+                db.display(),
+                r.num_docs(),
+                age
+            );
+        }
+        None => println!("db: {} (missing/unreadable)", db.display()),
+    }
 }
 
 async fn cmd_search(
@@ -105,6 +174,7 @@ async fn cmd_search(
     direct: bool,
 ) {
     if !direct {
+        warn_if_stale(&default_db());
         match daemon_search(query, limit, scope.clone()).await {
             Ok(results) => {
                 print_results(results, long);
