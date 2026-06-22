@@ -5,6 +5,7 @@
 use std::path::{Path, PathBuf};
 
 use clap::{Parser, Subcommand};
+use df_core::LiteMeta;
 use df_ipc::proto::{ResponseFrame, SearchOptions, SearchRequest};
 use df_ipc::{decode_frame, default_db, default_socket, encode_request, framed};
 use futures::{SinkExt, StreamExt};
@@ -33,6 +34,13 @@ enum Cmd {
         query: String,
         #[arg(long)]
         limit: Option<u32>,
+        /// Restrict matches to a subtree (path prefix).
+        #[arg(long)]
+        scope: Option<PathBuf>,
+        /// Long listing: show size and a directory marker.
+        #[arg(short = 'l', long)]
+        long: bool,
+        /// Force online scan (skip the daemon/index).
         #[arg(long)]
         direct: bool,
     },
@@ -48,8 +56,10 @@ async fn main() {
         Cmd::Search {
             query,
             limit,
+            scope,
+            long,
             direct,
-        } => cmd_search(&query, limit, direct).await,
+        } => cmd_search(&query, limit, scope, long, direct).await,
     }
 }
 
@@ -87,24 +97,24 @@ async fn cmd_status() {
     println!("db: {} (exists={})", db.display(), db.exists());
 }
 
-async fn cmd_search(query: &str, limit: Option<u32>, direct: bool) {
+async fn cmd_search(
+    query: &str,
+    limit: Option<u32>,
+    scope: Option<PathBuf>,
+    long: bool,
+    direct: bool,
+) {
     if !direct {
-        match daemon_search(query, limit).await {
-            Ok(paths) => {
-                for p in paths {
-                    println!("{p}");
-                }
+        match daemon_search(query, limit, scope.clone()).await {
+            Ok(results) => {
+                print_results(results, long);
                 return;
             }
             Err(e) => eprintln!("(daemon unavailable: {e}; falling back to --direct)"),
         }
     }
-    match direct_scan(query, limit).await {
-        Ok(paths) => {
-            for p in paths {
-                println!("{p}");
-            }
-        }
+    match direct_scan(query, limit, scope).await {
+        Ok(results) => print_results(results, long),
         Err(e) => {
             eprintln!("direct scan failed: {e}");
             std::process::exit(1);
@@ -112,15 +122,44 @@ async fn cmd_search(query: &str, limit: Option<u32>, direct: bool) {
     }
 }
 
+fn print_results(results: Vec<(String, LiteMeta)>, long: bool) {
+    for (path, meta) in results {
+        if long {
+            let dir = if meta.is_dir { "/" } else { "" };
+            println!("{}\t{}{}", humansize(meta.size), path, dir);
+        } else {
+            println!("{path}");
+        }
+    }
+}
+
+/// Format a byte count compactly (no external dep).
+fn humansize(n: i64) -> String {
+    let n = n.max(0) as u64;
+    const UNITS: &[&str] = &["B", "K", "M", "G", "T"];
+    let mut v = n as f64;
+    let mut i = 0;
+    while v >= 1024.0 && i + 1 < UNITS.len() {
+        v /= 1024.0;
+        i += 1;
+    }
+    if i == 0 {
+        format!("{n}{}", UNITS[i])
+    } else {
+        format!("{:.1}{}", v, UNITS[i])
+    }
+}
+
 async fn daemon_search(
     query: &str,
     limit: Option<u32>,
-) -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
+    scope: Option<PathBuf>,
+) -> Result<Vec<(String, LiteMeta)>, Box<dyn std::error::Error + Send + Sync>> {
     let stream = UnixStream::connect(default_socket()).await?;
     let mut f = framed(stream);
     let req = SearchRequest {
         query: query.to_string(),
-        scope: None,
+        scope,
         limit,
         opts: SearchOptions::default(),
     };
@@ -128,7 +167,13 @@ async fn daemon_search(
     let mut out = Vec::new();
     while let Some(frame) = f.next().await {
         match decode_frame(&frame?)? {
-            ResponseFrame::Batch { paths, .. } => out.extend(paths),
+            ResponseFrame::Batch { paths, meta } => {
+                let mut meta = meta.into_iter();
+                for p in paths {
+                    let m = meta.next().unwrap_or_default();
+                    out.push((p, m));
+                }
+            }
             ResponseFrame::Done { .. } => break,
             ResponseFrame::Error { message } => return Err(message.into()),
         }
@@ -139,15 +184,18 @@ async fn daemon_search(
 async fn direct_scan(
     query: &str,
     limit: Option<u32>,
-) -> Result<Vec<String>, Box<dyn std::error::Error + Send + Sync>> {
+    scope: Option<PathBuf>,
+) -> Result<Vec<(String, LiteMeta)>, Box<dyn std::error::Error + Send + Sync>> {
     let q = query.to_lowercase();
     let cap = limit.map(|l| l as usize).unwrap_or(usize::MAX);
+    let root = scope.unwrap_or_else(|| PathBuf::from("."));
     let mut out = Vec::new();
-    for result in ignore::Walk::new(".") {
+    for result in ignore::Walk::new(&root) {
         let entry = result?;
         if let Some(s) = entry.path().to_str() {
             if s.to_lowercase().contains(q.as_str()) {
-                out.push(s.to_string());
+                let is_dir = entry.file_type().is_some_and(|t| t.is_dir());
+                out.push((s.to_string(), LiteMeta { is_dir, size: 0, mtime: 0 }));
                 if out.len() >= cap {
                     break;
                 }

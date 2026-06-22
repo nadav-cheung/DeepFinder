@@ -16,6 +16,9 @@
 # Codegraph (runtime index)
 .codegraph/
 
+# External research clones (read-only reference repos, not part of the project)
+search-analysis/
+
 # Claude Code
 .claude.local.md
 .claude/worktrees/
