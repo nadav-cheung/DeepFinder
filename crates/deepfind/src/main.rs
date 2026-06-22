@@ -58,11 +58,7 @@ enum Cmd {
 async fn main() {
     let cli = Cli::parse();
     match cli.cmd {
-        Cmd::Index {
-            root,
-            force,
-            skip,
-        } => cmd_index(&root, force, skip),
+        Cmd::Index { root, force, skip } => cmd_index(&root, force, skip),
         Cmd::Daemon => cmd_daemon().await,
         Cmd::Status => cmd_status().await,
         Cmd::Search {
@@ -87,9 +83,7 @@ fn cmd_index(root: &Path, force: bool, mut skip: Vec<String>) {
     if !force {
         if let Some(age) = index_build_age(&db) {
             if age < FRESH_THRESHOLD_SECS {
-                println!(
-                    "index is fresh (built {age}s ago), skipping. Use --force to rebuild."
-                );
+                println!("index is fresh (built {age}s ago), skipping. Use --force to rebuild.");
                 return;
             }
         }
@@ -140,10 +134,7 @@ fn index_build_age(db_path: &Path) -> Option<u64> {
     if bt == 0 {
         return None;
     }
-    let now = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .ok()?
-        .as_secs();
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?.as_secs();
     Some(now.saturating_sub(bt))
 }
 
@@ -316,7 +307,14 @@ async fn direct_scan(
         if let Some(s) = entry.path().to_str() {
             if s.to_lowercase().contains(q.as_str()) {
                 let is_dir = entry.file_type().is_some_and(|t| t.is_dir());
-                out.push((s.to_string(), LiteMeta { is_dir, size: 0, mtime: 0 }));
+                out.push((
+                    s.to_string(),
+                    LiteMeta {
+                        is_dir,
+                        size: 0,
+                        mtime: 0,
+                    },
+                ));
             }
         }
     }

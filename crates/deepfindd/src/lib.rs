@@ -145,7 +145,8 @@ async fn handle_conn(
             .await?;
         total += count;
     }
-    f.send(encode_frame(&ResponseFrame::Done { total })?).await?;
+    f.send(encode_frame(&ResponseFrame::Done { total })?)
+        .await?;
     Ok(())
 }
 

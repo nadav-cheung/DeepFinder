@@ -126,9 +126,7 @@ fn collect_records(root: &Path, skip: &[&str]) -> Result<(Vec<DocRec>, u32)> {
             };
             // Prune build/cache dirs (don't descend), per REVIEW §8.1 #3.
             let name = entry.file_name().to_string_lossy();
-            if entry.file_type().is_some_and(|t| t.is_dir())
-                && skip.iter().any(|s| name == *s)
-            {
+            if entry.file_type().is_some_and(|t| t.is_dir()) && skip.iter().any(|s| name == *s) {
                 return WalkState::Skip;
             }
             if let Some(s) = entry.path().to_str() {
@@ -144,14 +142,12 @@ fn collect_records(root: &Path, skip: &[&str]) -> Result<(Vec<DocRec>, u32)> {
                     ),
                     Err(_) => (0, 0),
                 };
-                sink.lock()
-                    .expect("collector lock poisoned")
-                    .push(DocRec {
-                        path: s.to_string(),
-                        is_dir,
-                        size,
-                        mtime,
-                    });
+                sink.lock().expect("collector lock poisoned").push(DocRec {
+                    path: s.to_string(),
+                    is_dir,
+                    size,
+                    mtime,
+                });
             }
             WalkState::Continue
         })

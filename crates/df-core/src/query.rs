@@ -40,11 +40,7 @@ pub fn query<S: DbSource>(db: &DbReader<S>, q: &str, limit: Option<u32>) -> Resu
 
 /// Fast single-substring path: rarest query trigram → posting list → substring
 /// verify. Short queries (<3 bytes) fall back to a linear scan.
-fn single_docids<S: DbSource>(
-    db: &DbReader<S>,
-    q: &str,
-    limit: Option<u32>,
-) -> Result<Vec<u32>> {
+fn single_docids<S: DbSource>(db: &DbReader<S>, q: &str, limit: Option<u32>) -> Result<Vec<u32>> {
     let q_lower = q.to_lowercase();
     let cap = limit.map(|l| l as usize).unwrap_or(usize::MAX);
     let needle = q_lower.as_str();

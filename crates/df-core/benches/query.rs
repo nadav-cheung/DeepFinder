@@ -12,7 +12,9 @@ use df_core::query::query;
 
 /// ~40k paths resembling a real tree: common dir/ext trigrams + unique names.
 fn corpus(n: usize) -> Vec<String> {
-    const DIRS: &[&str] = &["src", "tests", "docs", "crates", "vendor", "scripts", "config"];
+    const DIRS: &[&str] = &[
+        "src", "tests", "docs", "crates", "vendor", "scripts", "config",
+    ];
     const EXTS: &[&str] = &["rs", "md", "toml", "js", "ts", "go"];
     (0..n)
         .map(|i| {
@@ -43,10 +45,10 @@ fn bench_query(c: &mut Criterion) {
     );
 
     let cases: &[(&str, &str)] = &[
-        ("rare", "module_00123"), // selective substring (typical query)
-        ("common", "src"), // ~1/7 of corpus
+        ("rare", "module_00123"),     // selective substring (typical query)
+        ("common", "src"),            // ~1/7 of corpus
         ("boolean", "src AND tests"), // two mid-selectivity terms
-        ("short", "go"), // 2 bytes → linear-scan fallback
+        ("short", "go"),              // 2 bytes → linear-scan fallback
     ];
 
     let mut g = c.benchmark_group("query");
