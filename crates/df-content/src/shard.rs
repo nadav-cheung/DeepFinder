@@ -24,7 +24,7 @@ use df_core::candidate::CandidateSource;
 use df_core::db::build_robin_hood;
 use df_core::{trigram::trigrams, turbopfor};
 
-use crate::fold::fold_in_place;
+use crate::fold::{fold, fold_in_place};
 
 const SHARD_VERSION: u16 = 1;
 
@@ -419,7 +419,7 @@ impl<'a> CandidateSource for ShardReader<'a> {
         }
         let content = self.content(local_docid)?;
         // ASCII-fold the content slice, then memmem the (already-folded) needle.
-        let folded = crate::fold::fold(content);
+        let folded = fold(content);
         Ok(memchr::memmem::find(&folded, needle).is_some())
     }
 
