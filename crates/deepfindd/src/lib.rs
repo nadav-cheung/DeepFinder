@@ -9,6 +9,7 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Duration;
 
 use bytes::Bytes;
 use df_core::db::DbReader;
@@ -18,11 +19,26 @@ use df_ipc::proto::{ResponseFrame, SearchRequest};
 use df_ipc::{decode_request, encode_frame, framed};
 use futures::{SinkExt, StreamExt};
 use tokio::net::{UnixListener, UnixStream};
+use tokio::task::JoinSet;
 
 /// Results per `Batch` frame (streamed chunking, REVIEW §7.9).
 const STREAM_CHUNK: usize = 512;
+/// Grace window for in-flight connections on shutdown before aborting.
+const DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 
-/// Open `db_path`, bind `socket_path`, serve forever.
+/// Complete on SIGINT (Ctrl-C) or SIGTERM.
+async fn shutdown_signal() {
+    use tokio::signal::unix::{signal, SignalKind};
+    let mut interrupt = signal(SignalKind::interrupt()).expect("install SIGINT handler");
+    let mut terminate = signal(SignalKind::terminate()).expect("install SIGTERM handler");
+    tokio::select! {
+        _ = interrupt.recv() => {}
+        _ = terminate.recv() => {}
+    }
+}
+
+/// Open `db_path`, bind `socket_path`, serve until a shutdown signal arrives,
+/// then drain in-flight connections and remove the socket.
 pub async fn serve(socket_path: &Path, db_path: &Path) -> std::io::Result<()> {
     let src = FileSource::open(db_path)?;
     let reader = DbReader::open(src).map_err(std::io::Error::other)?;
@@ -36,15 +52,39 @@ pub async fn serve(socket_path: &Path, db_path: &Path) -> std::io::Result<()> {
     let _ = tokio::fs::remove_file(socket_path).await; // clear stale socket
     let listener = UnixListener::bind(socket_path)?;
 
+    let mut join_set: JoinSet<()> = JoinSet::new();
+    let shutdown = shutdown_signal();
+    tokio::pin!(shutdown);
+
     loop {
-        let (stream, _) = listener.accept().await?;
-        let db = db.clone();
-        tokio::spawn(async move {
-            if let Err(e) = handle_conn(stream, db).await {
-                tracing::warn!("connection error: {e}");
+        tokio::select! {
+            _ = &mut shutdown => {
+                tracing::info!("shutdown signal received, draining connections");
+                break;
             }
-        });
+            res = listener.accept() => {
+                let (stream, _) = res?;
+                let db = db.clone();
+                join_set.spawn(async move {
+                    if let Err(e) = handle_conn(stream, db).await {
+                        tracing::warn!("connection error: {e}");
+                    }
+                });
+            }
+        }
     }
+
+    // Graceful drain: let in-flight queries finish up to DRAIN_TIMEOUT, then
+    // abort stragglers (queries are short; this bounds shutdown latency).
+    drop(listener);
+    let _ = tokio::time::timeout(DRAIN_TIMEOUT, async {
+        while join_set.join_next().await.is_some() {}
+    })
+    .await;
+    join_set.shutdown().await;
+    let _ = tokio::fs::remove_file(socket_path).await;
+    tracing::info!("deepfindd stopped");
+    Ok(())
 }
 
 async fn handle_conn(
