@@ -7,10 +7,16 @@
 //! tests. This keeps the engine unit-testable and benchmarkable without a real
 //! DB on disk.
 
+pub mod db;
 pub mod db_source;
 pub mod error;
 pub mod meta;
+pub mod query;
+pub mod trigram;
+pub mod varint;
 
+pub use db::{DbBuilder, DbReader};
 pub use db_source::DbSource;
 pub use error::{CoreError, Result};
 pub use meta::LiteMeta;
+pub use query::query;
