@@ -17,8 +17,10 @@ use df_core::DbSource;
 use ignore::{WalkBuilder, WalkState};
 
 pub mod error;
+pub mod mmap_source;
 
 pub use error::{IndexError, Result};
+pub use mmap_source::MmapSource;
 
 /// Default skip-list (on top of `.gitignore` + hidden), per REVIEW §8.1 #3.
 pub const DEFAULT_SKIP: &[&str] = &[
