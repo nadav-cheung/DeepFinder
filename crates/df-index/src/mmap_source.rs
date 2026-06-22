@@ -1,7 +1,7 @@
-// SPDX-License-Identifier-Identifier: MIT
+// SPDX-License-Identifier: MIT
 //! mmap-backed [`DbSource`] (MAP_SHARED, read-only). The content daemon holds
-//! these for the process lifetime; shards are write-once so there is no
-//! SIGBUS-from-write risk.
+//! these for the process lifetime. Shards are write-once and replaced by atomic
+//! rename on rebuild, never mutated in place.
 
 use std::fs::File;
 use std::io;
@@ -18,8 +18,12 @@ pub struct MmapSource {
 impl MmapSource {
     pub fn open(path: &Path) -> io::Result<Self> {
         let file = File::open(path)?;
-        // SAFETY: map after open; the file is treated as immutable for the
-        // mapping's lifetime (shards are write-once; rebuilds swap files).
+        // SAFETY: a MAP_SHARED read-only mapping is sound as long as the file's
+        // length does not decrease and its contents are not hole-punched for the
+        // lifetime of every `&[u8]` borrowed from `as_slice` — otherwise reads
+        // of the now-unmapped pages SIGBUS. The daemon upholds this: shards are
+        // write-once at build, and a rebuild writes NEW files + swaps the
+        // ShardSet atomically; the mapped file is never truncated/ftruncate'd.
         let mmap = unsafe { memmap2::Mmap::map(&file) }?;
         Ok(Self { _file: file, mmap })
     }
