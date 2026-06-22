@@ -30,6 +30,7 @@ use std::collections::BTreeMap;
 use std::io::{Read, Write};
 use std::sync::Mutex;
 
+use crate::candidate::CandidateSource;
 use crate::error::CoreError;
 use crate::meta::LiteMeta;
 use crate::{trigram::trigrams, turbopfor, DbSource, Result};
@@ -510,8 +511,6 @@ impl<S: DbSource> DbReader<S> {
         }
     }
 }
-
-use crate::candidate::CandidateSource;
 
 impl<S: DbSource> CandidateSource for DbReader<S> {
     fn cs_posting(&self, trig: u32) -> Result<Option<Vec<u32>>> {
