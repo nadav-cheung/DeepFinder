@@ -58,3 +58,12 @@ fn posting_roundtrip() {
     let zzz = (b'z' as u32) << 16 | (b'z' as u32) << 8 | b'z' as u32;
     assert!(r.posting(zzz).unwrap().is_none());
 }
+
+#[test]
+fn empty_shard_roundtrips() {
+    let bytes = ShardBuilder::new(0, 0).finish(1);
+    let r = ShardReader::open(&bytes).unwrap();
+    assert_eq!(r.num_docs(), 0);
+    let zzz = (b'z' as u32) << 16 | (b'z' as u32) << 8 | b'z' as u32;
+    assert!(r.posting(zzz).unwrap().is_none());
+}
