@@ -13,6 +13,7 @@ pub mod error;
 pub mod meta;
 pub mod query;
 pub mod trigram;
+pub mod turbopfor;
 pub mod varint;
 
 pub use db::{DbBuilder, DbReader};

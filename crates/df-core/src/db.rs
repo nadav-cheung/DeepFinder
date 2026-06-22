@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 //! Single-file index DB: builder + reader.
 //!
-//! Step 1 (slice) format — deliberately simple; hardening comes later:
-//! - Postings: varint-delta (Step 5 swaps in TurboPFor).
+//! Step 5 format — TurboPFor posting codec in place of varint:
+//! - Postings: TurboPFor PFor-delta over delta-encoded docids.
 //! - Trigram table: linear, loaded eagerly into a HashMap (Step 6 → on-disk
 //!   Robin Hood + pread lookup).
 //! - Filenames: raw length-prefixed bytes (Step 7 → zstd blocks + dict).
@@ -12,13 +12,15 @@
 //! HEADER (36 B): magic[4] | version:u32 | num_docs:u32
 //!                 docs_off:u64 | try_off:u64 | try_len:u64
 //! DOCS   : for each doc (DocID = order): path_len:u32 | path bytes (UTF-8)
-//! TRIGRAMS: num:u32 | repeat { key:u32 | count:u32 | count × varint-delta docid }
+//! TRIGRAMS: num:u32 | repeat {
+//!     key:u32 | count:u32 | enc_len:u32 | enc_bytes[enc_len]
+//! }
 //! ```
 
 use std::collections::{BTreeMap, HashMap};
 
 use crate::error::CoreError;
-use crate::{trigram::trigrams, varint, DbSource, Result};
+use crate::{trigram::trigrams, turbopfor, DbSource, Result};
 
 const MAGIC: &[u8; 4] = b"DFDB";
 const VERSION: u32 = 1;
@@ -83,13 +85,17 @@ impl DbBuilder {
         let mut try_sec = Vec::new();
         try_sec.extend_from_slice(&(self.try_map.len() as u32).to_le_bytes());
         for (key, post) in &self.try_map {
-            try_sec.extend_from_slice(&key.to_le_bytes());
-            try_sec.extend_from_slice(&(post.len() as u32).to_le_bytes());
+            let mut deltas = Vec::with_capacity(post.len());
             let mut prev = 0u32;
             for &d in post {
-                varint::encode_u32(d - prev, &mut try_sec);
+                deltas.push(d - prev);
                 prev = d;
             }
+            let enc = turbopfor::encode(&deltas);
+            try_sec.extend_from_slice(&key.to_le_bytes());
+            try_sec.extend_from_slice(&(post.len() as u32).to_le_bytes());
+            try_sec.extend_from_slice(&(enc.len() as u32).to_le_bytes());
+            try_sec.extend_from_slice(&enc);
         }
 
         let docs_off = HEADER_LEN as u64;
@@ -174,17 +180,28 @@ impl<S: DbSource> DbReader<S> {
         let mut q = 4usize;
         let mut try_index = HashMap::with_capacity(n as usize);
         for _ in 0..n {
-            if q + 8 > try_bytes.len() {
+            if q + 12 > try_bytes.len() {
                 return Err(CoreError::DbFormat("truncated trigram entry".into()));
             }
             let key = le_u32(&try_bytes, q);
             let count = le_u32(&try_bytes, q + 4);
-            q += 8;
+            let enc_len = le_u32(&try_bytes, q + 8) as usize;
+            q += 12;
+            if q + enc_len > try_bytes.len() {
+                return Err(CoreError::DbFormat("truncated posting encoding".into()));
+            }
+            let enc = &try_bytes[q..q + enc_len];
+            q += enc_len;
+            let deltas = turbopfor::decode(enc, count as usize);
+            if deltas.len() != count as usize {
+                return Err(CoreError::Codec(format!(
+                    "pfor decode produced {} deltas, expected {count}",
+                    deltas.len()
+                )));
+            }
             let mut post = Vec::with_capacity(count as usize);
             let mut prev = 0u32;
-            for _ in 0..count {
-                let delta = varint::decode_u32(&try_bytes, &mut q)
-                    .ok_or_else(|| CoreError::Codec("truncated posting varint".into()))?;
+            for delta in deltas {
                 prev = prev
                     .checked_add(delta)
                     .ok_or_else(|| CoreError::Codec("docid overflow".into()))?;
