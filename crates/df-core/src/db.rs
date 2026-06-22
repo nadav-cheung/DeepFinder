@@ -510,3 +510,25 @@ impl<S: DbSource> DbReader<S> {
         }
     }
 }
+
+use crate::candidate::CandidateSource;
+
+impl<S: DbSource> CandidateSource for DbReader<S> {
+    fn cs_posting(&self, trig: u32) -> Result<Option<Vec<u32>>> {
+        self.posting(trig)
+    }
+
+    fn cs_verify(&self, docid: u32, needle: &[u8]) -> Result<bool> {
+        let p = self.doc_path(docid)?;
+        let low = p.to_lowercase();
+        Ok(if needle.is_empty() {
+            true
+        } else {
+            low.as_bytes().windows(needle.len()).any(|w| w == needle)
+        })
+    }
+
+    fn cs_num_docs(&self) -> u32 {
+        self.num_docs()
+    }
+}

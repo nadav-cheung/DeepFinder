@@ -8,6 +8,7 @@
 //! DB on disk.
 
 pub mod boolquery;
+pub mod candidate;
 pub mod db;
 pub mod db_source;
 pub mod error;
@@ -18,6 +19,7 @@ pub mod trigram;
 pub mod turbopfor;
 pub mod varint;
 
+pub use candidate::{candidates, CandidateSource};
 pub use db::{DbBuilder, DbReader};
 pub use db_source::DbSource;
 pub use error::{CoreError, Result};
