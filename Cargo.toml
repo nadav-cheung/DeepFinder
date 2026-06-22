@@ -2,6 +2,7 @@
 resolver = "2"
 members = [
     "crates/df-core",
+    "crates/df-content",
     "crates/df-index",
     "crates/df-ipc",
     "crates/deepfindd",
@@ -21,6 +22,7 @@ description = "Fast local file search for macOS — trigram index + daemon + CLI
 [workspace.dependencies]
 # Internal
 df-core = { path = "crates/df-core" }
+df-content = { path = "crates/df-content" }
 df-index = { path = "crates/df-index" }
 df-ipc = { path = "crates/df-ipc" }
 deepfindd = { path = "crates/deepfindd" }
@@ -40,6 +42,8 @@ tokio-util = { version = "0.7", features = ["codec"] }
 futures = "0.3"
 zstd = "0.13"
 criterion = "0.5"
+memmap2 = "0.9"
+memchr = "2"
 
 [profile.release]
 lto = "thin"
