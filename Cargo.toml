@@ -39,6 +39,7 @@ bytes = "1"
 tokio-util = { version = "0.7", features = ["codec"] }
 futures = "0.3"
 zstd = "0.13"
+criterion = "0.5"
 
 [profile.release]
 lto = "thin"
