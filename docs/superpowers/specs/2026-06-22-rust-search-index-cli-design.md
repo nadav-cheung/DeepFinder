@@ -1,6 +1,6 @@
 # DeepFinder — Rust 搜索/索引/CLI 重构设计
 
-> **状态**:设计稿,待 review → 转 writing-plans 出实现计划
+> **状态**:✅ v1 已实现并验证(Steps 0–9 全部完成,2026-06-22);详见末尾「§16 实现完成总结」。
 > **日期**:2026-06-22
 > **依据**:`search-analysis/REVIEW.md` §7(竞品评审 + 架构建议)
 > **范围**:把搜索 + 索引 + CLI 模块整体重写为 Rust;旧 Swift 工程**完全卸载清理**(clean slate)
@@ -281,3 +281,28 @@ deepfind status                          daemon 健康 + DB 统计
 4. boolean(AND/OR/NOT)查询正确(parser + eval 测试通过)。
 5. 端到端测试覆盖 daemon+CLI;`df-core` 有 criterion bench。
 6. 旧 Swift 工程与运行时**完全清除**,仓库为纯 Rust;`~/.deep-finder/` 从干净状态重建。
+
+---
+
+## 16. 实现完成总结(2026-06-22)
+
+v1 全部交付,9 个步骤各自通过 fmt/clippy/test 门 + 独立 commit(spec + clean-slate + 9 个 feat/bench commit):
+
+| Step | Commit | 内容 |
+|---|---|---|
+| 0 | `d8ae3de` | clean slate(删 Swift + 卸载运行时)+ Rust workspace 骨架 + CI |
+| 1 | `03e7c60` | df-core 切片:trigram + varint + DB 格式 + 查询 |
+| 2 | `cd92835` | df-index:ignore 并行遍历 + 原子写 + FileSource(pread) |
+| 3 | `2629a32` | df-ipc:bincode + LengthDelimitedCodec |
+| 4 | `e82333c` | deepfindd + deepfind 纵向切片(可运行产品) |
+| 5 | `12d9849` | 自写 TurboPFor(workflow 实现 + 对抗式验证:5016 fuzz / edges / property) |
+| 6 | `1ed750a` | Robin Hood 哈希 + 惰性 pread 解码(低 RSS) |
+| 7 | `848397f` | zstd 文件名块 + 训练字典 |
+| 8 | `509f4a2` | boolean 查询(AND/OR/NOT + 括号) |
+| 9 | `1f29781` | criterion bench + 全栈 smoke |
+
+**最终状态**:47 tests green,`cargo fmt --check` / `cargo clippy -D warnings` / `cargo test --all` 全绿。**端到端**(release):`deepfind index --root crates`(52 entries)→ `deepfind daemon` → `search "Cargo"` / `search "src AND query"` / `search "query OR trigram"` 经 Unix socket 正确返回;`--direct` 在线兜底可用。
+
+**DB 格式**(单文件,全 pread):`[header | zstd-dict | filename-blocks | block-index | Robin-Hood hash | TurboPFor postings]`。常驻内存仅 = 字典 + 块索引 + 单次查询命中的 posting(其余按需 pread)。
+
+**未做(明确未来,见 §2.2)**:内容索引 v2、FSEvents watcher(`df-watch`)、GUI、pinyin/jieba、daemon 自动拉起(launchd)、SIMD 解码加速(当前为标量正确实现,SIMD 为可选优化)。
