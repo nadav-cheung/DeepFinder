@@ -28,6 +28,10 @@ enum Cmd {
         /// Rebuild even if the index is fresh (< 60s old).
         #[arg(long)]
         force: bool,
+        /// Extra directory name(s) to skip (on top of the defaults). Repeatable.
+        /// Also read from the DEEPFIND_SKIP env var (colon-separated).
+        #[arg(long = "skip", value_name = "NAME")]
+        skip: Vec<String>,
     },
     /// Run the resident daemon.
     Daemon,
@@ -54,7 +58,11 @@ enum Cmd {
 async fn main() {
     let cli = Cli::parse();
     match cli.cmd {
-        Cmd::Index { root, force } => cmd_index(&root, force),
+        Cmd::Index {
+            root,
+            force,
+            skip,
+        } => cmd_index(&root, force, skip),
         Cmd::Daemon => cmd_daemon().await,
         Cmd::Status => cmd_status().await,
         Cmd::Search {
@@ -74,7 +82,7 @@ const FRESH_THRESHOLD_SECS: u64 = 60;
 /// silently out of date (REVIEW §6.2).
 const STALE_THRESHOLD_SECS: u64 = 7 * 86_400;
 
-fn cmd_index(root: &Path, force: bool) {
+fn cmd_index(root: &Path, force: bool, mut skip: Vec<String>) {
     let db = default_db();
     if !force {
         if let Some(age) = index_build_age(&db) {
@@ -86,7 +94,16 @@ fn cmd_index(root: &Path, force: bool) {
             }
         }
     }
-    match df_index::build_index(root, &db) {
+    // DEEPFIND_SKIP=foo:bar adds extra skip names (REVIEW §8.1 #3).
+    if let Ok(v) = std::env::var("DEEPFIND_SKIP") {
+        for s in v.split(':') {
+            let t = s.trim();
+            if !t.is_empty() {
+                skip.push(t.to_string());
+            }
+        }
+    }
+    match df_index::build_index_with(root, &db, &skip) {
         Ok(n) => println!("indexed {n} entries -> {}", db.display()),
         Err(e) => {
             eprintln!("index failed: {e}");

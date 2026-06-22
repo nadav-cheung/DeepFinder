@@ -39,10 +39,23 @@ struct DocRec {
     mtime: i64,
 }
 
-/// Build (or rebuild) the index DB for `root`, writing atomically to `out_db`
-/// (tmp → fsync → rename). Returns the number of indexed entries.
+/// Build (or rebuild) the index DB for `root` with the default skip-list,
+/// writing atomically to `out_db`. Returns the number of indexed entries.
 pub fn build_index(root: &Path, out_db: &Path) -> Result<u32> {
-    let recs = collect_records(root, DEFAULT_SKIP)?;
+    build_index_with(root, out_db, &[])
+}
+
+/// Like [`build_index`] but with `extra_skip` directory names pruned in addition
+/// to [`DEFAULT_SKIP`] (REVIEW §8.1 #3: configurable skip-list). Extras are
+/// deduped against the defaults.
+pub fn build_index_with(root: &Path, out_db: &Path, extra_skip: &[String]) -> Result<u32> {
+    let mut skip: Vec<&str> = DEFAULT_SKIP.to_vec();
+    for e in extra_skip {
+        if !e.is_empty() && !skip.contains(&e.as_str()) {
+            skip.push(e.as_str());
+        }
+    }
+    let recs = collect_records(root, &skip)?;
     let mut builder = DbBuilder::new();
     builder.set_build_time(now_secs());
     for r in &recs {
