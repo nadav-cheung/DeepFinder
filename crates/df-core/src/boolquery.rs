@@ -210,20 +210,27 @@ fn evaluate<S: DbSource>(db: &DbReader<S>, node: &Node) -> Result<BTreeSet<u32>>
     }
 }
 
+/// Evaluate a boolean AST and return matching DocIDs (sorted, capped).
+pub fn boolean_docids<S: DbSource>(
+    db: &DbReader<S>,
+    parsed: &Node,
+    limit: Option<u32>,
+) -> Result<Vec<u32>> {
+    let docids = evaluate(db, parsed)?;
+    let cap = limit.map(|l| l as usize).unwrap_or(usize::MAX);
+    Ok(docids.into_iter().take(cap).collect())
+}
+
 /// Evaluate a boolean AST and return matching paths (DocID order), capped.
 pub fn boolean_query<S: DbSource>(
     db: &DbReader<S>,
     parsed: &Node,
     limit: Option<u32>,
 ) -> Result<Vec<String>> {
-    let docids = evaluate(db, parsed)?;
-    let cap = limit.map(|l| l as usize).unwrap_or(usize::MAX);
-    let mut out = Vec::new();
+    let docids = boolean_docids(db, parsed, limit)?;
+    let mut out = Vec::with_capacity(docids.len());
     for d in docids {
         out.push(db.doc_path(d)?);
-        if out.len() >= cap {
-            break;
-        }
     }
     Ok(out)
 }

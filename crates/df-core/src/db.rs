@@ -10,27 +10,36 @@
 //!
 //! Layout (all integers little-endian):
 //! ```text
-//! HEADER (40 B): magic[4] | version:u32 | num_docs:u32
-//!                docs_off:u64 | try_off:u64 | post_off:u64 | slots_log2:u32
+//! HEADER (64 B): magic[4] | version:u32 | num_docs:u32 | build_time:u64
+//!                docs_off:u64 | meta_off:u64 | dirmtime_off:u64(reserved)
+//!                try_off:u64 | post_off:u64 | slots_log2:u32
 //! DOCS    : dict_len:u32 | dict[dict_len]
 //!           num_blocks:u32 | num_blocks × (block_off:u64 | clen:u32 | count:u32)
 //!           blocks × zstd(blob)
+//! META    : num_docs × [is_dir:u8 | size:i64 | mtime:i64]  (17 B each, docid order)
 //! HASH    : slots × [key:u32 | count:u32 | post_off:u64 | enc_len:u32]  (20 B)
 //!           empty slot: key = 0xFFFFFFFF
 //! POSTINGS: concatenated TurboPFor blobs
 //! ```
+//!
+//! `build_time` (index-build epoch, REVIEW §6.2 staleness) and `dirmtime_off`
+//! (reserved hook for future incremental readdir reuse, plocate updatedb.cpp
+//! pattern) are v2 header additions; `dirmtime_off` is 0 until that table exists.
 
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
 
 use crate::error::CoreError;
+use crate::meta::LiteMeta;
 use crate::{trigram::trigrams, turbopfor, DbSource, Result};
 
 const MAGIC: &[u8; 4] = b"DFDB";
-const VERSION: u32 = 1;
-const HEADER_LEN: usize = 40;
+const VERSION: u32 = 2;
+const HEADER_LEN: usize = 64;
 const EMPTY_KEY: u32 = 0xFFFF_FFFF;
 const SLOT_LEN: usize = 20;
+/// Per-doc META record: is_dir:u8 | size:i64 | mtime:i64.
+const META_REC_LEN: usize = 17;
 
 const BLOCK_PATHS: usize = 256;
 const ZSTD_LEVEL: i32 = 3;
@@ -99,20 +108,33 @@ fn train_dict(paths: &[String]) -> Vec<u8> {
 
 pub struct DbBuilder {
     paths: Vec<String>,
+    /// Per-doc (is_dir, size, mtime), parallel to `paths`.
+    meta: Vec<(u8, i64, i64)>,
     try_map: BTreeMap<u32, Vec<u32>>,
+    build_time: u64,
 }
 
 impl DbBuilder {
     pub fn new() -> Self {
         Self {
             paths: Vec::new(),
+            meta: Vec::new(),
             try_map: BTreeMap::new(),
+            build_time: 0,
         }
     }
 
     pub fn insert(&mut self, path: &str) -> u32 {
+        self.insert_with(path, false, 0, 0)
+    }
+
+    /// Insert a path with its per-file metadata (`is_dir`, `size` bytes,
+    /// `mtime` unix seconds). df-core stays I/O-free: callers (df-index) gather
+    /// the metadata; the builder only stores what it is given.
+    pub fn insert_with(&mut self, path: &str, is_dir: bool, size: i64, mtime: i64) -> u32 {
         let id = self.paths.len() as u32;
         self.paths.push(path.to_string());
+        self.meta.push((is_dir.into(), size, mtime));
         let lower = path.to_lowercase();
         for t in trigrams(lower.as_bytes()) {
             let v = self.try_map.entry(t).or_default();
@@ -121,6 +143,12 @@ impl DbBuilder {
             }
         }
         id
+    }
+
+    /// Stamp the index build time (unix seconds). Used for staleness checks
+    /// (REVIEW §6.2); df-index sets this from the system clock at build.
+    pub fn set_build_time(&mut self, secs: u64) {
+        self.build_time = secs;
     }
 
     pub fn doc_count(&self) -> u32 {
@@ -163,7 +191,16 @@ impl DbBuilder {
         }
         docs.extend_from_slice(&blocks_bytes);
 
-        let try_off = docs_off + docs.len() as u64;
+        // --- META section: num_docs × 17 B (is_dir | size | mtime), docid order ---
+        let meta_off = docs_off + docs.len() as u64;
+        let mut meta_sec = Vec::with_capacity(self.paths.len() * META_REC_LEN);
+        for &(is_dir, size, mtime) in &self.meta {
+            meta_sec.push(is_dir);
+            meta_sec.extend_from_slice(&size.to_le_bytes());
+            meta_sec.extend_from_slice(&mtime.to_le_bytes());
+        }
+
+        let try_off = meta_off + meta_sec.len() as u64;
 
         // --- HASH table + POSTINGS ---
         let n_entries = self.try_map.len() as u64;
@@ -196,15 +233,22 @@ impl DbBuilder {
             slots.trailing_zeros()
         };
 
-        let mut out = Vec::with_capacity(HEADER_LEN + docs.len() + table.len() + post_sec.len());
+        let mut out = Vec::with_capacity(
+            HEADER_LEN + docs.len() + meta_sec.len() + table.len() + post_sec.len(),
+        );
         out.extend_from_slice(MAGIC);
         out.extend_from_slice(&VERSION.to_le_bytes());
         out.extend_from_slice(&num_docs.to_le_bytes());
+        out.extend_from_slice(&self.build_time.to_le_bytes());
         out.extend_from_slice(&docs_off.to_le_bytes());
+        out.extend_from_slice(&meta_off.to_le_bytes());
+        out.extend_from_slice(&0u64.to_le_bytes()); // dirmtime_off: reserved hook (absent)
         out.extend_from_slice(&try_off.to_le_bytes());
         out.extend_from_slice(&post_off.to_le_bytes());
         out.extend_from_slice(&slots_log2.to_le_bytes());
+        debug_assert_eq!(out.len(), HEADER_LEN);
         out.extend_from_slice(&docs);
+        out.extend_from_slice(&meta_sec);
         out.extend_from_slice(&table);
         out.extend_from_slice(&post_sec);
         out
@@ -275,6 +319,8 @@ fn build_robin_hood(entries: &[(u32, u32, u64, u32)], slots: u64) -> Vec<u8> {
 pub struct DbReader<S> {
     src: S,
     num_docs: u32,
+    build_time: u64,
+    meta_off: u64,
     try_off: u64,
     slots: u64,
     mask: u64,
@@ -296,9 +342,12 @@ impl<S: DbSource> DbReader<S> {
             )));
         }
         let num_docs = le_u32(&hdr, 8);
-        let docs_off = le_u64(&hdr, 12);
-        let try_off = le_u64(&hdr, 20);
-        let slots_log2 = le_u32(&hdr, 36);
+        let build_time = le_u64(&hdr, 12);
+        let docs_off = le_u64(&hdr, 20);
+        let meta_off = le_u64(&hdr, 28);
+        // dirmtime_off at 36 is a reserved hook (unused until incremental lands).
+        let try_off = le_u64(&hdr, 44);
+        let slots_log2 = le_u32(&hdr, 60);
         let slots: u64 = if slots_log2 == 0 {
             0
         } else {
@@ -327,6 +376,8 @@ impl<S: DbSource> DbReader<S> {
         Ok(Self {
             src,
             num_docs,
+            build_time,
+            meta_off,
             try_off,
             slots,
             mask: if slots == 0 { 0 } else { slots - 1 },
@@ -338,6 +389,25 @@ impl<S: DbSource> DbReader<S> {
 
     pub fn num_docs(&self) -> u32 {
         self.num_docs
+    }
+
+    /// Index build time (unix seconds), or 0 if unset. For staleness checks.
+    pub fn build_time(&self) -> u64 {
+        self.build_time
+    }
+
+    /// Fetch per-file metadata for `docid` (one 17 B pread).
+    pub fn doc_meta(&self, docid: u32) -> Result<LiteMeta> {
+        if docid >= self.num_docs {
+            return Err(CoreError::Query(format!("docid {docid} out of range")));
+        }
+        let off = self.meta_off + docid as u64 * META_REC_LEN as u64;
+        let rec = self.src.read_at(off, META_REC_LEN)?;
+        Ok(LiteMeta {
+            is_dir: rec[0] != 0,
+            size: i64::from_le_bytes(rec[1..9].try_into().unwrap()),
+            mtime: i64::from_le_bytes(rec[9..17].try_into().unwrap()),
+        })
     }
 
     /// Fetch the original-case path for `docid` (decompresses its filename block).

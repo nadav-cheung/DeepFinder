@@ -21,4 +21,4 @@ pub use db::{DbBuilder, DbReader};
 pub use db_source::DbSource;
 pub use error::{CoreError, Result};
 pub use meta::LiteMeta;
-pub use query::query;
+pub use query::{query, query_docids};

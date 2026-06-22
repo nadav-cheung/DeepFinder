@@ -2,32 +2,55 @@
 //! Query entry point. Dispatches to the fast single-term path, or to the
 //! boolean evaluator ([`crate::boolquery`]) when the query contains
 //! `AND`/`OR`/`NOT`/parens or multiple terms.
+//!
+//! [`query_docids`] is the primary engine call (returns DocIDs); [`query`]
+//! resolves those to paths. The daemon uses `query_docids` so it can resolve
+//! metadata, apply scope filtering, and stream results itself.
 
-use crate::boolquery::{boolean_query, parse, Node};
+use crate::boolquery::{boolean_docids, parse, Node};
 use crate::{trigram::trigrams, DbReader, DbSource, Result};
 
-/// Return matching paths for `q`, optionally capped at `limit`. Supports boolean
+/// Matching DocIDs for `q`, optionally capped at `limit`. Supports boolean
 /// operators (uppercase `AND`/`OR`/`NOT`, parentheses, implicit AND).
-pub fn query<S: DbSource>(db: &DbReader<S>, q: &str, limit: Option<u32>) -> Result<Vec<String>> {
+pub fn query_docids<S: DbSource>(
+    db: &DbReader<S>,
+    q: &str,
+    limit: Option<u32>,
+) -> Result<Vec<u32>> {
     if q.is_empty() {
         return Ok(Vec::new());
     }
     match parse(q) {
-        Some(Node::Term(_)) => single(db, q, limit),
-        Some(node) => boolean_query(db, &node, limit),
-        None => single(db, q, limit), // malformed → treat the raw string as one substring
+        Some(Node::Term(_)) => single_docids(db, q, limit),
+        Some(node) => boolean_docids(db, &node, limit),
+        None => single_docids(db, q, limit), // malformed → raw substring
     }
+}
+
+/// Return matching paths for `q`, optionally capped at `limit`. (Resolves
+/// [`query_docids`] to path strings.)
+pub fn query<S: DbSource>(db: &DbReader<S>, q: &str, limit: Option<u32>) -> Result<Vec<String>> {
+    let docids = query_docids(db, q, limit)?;
+    let mut out = Vec::with_capacity(docids.len());
+    for d in docids {
+        out.push(db.doc_path(d)?);
+    }
+    Ok(out)
 }
 
 /// Fast single-substring path: rarest query trigram → posting list → substring
 /// verify. Short queries (<3 bytes) fall back to a linear scan.
-fn single<S: DbSource>(db: &DbReader<S>, q: &str, limit: Option<u32>) -> Result<Vec<String>> {
+fn single_docids<S: DbSource>(
+    db: &DbReader<S>,
+    q: &str,
+    limit: Option<u32>,
+) -> Result<Vec<u32>> {
     let q_lower = q.to_lowercase();
     let cap = limit.map(|l| l as usize).unwrap_or(usize::MAX);
     let needle = q_lower.as_str();
 
     if q_lower.len() < 3 {
-        return scan(db, needle, cap);
+        return scan_docids(db, needle, cap);
     }
 
     let qtris = trigrams(q_lower.as_bytes());
@@ -54,7 +77,7 @@ fn single<S: DbSource>(db: &DbReader<S>, q: &str, limit: Option<u32>) -> Result<
     for d in cands {
         let p = db.doc_path(d)?;
         if p.to_lowercase().contains(needle) {
-            out.push(p);
+            out.push(d);
             if out.len() >= cap {
                 break;
             }
@@ -63,12 +86,12 @@ fn single<S: DbSource>(db: &DbReader<S>, q: &str, limit: Option<u32>) -> Result<
     Ok(out)
 }
 
-fn scan<S: DbSource>(db: &DbReader<S>, needle: &str, cap: usize) -> Result<Vec<String>> {
+fn scan_docids<S: DbSource>(db: &DbReader<S>, needle: &str, cap: usize) -> Result<Vec<u32>> {
     let mut out = Vec::new();
     for d in 0..db.num_docs() {
         let p = db.doc_path(d)?;
         if p.to_lowercase().contains(needle) {
-            out.push(p);
+            out.push(d);
             if out.len() >= cap {
                 break;
             }
