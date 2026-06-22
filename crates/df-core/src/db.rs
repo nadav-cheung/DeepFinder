@@ -1,36 +1,46 @@
 // SPDX-License-Identifier: MIT
 //! Single-file index DB: builder + reader.
 //!
-//! Step 5 format — TurboPFor posting codec in place of varint:
-//! - Postings: TurboPFor PFor-delta over delta-encoded docids.
-//! - Trigram table: linear, loaded eagerly into a HashMap (Step 6 → on-disk
-//!   Robin Hood + pread lookup).
+//! Step 6 format — on-disk Robin Hood hash for trigram→posting, lazy pread
+//! decode (low RSS: the reader never loads the whole table or all postings):
+//! - Postings: TurboPFor PFor-delta.
+//! - Trigram lookup: Robin Hood open-addressed hash (2^k slots), pread per query.
 //! - Filenames: raw length-prefixed bytes (Step 7 → zstd blocks + dict).
 //!
 //! Layout (all integers little-endian):
 //! ```text
-//! HEADER (36 B): magic[4] | version:u32 | num_docs:u32
-//!                 docs_off:u64 | try_off:u64 | try_len:u64
-//! DOCS   : for each doc (DocID = order): path_len:u32 | path bytes (UTF-8)
-//! TRIGRAMS: num:u32 | repeat {
-//!     key:u32 | count:u32 | enc_len:u32 | enc_bytes[enc_len]
-//! }
+//! HEADER (40 B): magic[4] | version:u32 | num_docs:u32
+//!                docs_off:u64 | try_off:u64 | post_off:u64 | slots_log2:u32
+//! DOCS    : per doc (DocID = order): path_len:u32 | path bytes (UTF-8)
+//! HASH    : slots × [key:u32 | count:u32 | post_off:u64 | enc_len:u32]  (20 B)
+//!           empty slot: key = 0xFFFFFFFF (never a real 24-bit trigram)
+//! POSTINGS: concatenated TurboPFor blobs (each referenced by a hash slot)
 //! ```
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 use crate::error::CoreError;
 use crate::{trigram::trigrams, turbopfor, DbSource, Result};
 
 const MAGIC: &[u8; 4] = b"DFDB";
 const VERSION: u32 = 1;
-const HEADER_LEN: usize = 36;
+const HEADER_LEN: usize = 40;
+const EMPTY_KEY: u32 = 0xFFFF_FFFF;
+const SLOT_LEN: usize = 20;
 
 fn le_u32(buf: &[u8], at: usize) -> u32 {
     u32::from_le_bytes(buf[at..at + 4].try_into().unwrap())
 }
 fn le_u64(buf: &[u8], at: usize) -> u64 {
     u64::from_le_bytes(buf[at..at + 8].try_into().unwrap())
+}
+
+/// Avalanche integer hash for the Robin Hood table (splitmix32-style).
+fn hash(x: u32) -> u32 {
+    let mut z = x.wrapping_add(0x9E37_79B9);
+    z = (z ^ (z >> 16)).wrapping_mul(0x85eb_ca6b);
+    z = (z ^ (z >> 13)).wrapping_mul(0xc2b2_ae35);
+    z ^ (z >> 16)
 }
 
 // ---------------------------------------------------------------------------
@@ -58,8 +68,6 @@ impl DbBuilder {
         let lower = path.to_lowercase();
         for t in trigrams(lower.as_bytes()) {
             let v = self.try_map.entry(t).or_default();
-            // DocIDs are inserted in increasing order, so `id` is strictly
-            // greater than the current last → append keeps the list sorted+unique.
             if v.last() != Some(&id) {
                 v.push(id);
             }
@@ -82,8 +90,22 @@ impl DbBuilder {
             docs.extend_from_slice(b);
         }
 
-        let mut try_sec = Vec::new();
-        try_sec.extend_from_slice(&(self.try_map.len() as u32).to_le_bytes());
+        let docs_off = HEADER_LEN as u64;
+        let try_off = docs_off + docs.len() as u64;
+
+        // Hash table size: power-of-two with load factor ≤ 0.5.
+        let n_entries = self.try_map.len() as u64;
+        let slots = if n_entries == 0 {
+            0
+        } else {
+            (n_entries * 2).next_power_of_two().max(1)
+        };
+        let table_bytes = slots as usize * SLOT_LEN;
+        let post_off = try_off + table_bytes as u64;
+
+        // Encode postings, recording each trigram's (count, absolute offset, len).
+        let mut post_sec = Vec::new();
+        let mut entries: Vec<(u32, u32, u64, u32)> = Vec::with_capacity(n_entries as usize);
         for (key, post) in &self.try_map {
             let mut deltas = Vec::with_capacity(post.len());
             let mut prev = 0u32;
@@ -92,25 +114,29 @@ impl DbBuilder {
                 prev = d;
             }
             let enc = turbopfor::encode(&deltas);
-            try_sec.extend_from_slice(&key.to_le_bytes());
-            try_sec.extend_from_slice(&(post.len() as u32).to_le_bytes());
-            try_sec.extend_from_slice(&(enc.len() as u32).to_le_bytes());
-            try_sec.extend_from_slice(&enc);
+            let abs_off = post_off + post_sec.len() as u64;
+            entries.push((*key, post.len() as u32, abs_off, enc.len() as u32));
+            post_sec.extend_from_slice(&enc);
         }
 
-        let docs_off = HEADER_LEN as u64;
-        let try_off = docs_off + docs.len() as u64;
-        let try_len = try_sec.len() as u64;
+        let table = build_robin_hood(&entries, slots);
+        let slots_log2: u32 = if slots == 0 {
+            0
+        } else {
+            slots.trailing_zeros()
+        };
 
-        let mut out = Vec::with_capacity(HEADER_LEN + docs.len() + try_sec.len());
+        let mut out = Vec::with_capacity(HEADER_LEN + docs.len() + table.len() + post_sec.len());
         out.extend_from_slice(MAGIC);
         out.extend_from_slice(&VERSION.to_le_bytes());
         out.extend_from_slice(&num_docs.to_le_bytes());
         out.extend_from_slice(&docs_off.to_le_bytes());
         out.extend_from_slice(&try_off.to_le_bytes());
-        out.extend_from_slice(&try_len.to_le_bytes());
+        out.extend_from_slice(&post_off.to_le_bytes());
+        out.extend_from_slice(&slots_log2.to_le_bytes());
         out.extend_from_slice(&docs);
-        out.extend_from_slice(&try_sec);
+        out.extend_from_slice(&table);
+        out.extend_from_slice(&post_sec);
         out
     }
 }
@@ -121,18 +147,75 @@ impl Default for DbBuilder {
     }
 }
 
+fn write_slot(table: &mut [u8], idx: usize, key: u32, count: u32, off: u64, len: u32) {
+    let b = idx * SLOT_LEN;
+    table[b..b + 4].copy_from_slice(&key.to_le_bytes());
+    table[b + 4..b + 8].copy_from_slice(&count.to_le_bytes());
+    table[b + 8..b + 16].copy_from_slice(&off.to_le_bytes());
+    table[b + 16..b + 20].copy_from_slice(&len.to_le_bytes());
+}
+
+/// Build a Robin Hood (displacement-stealing) open-addressed table. `slots`
+/// must be a power of two (or 0). Each slot holds (key, count, post_off, enc_len).
+fn build_robin_hood(entries: &[(u32, u32, u64, u32)], slots: u64) -> Vec<u8> {
+    if slots == 0 {
+        return Vec::new();
+    }
+    let slots = slots as usize;
+    let mask = slots - 1;
+    let mut table = vec![0u8; slots * SLOT_LEN];
+    for i in 0..slots {
+        write_slot(&mut table, i, EMPTY_KEY, 0, 0, 0);
+    }
+    for &(key, count, off, len) in entries {
+        let mut idx = (hash(key) as usize) & mask;
+        // current entry being placed + its probe distance from its ideal slot
+        let (mut e_key, mut e_count, mut e_off, mut e_len) = (key, count, off, len);
+        let mut e_probe = 0usize;
+        loop {
+            let slot_key = le_u32(&table, idx * SLOT_LEN);
+            if slot_key == EMPTY_KEY {
+                write_slot(&mut table, idx, e_key, e_count, e_off, e_len);
+                break;
+            }
+            let ideal = (hash(slot_key) as usize) & mask;
+            let their_probe = ((idx + slots) - ideal) & mask;
+            if e_probe > their_probe {
+                // steal the slot; continue inserting the evicted resident
+                let (r_key, r_count, r_off, r_len) = (
+                    slot_key,
+                    le_u32(&table, idx * SLOT_LEN + 4),
+                    le_u64(&table, idx * SLOT_LEN + 8),
+                    le_u32(&table, idx * SLOT_LEN + 16),
+                );
+                write_slot(&mut table, idx, e_key, e_count, e_off, e_len);
+                e_key = r_key;
+                e_count = r_count;
+                e_off = r_off;
+                e_len = r_len;
+                e_probe = their_probe;
+            }
+            idx = (idx + 1) & mask;
+            e_probe += 1;
+        }
+    }
+    table
+}
+
 // ---------------------------------------------------------------------------
 // Reader
 // ---------------------------------------------------------------------------
 
 /// Reads an index DB through a [`DbSource`] (pread/low-RSS in the daemon,
-/// `&[u8]` in tests). The slice loads the trigram table eagerly; later steps
-/// make lookups lazy.
+/// `&[u8]` in tests). Trigram lookups are lazy: each [`DbReader::posting`] does
+/// a Robin Hood probe + a single posting pread + TurboPFor decode.
 pub struct DbReader<S> {
     src: S,
     num_docs: u32,
     doc_off: Vec<u64>,
-    try_index: HashMap<u32, Vec<u32>>,
+    try_off: u64,
+    slots: u64,
+    mask: u64,
 }
 
 impl<S: DbSource> DbReader<S> {
@@ -150,9 +233,14 @@ impl<S: DbSource> DbReader<S> {
         let num_docs = le_u32(&hdr, 8);
         let docs_off = le_u64(&hdr, 12);
         let try_off = le_u64(&hdr, 20);
-        let try_len = le_u64(&hdr, 28);
+        let slots_log2 = le_u32(&hdr, 36);
+        let slots: u64 = if slots_log2 == 0 {
+            0
+        } else {
+            1u64 << slots_log2
+        };
 
-        // Build per-doc offset index by scanning the docs section once.
+        // Per-doc filename offsets (eager; Step 7 moves filenames to zstd blocks).
         let docs_len = try_off
             .checked_sub(docs_off)
             .ok_or_else(|| CoreError::DbFormat("try_off < docs_off".into()))?;
@@ -171,50 +259,13 @@ impl<S: DbSource> DbReader<S> {
             }
         }
 
-        // Decode the trigram table.
-        let try_bytes = src.read_at(try_off, try_len as usize)?;
-        if try_bytes.len() < 4 {
-            return Err(CoreError::DbFormat("truncated trigram table".into()));
-        }
-        let n = le_u32(&try_bytes, 0);
-        let mut q = 4usize;
-        let mut try_index = HashMap::with_capacity(n as usize);
-        for _ in 0..n {
-            if q + 12 > try_bytes.len() {
-                return Err(CoreError::DbFormat("truncated trigram entry".into()));
-            }
-            let key = le_u32(&try_bytes, q);
-            let count = le_u32(&try_bytes, q + 4);
-            let enc_len = le_u32(&try_bytes, q + 8) as usize;
-            q += 12;
-            if q + enc_len > try_bytes.len() {
-                return Err(CoreError::DbFormat("truncated posting encoding".into()));
-            }
-            let enc = &try_bytes[q..q + enc_len];
-            q += enc_len;
-            let deltas = turbopfor::decode(enc, count as usize);
-            if deltas.len() != count as usize {
-                return Err(CoreError::Codec(format!(
-                    "pfor decode produced {} deltas, expected {count}",
-                    deltas.len()
-                )));
-            }
-            let mut post = Vec::with_capacity(count as usize);
-            let mut prev = 0u32;
-            for delta in deltas {
-                prev = prev
-                    .checked_add(delta)
-                    .ok_or_else(|| CoreError::Codec("docid overflow".into()))?;
-                post.push(prev);
-            }
-            try_index.insert(key, post);
-        }
-
         Ok(Self {
             src,
             num_docs,
             doc_off,
-            try_index,
+            try_off,
+            slots,
+            mask: if slots == 0 { 0 } else { slots - 1 },
         })
     }
 
@@ -234,8 +285,46 @@ impl<S: DbSource> DbReader<S> {
         String::from_utf8(pb).map_err(|e| CoreError::DbFormat(format!("non-utf8 path: {e}")))
     }
 
-    /// Posting list (sorted-unique DocIDs) for a trigram key, if indexed.
-    pub fn posting(&self, trig: u32) -> Option<&Vec<u32>> {
-        self.try_index.get(&trig)
+    /// Robin Hood lookup of `trig`; on hit, pread + TurboPFor-decode the posting
+    /// list (sorted-unique DocIDs). Returns `Ok(None)` if `trig` is not indexed.
+    pub fn posting(&self, trig: u32) -> Result<Option<Vec<u32>>> {
+        if self.slots == 0 {
+            return Ok(None);
+        }
+        let mut idx = (hash(trig) as u64) & self.mask;
+        let mut probe = 0u64;
+        loop {
+            let slot_off = self.try_off + idx * SLOT_LEN as u64;
+            let slot = self.src.read_at(slot_off, SLOT_LEN)?;
+            let key = le_u32(&slot, 0);
+            if key == EMPTY_KEY {
+                return Ok(None);
+            }
+            let ideal = (hash(key) as u64) & self.mask;
+            let their_probe = ((idx + self.slots) - ideal) & self.mask;
+            // Robin Hood: if the resident is closer to its ideal slot than we are
+            // to ours, our key can't be further along → absent.
+            if probe > their_probe {
+                return Ok(None);
+            }
+            if key == trig {
+                let count = le_u32(&slot, 4);
+                let off = le_u64(&slot, 8);
+                let len = le_u32(&slot, 16) as usize;
+                let enc = self.src.read_at(off, len)?;
+                let deltas = turbopfor::decode(&enc, count as usize);
+                let mut post = Vec::with_capacity(count as usize);
+                let mut prev = 0u32;
+                for d in deltas {
+                    prev = prev
+                        .checked_add(d)
+                        .ok_or_else(|| CoreError::Codec("docid overflow".into()))?;
+                    post.push(prev);
+                }
+                return Ok(Some(post));
+            }
+            idx = (idx + 1) & self.mask;
+            probe += 1;
+        }
     }
 }

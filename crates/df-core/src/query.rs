@@ -25,9 +25,9 @@ pub fn query<S: DbSource>(db: &DbReader<S>, q: &str, limit: Option<u32>) -> Resu
 
     // Trigram path: every query trigram must be indexed; pick the rarest.
     let qtris = trigrams(q_lower.as_bytes());
-    let mut best: Option<&Vec<u32>> = None;
+    let mut best: Option<Vec<u32>> = None;
     for t in &qtris {
-        match db.posting(*t) {
+        match db.posting(*t)? {
             Some(post) => {
                 best = Some(match best {
                     None => post,
@@ -45,7 +45,7 @@ pub fn query<S: DbSource>(db: &DbReader<S>, q: &str, limit: Option<u32>) -> Resu
     };
 
     let mut out = Vec::new();
-    for &d in cands {
+    for d in cands {
         let p = db.doc_path(d)?;
         if p.to_lowercase().contains(needle) {
             out.push(p);
