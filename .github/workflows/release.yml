@@ -13,7 +13,7 @@ jobs:
   release:
     runs-on: macos-26
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Build CLI (release)
         run: swift build -c release --product deepfinder
@@ -173,7 +173,7 @@ jobs:
           security delete-keychain signing.keychain
 
       - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: |
             .build/release/deepfinder.zip
