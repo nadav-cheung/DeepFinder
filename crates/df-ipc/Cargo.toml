@@ -1,0 +1,12 @@
+[package]
+name = "df-ipc"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+df-core = { workspace = true }
+serde = { workspace = true }
+thiserror = { workspace = true }
+# `tokio` + `tokio-util` (length-framed codec) + `bincode` are added in Step 3.

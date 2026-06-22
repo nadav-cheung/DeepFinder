@@ -1,0 +1,19 @@
+[package]
+name = "deepfind"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "deepfind"
+path = "src/main.rs"
+
+[dependencies]
+df-core = { workspace = true }
+df-ipc = { workspace = true }
+clap = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+# `ignore` (for --direct online scan) is added in Step 4.

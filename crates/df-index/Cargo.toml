@@ -1,0 +1,11 @@
+[package]
+name = "df-index"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+df-core = { workspace = true }
+thiserror = { workspace = true }
+# `ignore` (parallel traversal) and `zstd` (filename blocks) are added in Step 2.

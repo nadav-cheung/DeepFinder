@@ -3,65 +3,19 @@ name: CI
 on:
   push:
     branches: [main]
-    paths-ignore:
-      - 'docs/**'
-      - '*.md'
   pull_request:
-    branches: [main]
-    paths-ignore:
-      - 'docs/**'
-      - '*.md'
-  workflow_dispatch:
-
-# Least-privilege token: CI only needs to read the repo. Actions that must
-# write (none here) would declare their own narrower permissions per-job.
-permissions:
-  contents: read
-
-# Cancel superseded runs on the same ref to free runners and avoid stale
-# results. Always runs to completion on the default branch (push to main).
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  build-and-test:
-    runs-on: macos-26
+  test:
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
-
-      - name: Cache Swift packages
-        uses: actions/cache@v4
+      - uses: dtolnay/rust-toolchain@stable
         with:
-          path: .build/
-          key: ${{ runner.os }}-spm-${{ hashFiles('Package.swift', 'Package.resolved') }}
-          restore-keys: ${{ runner.os }}-spm-
-
-      # TODO: Add performance regression check here. Compare benchmark results
-      # (e.g. swift test --filter 'measure' output or xcmetric baseline) against
-      # the main-branch baseline, and fail the build on regressions > threshold.
-
-      - name: Build
-        run: swift build
-
-      - name: Test (batched per-suite)
-        # Swift Testing SIGSEGV workaround: run suites individually to avoid
-        # memory pressure from concurrent @MainActor test execution.
-        run: ./scripts/run-tests.sh
-
-      - name: Report coverage
-        run: |
-          PROF_DATA=$(find .build -name 'default.profdata' 2>/dev/null | head -1)
-          if [ -n "$PROF_DATA" ]; then
-            TEST_BINARY=$(find .build -name 'DeepFinderPackageTests' -type f 2>/dev/null | head -1)
-            if [ -n "$TEST_BINARY" ]; then
-              echo "=== Coverage Report ==="
-              xcrun llvm-cov report "$TEST_BINARY" \
-                -instr-profile "$PROF_DATA" \
-                --ignore-filename-regex='Tests/|\.build/'
-            else
-              echo "::warning::Test binary not found, skipping coverage report"
-            fi
-          else
-            echo "::warning::No profdata found, skipping coverage report"
-          fi
+          components: rustfmt, clippy
+      - name: Format check
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Test
+        run: cargo test --all

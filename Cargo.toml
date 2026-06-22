@@ -1,0 +1,37 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/df-core",
+    "crates/df-index",
+    "crates/df-ipc",
+    "crates/deepfindd",
+    "crates/deepfind",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.96"
+license = "MIT"
+authors = ["Nadav"]
+repository = "https://github.com/nadav-cheung/DeepFinder"
+description = "Fast local file search for macOS — trigram index + daemon + CLI"
+
+# Catalog of shared dependency versions. Crates opt in with `{ workspace = true }`.
+[workspace.dependencies]
+# Internal
+df-core = { path = "crates/df-core" }
+df-index = { path = "crates/df-index" }
+df-ipc = { path = "crates/df-ipc" }
+
+# External (used by the Step 0 scaffold; more added per build step)
+serde = { version = "1", features = ["derive"] }
+thiserror = "2"
+tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros", "net", "io-util", "sync", "fs", "time", "signal"] }
+clap = { version = "4", features = ["derive"] }
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

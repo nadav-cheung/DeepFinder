@@ -1,19 +1,6 @@
-# Xcode
-*.xcodeproj/xcuserdata/
-*.xcworkspace/xcuserdata/
-xcuserdata/
-DerivedData/
-*.moved-aside
-*.ipa
-*.dSYM.zip
-*.dSYM
-
-# Swift Package Manager
-.build/
-.swiftpm/
-Packages/
-Package.pins
-Package.resolved
+# Rust
+/target
+**/*.rs.bk
 
 # macOS
 .DS_Store
@@ -23,17 +10,17 @@ Package.resolved
 .Spotlight-V100
 .Trashes
 
-# App specific
+# App runtime data
 .deep-finder/
-
-# Claude Code local overrides
-.claude.local.md
 
 # Codegraph (runtime index)
 .codegraph/
+
+# Claude Code
+.claude.local.md
+.claude/worktrees/
 
 # IDE
 .idea/
 *.swp
 *~
-.claude/worktrees/
