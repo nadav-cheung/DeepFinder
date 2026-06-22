@@ -37,8 +37,8 @@ use crate::{trigram::trigrams, turbopfor, DbSource, Result};
 const MAGIC: &[u8; 4] = b"DFDB";
 const VERSION: u32 = 2;
 const HEADER_LEN: usize = 64;
-const EMPTY_KEY: u32 = 0xFFFF_FFFF;
-const SLOT_LEN: usize = 20;
+pub const EMPTY_KEY: u32 = 0xFFFF_FFFF;
+pub const SLOT_LEN: usize = 20;
 /// Per-doc META record: is_dir:u8 | size:i64 | mtime:i64.
 const META_REC_LEN: usize = 17;
 
@@ -55,7 +55,7 @@ fn le_u64(buf: &[u8], at: usize) -> u64 {
 }
 
 /// Avalanche integer hash for the Robin Hood table (splitmix32-style).
-fn hash(x: u32) -> u32 {
+pub fn hash(x: u32) -> u32 {
     let mut z = x.wrapping_add(0x9E37_79B9);
     z = (z ^ (z >> 16)).wrapping_mul(0x85eb_ca6b);
     z = (z ^ (z >> 13)).wrapping_mul(0xc2b2_ae35);
@@ -292,7 +292,7 @@ fn write_slot(table: &mut [u8], idx: usize, key: u32, count: u32, off: u64, len:
     table[b + 16..b + 20].copy_from_slice(&len.to_le_bytes());
 }
 
-fn build_robin_hood(entries: &[(u32, u32, u64, u32)], slots: u64) -> Vec<u8> {
+pub fn build_robin_hood(entries: &[(u32, u32, u64, u32)], slots: u64) -> Vec<u8> {
     if slots == 0 {
         return Vec::new();
     }
