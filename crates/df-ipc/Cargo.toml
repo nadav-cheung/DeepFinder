@@ -9,4 +9,7 @@ license.workspace = true
 df-core = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
-# `tokio` + `tokio-util` (length-framed codec) + `bincode` are added in Step 3.
+bincode = { workspace = true }
+bytes = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }

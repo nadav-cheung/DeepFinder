@@ -1,10 +1,14 @@
 // SPDX-License-Identifier: MIT
 //! df-ipc — Unix-domain-socket protocol: length-framed request + streamed response.
 //!
-//! Stub scaffold; wire framing lands in Step 3.
+//! Messages ([`crate::proto`]) are bincode-encoded; the transport wraps a duplex
+//! stream with [`tokio_util::codec::LengthDelimitedCodec`] (4-byte prefix) via
+//! [`framed`]. The daemon sends a sequence of `ResponseFrame`s (Batch* then Done).
 
 pub mod error;
 pub mod proto;
+pub mod wire;
 
 pub use error::{IpcError, Result};
 pub use proto::{ResponseFrame, SearchOptions, SearchRequest};
+pub use wire::{decode_frame, decode_request, encode_frame, encode_request, framed};
