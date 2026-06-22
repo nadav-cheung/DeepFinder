@@ -65,3 +65,64 @@ fn content_query_respects_limit() {
     assert_eq!(candidates(&r, &folded, Some(5)).unwrap().len(), 5);
     assert_eq!(candidates(&r, &folded, Some(0)).unwrap().len(), 0);
 }
+
+/// Verify must filter trigram false-positives: a trigram present in a file where
+/// the full substring does not occur must NOT be returned.
+#[test]
+fn content_query_filters_trigram_false_positives() {
+    let mut b = ShardBuilder::new(0, 0);
+    b.add_file("/a/foobar.txt", false, 6, 1, b"foobar");
+    b.add_file("/a/foobaz.txt", false, 6, 1, b"foobaz");
+    let bytes = b.finish(1);
+    let r = ShardReader::open(&bytes).unwrap();
+
+    // "foobaz" shares trigrams with both files; only the foobaz file verifies.
+    let folded = fold(b"foobaz");
+    let got: Vec<u32> = {
+        let mut v = candidates(&r, &folded, None).unwrap();
+        v.sort();
+        v
+    };
+    assert_eq!(got, vec![1]); // only /a/foobaz.txt (docid 1)
+
+    // "oob" is a trigram in both; as a query it must match both.
+    let folded = fold(b"oob");
+    let got: Vec<u32> = {
+        let mut v = candidates(&r, &folded, None).unwrap();
+        v.sort();
+        v
+    };
+    assert_eq!(got, vec![0, 1]);
+}
+
+/// Byte-trigram index handles multi-byte/CJK content natively (no tokenizer).
+#[test]
+fn content_query_cjk() {
+    let mut b = ShardBuilder::new(0, 0);
+    b.add_file("/a/jp.txt", false, 13, 1, "日本語の検索".as_bytes());
+    b.add_file("/a/en.txt", false, 5, 1, b"hello");
+    let bytes = b.finish(1);
+    let r = ShardReader::open(&bytes).unwrap();
+
+    // "日本" is 6 UTF-8 bytes (2 trigrams) present only in jp.txt.
+    let folded = fold("日本".as_bytes());
+    let got: Vec<u32> = {
+        let mut v = candidates(&r, &folded, None).unwrap();
+        v.sort();
+        v
+    };
+    assert_eq!(got, vec![0]);
+}
+
+/// metaData accessors + version validation.
+#[test]
+fn shard_metadata_accessors() {
+    let mut b = ShardBuilder::new(7, 1234);
+    b.add_file("/x", false, 1, 99, b"a");
+    let bytes = b.finish(555);
+    let r = ShardReader::open(&bytes).unwrap();
+    assert_eq!(r.shard_id(), 7);
+    assert_eq!(r.base_docid(), 1234);
+    assert_eq!(r.build_time(), 555);
+    assert_eq!(r.num_docs(), 1);
+}

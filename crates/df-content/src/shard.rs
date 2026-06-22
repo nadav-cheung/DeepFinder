@@ -196,6 +196,9 @@ impl ShardBuilder {
 // Reader
 // ---------------------------------------------------------------------------
 
+fn rd_u16(b: &[u8], at: usize) -> u16 {
+    u16::from_le_bytes(b[at..at + 2].try_into().unwrap())
+}
 fn rd_u32(b: &[u8], at: usize) -> u32 {
     u32::from_le_bytes(b[at..at + 4].try_into().unwrap())
 }
@@ -209,6 +212,8 @@ fn rd_i64(b: &[u8], at: usize) -> i64 {
 /// Read-only view over a `.dfcs` byte slice (borrowed; the daemon owns the mmap).
 pub struct ShardReader<'a> {
     bytes: &'a [u8],
+    build_time: u64,
+    shard_id: u32,
     num_docs: u32,
     base_docid: u32,
     slots: u64,
@@ -267,8 +272,16 @@ impl<'a> ShardReader<'a> {
             .get("metaData")
             .ok_or_else(|| CoreError::DbFormat("missing metaData".into()))?;
         let md = &bytes[md.0 as usize..(md.0 + md.1) as usize];
-        let num_docs = rd_u32(md, 18);
+        let version = rd_u16(md, 0);
+        if version != SHARD_VERSION {
+            return Err(CoreError::DbFormat(format!(
+                "unsupported shard version {version}"
+            )));
+        }
+        let build_time = rd_u64(md, 2);
+        let shard_id = rd_u32(md, 10);
         let base_docid = rd_u32(md, 14);
+        let num_docs = rd_u32(md, 18);
         let slots_log2 = rd_u32(md, 22);
         let slots: u64 = if slots_log2 == 0 {
             0
@@ -278,6 +291,8 @@ impl<'a> ShardReader<'a> {
 
         Ok(Self {
             bytes,
+            build_time,
+            shard_id,
             num_docs,
             base_docid,
             slots,
@@ -291,6 +306,13 @@ impl<'a> ShardReader<'a> {
     }
     pub fn base_docid(&self) -> u32 {
         self.base_docid
+    }
+    pub fn shard_id(&self) -> u32 {
+        self.shard_id
+    }
+    /// Index build time (unix seconds), for staleness checks (REVIEW §6.2).
+    pub fn build_time(&self) -> u64 {
+        self.build_time
     }
 
     fn section(&self, tag: &'static str) -> df_core::Result<&[u8]> {
