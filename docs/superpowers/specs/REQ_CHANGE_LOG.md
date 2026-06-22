@@ -224,6 +224,41 @@
 
 ---
 
+## 2026-06-21 — 索引引擎重构（单分配 entry + 字符串去重 + 二进制持久化）
+
+### CHG-2026-06-20-01: CIndex 单分配 DFileMeta + 二进制 index.bin 替换 SQLite（spec 2026-06-20 落地）
+
+- **来源**: 对标 Cling (macOS) + FSearch (C) 调研；spec `docs/superpowers/specs/2026-06-20-index-engine-refactor-design.md`、plan `2026-06-20-index-engine-refactor-plan.md`
+- **影响 REQ**: REQ-v0.1 索引核心（InMemoryIndex / FileRecord / 持久化相关 REQ）
+- **影响文档**:
+  - `CLAUDE.md` — Project 段（pure Swift → Swift + C 索引库）、Directory Structure（加 `CIndex/`、`Persist/` 改 BinaryIndex/LegacySQLiteReader）、Architecture（Index 结构 Trie/FullSubstringMap/PinyinIndex → CIndex DFileMeta + sorted-names + trigram；Persistence SQLite WAL → `index.bin`）、Daemon lifecycle、Team 表
+  - `docs/superpowers/specs/2026-06-20-index-engine-refactor-design.md` — 状态 Draft → Implemented（P0–P4 完成）
+  - `docs/superpowers/specs/2026-06-19-metadata-filter-restore-design.md` §7 — 持久化基底 SQLite → 二进制（合流，待 P5 后续落实内联）
+- **变更类型**: 修改（架构重构）
+- **描述**: 索引后端重构完成（branch `refactor/index-engine`，**未合并 main**）：
+  - **B1** path hash 扩容（负载因子 >0.5 翻倍 rehash）+ **B2** id→meta O(1) 直接映射（pre-existing P0）。
+  - **path_remove** 改 backward-shift 删除（Knuth Algorithm R），修复开放寻址碰撞链中间删除导致后续 `path_lookup` 漏查的 bug。
+  - **P1** 单分配 `DFileMeta`（flexible array member）替换 FileMeta+NameSlot+PathSlot：5 malloc→1 calloc；name/lower_name/path/parent 内联；NameSlot/PathSlot 改非拥有指针指向 entry。
+  - **P2** trigram 去重：CTrigramIndex 删除自有 arena 小写副本，存非拥有指针指向 `DFileMeta.lower_name`；filename 3→2 份。
+  - **P3** 二进制 `index.bin`（DFIX header + 长度前缀记录 + metadata JSON + cursor sidecar）替换 SQLite；`IndexPersistence`（actor）委托 `BinaryIndex`，公共 API 不变、daemon 7 个调用点零改动；`IndexRecovery` 改二进制感知（坏 header → 删 + 重扫）；path/parent 仍 AES-256-GCM fail-closed。
+  - **P4** 一次性 SQLite→binary 迁移（`LegacySQLiteReader`），失败回退重扫。
+- **影响**: 内存 ~423B→~250B/记录（5 malloc→1 + 字符串去重）；启动从 SQLite 逐行解码改为二进制 bulk 解析 + 旧库自动迁移。测试：IndexTests 48、PersistTests 71（含 BinaryIndex 12 + SQLiteMigration 5）全绿；DaemonMain/FSEventWatcher 字节不变。**未合并 main**（待 review + 合流决策）；REQ 内联状态图标更新（v0.1-index-core）留作 P5 后续。
+
+---
+
+## 2026-06-22 — 移除全部 SQLite 逻辑
+
+### CHG-2026-06-22-01: 删除 SQLite 依赖（放弃迁移，纯二进制持久化）
+
+- **来源**: nadav（用户决策——索引引擎重构后彻底去除 SQLite）
+- **影响 REQ**: REQ-v0.1 持久化相关
+- **影响文档**: `CLAUDE.md`（Project / Directory / Persistence 段去除 SQLite / migration 表述）；`REQ_CHANGE_LOG`
+- **变更类型**: 废除
+- **描述**: P4 的 SQLite→binary 迁移（`LegacySQLiteReader`）连同 `SchemaMigrator`、`SQLTransient`、`import SQLite3`、`SQLiteMigrationTests` 一并删除。`Package.swift` 本无 sqlite3 linker（仅 `linkedLibrary("edit")` for readline），故删掉所有 `import SQLite3` 即彻底去除 SQLite 依赖。后果：旧的 `index.db` 不再迁移，daemon 重扫一次写入 `index.bin`（与缺失/损坏索引相同的安全回退）。
+- **影响**: 零 SQLite 依赖（恢复 "zero external dependencies" 初衷）。IndexTests 60 + PersistTests 66（删 5 个迁移测试）全绿。
+
+---
+
 ## 变更统计
 
 | 日期 | 变更数 | 类型 |
@@ -233,3 +268,5 @@
 | 2026-06-15 | 4 | 新增（实现）×4 |
 | 2026-06-16 | 1 | 新增（实现）×1 |
 | 2026-06-19 | 3 | 新增（实现）×3 |
+| 2026-06-21 | 1 | 修改（架构重构）×1 |
+| 2026-06-22 | 1 | 废除×1 |

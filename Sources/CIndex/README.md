@@ -12,8 +12,7 @@ libdfindex provides three integrated layers:
 | Layer | API | What it does |
 |-------|-----|--------------|
 | **CIndex** | `cindex_*` | Everything-style sorted-array prefix search. Dense `NameSlot[]` sorted by lowercased filename, binary-searched for O(log n) prefix matching. Inverted trigram index (byte-level, CJK-native) for O(1)-ish substring search. Dense metadata array with FNV-1a path hash for O(1) upsert/removal. Thread-safe via pthread mutex. |
-| **CFileScanner** | `cscanner_*` | Single-threaded directory scanner using POSIX `fts(3)`. Zero Swift/Objective-C allocation -- writes directly into a `CIndex`. Configurable skip lists (names, files, extensions, path suffixes), depth limit, symlink policy. |
-| **CParallelScanner** | `cpscanner_*` | GCD-based parallel scanner. Architecture inspired by [rq](https://github.com/seeyebe/rq): top-level subtree partitioning with per-worker `fts(3)` handles, work-stealing via GCD `dispatch_apply`, batched `cindex_insert` to amortize mutex contention. Same configuration surface as CFileScanner, plus worker count and batch size. |
+| **CParallelScanner** | `cpscanner_*` | GCD-based parallel scanner. Architecture inspired by [rq](https://github.com/seeyebe/rq): top-level subtree partitioning with per-worker `fts(3)` handles, work-stealing via GCD `dispatch_apply`, batched `cindex_insert` to amortize mutex contention. Configurable skip lists, depth limit, symlink policy. |
 | **CTrigramIndex** | `ctrigram_*` | Standalone byte-level trigram inverted index. Flat posting lists with binary-searched `PostingBlock` index; lazy pending buffer flushed via sort+merge. Two-pointer intersection from the shortest posting list, then `strncasecmp` verification against an arena of lowercased names. CJK-friendly (bytes >= 0x80 preserved as-is). |
 
 ### Data Structures
@@ -48,7 +47,6 @@ bool      cindex_remove_by_path(CIndex* idx, const char* path);
 
 uint32_t  cindex_count(const CIndex* idx);          // non-directory files
 uint32_t  cindex_total_records(const CIndex* idx);  // files + directories
-uint32_t  cindex_next_id(const CIndex* idx);
 
 // Search. Caller frees *out_ids with free().
 uint32_t  cindex_search_prefix(const CIndex* idx, const char* prefix,
@@ -59,11 +57,7 @@ uint32_t  cindex_search_substring(const CIndex* idx, const char* substring,
 // Iteration and per-record access.
 uint32_t  cindex_iterate(const CIndex* idx, cindex_iterate_cb cb, void* user_data);
 
-CRecordCopy  cindex_copy_record(const CIndex* idx, uint32_t id);
-void         cindex_free_record_copy(CRecordCopy* r);
-
 const char*  cindex_get_path(const CIndex* idx, uint32_t id);
-const char*  cindex_get_name(const CIndex* idx, uint32_t id);
 // ... plus get_original_name, get_parent_path, is_directory,
 //     get_size, get_created_at, get_modified_at
 ```
@@ -80,8 +74,6 @@ void  cpscanner_set_skip_extensions(CParallelScanner* s, const char* const* exts
 void  cpscanner_set_skip_paths(CParallelScanner* s, const char* const* paths, uint32_t count);
 void  cpscanner_set_max_depth(CParallelScanner* s, int max_depth);
 void  cpscanner_set_follow_symlinks(CParallelScanner* s, bool follow);
-void  cpscanner_set_worker_count(CParallelScanner* s, uint32_t count);
-void  cpscanner_set_batch_size(CParallelScanner* s, uint32_t size);
 
 uint32_t  cpscanner_scan(CParallelScanner* s, CIndex* idx,
                          const char* root_path,
@@ -100,9 +92,7 @@ void        ctrigram_insert(CTrigramIndex* ti, const char* name, uint32_t id);
 bool        ctrigram_remove(CTrigramIndex* ti, uint32_t id);
 uint32_t    ctrigram_search(CTrigramIndex* ti, const char* query,
                             uint32_t** out_ids, uint32_t max_results);
-const char* ctrigram_name(CTrigramIndex* ti, uint32_t id);
 uint32_t    ctrigram_doc_count(const CTrigramIndex* ti);
-void        ctrigram_flush(CTrigramIndex* ti);
 ```
 
 ## Project Layout
@@ -113,7 +103,6 @@ Sources/CIndex/          # self-contained: copy/clone this folder to use standal
 │   ├── dfindex.h        #   umbrella -- #include this one header for everything
 │   ├── cindex.h
 │   ├── ctrigramindex.h
-│   ├── cfilescanner.h
 │   └── cparallelscanner.h
 ├── src/                 # implementation (.c)
 ├── examples/
@@ -142,7 +131,7 @@ make clean    # remove build artifacts
 ```
 
 The Makefile produces:
-- `libdfindex.a` -- static library (CIndex + CFileScanner + CParallelScanner + CTrigramIndex)
+- `libdfindex.a` -- static library (CIndex + CParallelScanner + CTrigramIndex)
 - `dfdemo` -- standalone demo: scans a directory, then substring-searches it
 - `tests/dftest` -- the C test binary (built by `make test`)
 

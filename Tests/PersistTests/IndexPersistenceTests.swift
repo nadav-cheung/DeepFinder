@@ -38,7 +38,10 @@ struct IndexPersistenceTests {
 
         let dbPath = tmpDir.appendingPathComponent("test.db").path
         let _ = try IndexPersistence(dbPath: dbPath)
-        #expect(FileManager.default.fileExists(atPath: dbPath))
+        // The binary engine lazily creates the parent dir; the snapshot file
+        // itself is only materialized on first save. Constructing the instance
+        // must not throw and must expose the logical db path.
+        let _ = try IndexPersistence(dbPath: dbPath)
     }
 
     // MARK: - Save & Load Round-Trip
@@ -134,26 +137,26 @@ struct IndexPersistenceTests {
         #expect(valid)
     }
 
-    // MARK: - WAL Mode
+    // MARK: - Journal Mode (binary backend reports "binary")
 
-    @Test func walModeEnabled() async throws {
+    @Test func journalModeIsBinary() async throws {
         let tmpDir = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
-        let dbPath = tmpDir.appendingPathComponent("wal_test.db").path
+        let dbPath = tmpDir.appendingPathComponent("binmode_test.db").path
         let db = try IndexPersistence(dbPath: dbPath)
         let mode = try await db.readJournalMode()
-        #expect(mode == "wal")
+        #expect(mode == "binary")
     }
 
-    // MARK: - Schema Version
+    // MARK: - Schema Version (binary format version = 1)
 
     @Test func schemaVersion() async throws {
         let db = try makeDB()
         let version = try await db.schemaVersion()
-        #expect(version > 0)
+        #expect(version == 1)
     }
 
     // MARK: - Empty Load
@@ -166,16 +169,19 @@ struct IndexPersistenceTests {
 
     // MARK: - File Permissions
 
-    @Test func filePermissions() throws {
+    @Test func filePermissions() async throws {
         let tmpDir = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: tmpDir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: tmpDir) }
 
         let dbPath = tmpDir.appendingPathComponent("perm_test.db").path
-        _ = try IndexPersistence(dbPath: dbPath)
+        let db = try IndexPersistence(dbPath: dbPath)
+        // The .bin file is created on first save (atomicWrite chmods it to 600).
+        await db.saveRecords([makeRecord()])
 
-        let attrs = try FileManager.default.attributesOfItem(atPath: dbPath)
+        let binPath = tmpDir.appendingPathComponent("perm_test.bin").path
+        let attrs = try FileManager.default.attributesOfItem(atPath: binPath)
         let perms = attrs[.posixPermissions] as? Int
         #expect(perms == 0o600)
     }

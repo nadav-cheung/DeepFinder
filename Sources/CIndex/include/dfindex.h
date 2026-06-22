@@ -3,7 +3,6 @@
 // Include this single header to pull in the entire public API:
 //   - CIndex            (Everything-style sorted-array prefix + trigram substring)
 //   - CTrigramIndex     (standalone byte-level trigram inverted index)
-//   - CFileScanner      (single-threaded fts(3) scanner)
 //   - CParallelScanner  (GCD parallel scanner)
 //
 // SPDX-License-Identifier: MIT
@@ -13,7 +12,6 @@
 
 #include "CIndex.h"
 #include "CTrigramIndex.h"
-#include "CFileScanner.h"
 #include "CParallelScanner.h"
 
 #endif // DFINDEX_H

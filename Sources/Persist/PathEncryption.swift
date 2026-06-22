@@ -42,12 +42,11 @@ public enum PathEncryptionError: Error, CustomStringConvertible {
 
 // MARK: - PathEncryption
 
-/// AES-256-GCM encryption for file paths stored in SQLite.
+/// AES-256-GCM encryption for file paths persisted on disk.
 ///
-/// Since the system SQLite3 does not support `sqlite3_key`, paths are encrypted
-/// at the application layer before writing to the database and decrypted after
-/// reading. Each encryption uses a fresh 12-byte nonce, producing a unique
-/// ciphertext even for identical plaintext.
+/// Paths are encrypted at the application layer before writing to the binary
+/// index snapshot and decrypted after reading. Each encryption uses a fresh
+/// 12-byte nonce, producing a unique ciphertext even for identical plaintext.
 ///
 /// ## Key Management
 ///

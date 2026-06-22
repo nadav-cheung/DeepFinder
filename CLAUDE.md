@@ -12,7 +12,7 @@ DeepFinder — a macOS file search app rivaling Windows Everything. **v1.0 = CLI
 
 **Status**: `v3.2.0` ✅ **完成** — CLI + daemon + GUI + AI semantic search + media metadata + services. Roadmap v0.1→v3.0 and v3.2 complete; **v3.1 本地 RAG 延期**（规划阶段，需人工 CoreML 决策，未打标签）. Spec: `docs/superpowers/specs/`. OSS readiness assessment: `docs/superpowers/plans/2026-05-31-oss-readiness-assessment.md`.
 
-Zero external dependencies — pure Swift + Apple frameworks only (Foundation, CoreServices, Carbon, SQLite3). CLI via Darwin.readline + ANSI escape codes.
+Zero external dependencies — Swift + Apple frameworks (Foundation, CoreServices, Carbon) plus a self-contained C index library (`Sources/CIndex/`, built via SPM + standalone Makefile). The hot index path is pure C (single-allocation `DFileMeta` entries, sorted-name prefix array, trigram inverted index) wrapped by a thin Swift actor (`InMemoryIndex`). Persistence is a custom binary format (`index.bin` + `index.cursor` sidecar) — zero SQLite. CLI via Darwin.readline + ANSI escape codes.
 
 ## Build & Test
 
@@ -21,7 +21,7 @@ Requires **swift-tools-version ≥ 6.2** (needed for `.macOS(.v26)` platform spe
 ```bash
 swift build                              # Build all targets
 swift test                               # Run all tests
-swift test --filter TrieTests            # Run single test suite
+swift test --filter CIndexHashResizeTests # Run single test suite
 swift run deepfinder "query"             # CLI single-shot (after v0.5)
 swift run deepfinder                     # CLI interactive REPL (after v0.6)
 ```
@@ -133,7 +133,7 @@ Never modify code to introduce behavior that isn't reflected in the spec, and ne
 - 每个新 struct/class/actor/enum 必须有对应的测试文件
 - 测试命名描述行为：`testInsertIncreasesCount`，不写 `testTrie1`
 - 测试覆盖：正常路径 + 边界条件 + 错误路径
-- 性能敏感组件（Trie、FullSubstringMap 等）必须包含 `measure` block 基准测试
+- 性能敏感组件（CIndex、CTrigramIndex、BinaryIndex 等）必须包含 `measure` block 基准测试
 - 测试先行不是可选项 — 没有 failing test 不写实现代码
 
 ### Feature → Review Cycle
@@ -195,10 +195,11 @@ Sources/
   CLIEntry/                  # CLI executable entry point (main.swift)
   DaemonEntry/               # Daemon executable entry point (main.swift)
   AppEntry/                  # GUI app executable entry point (main.swift)
-  Index/                      # FileRecord, Trie, FullSubstringMap, TrigramIndex, PinyinIndex, InMemoryIndex, Constants, ExtractedMetadata, ProductConfig
+  CIndex/                     # Self-contained C index library (SPM target + standalone Makefile): CIndex (DFileMeta single-alloc entries, sorted-name prefix array, id→meta direct map, open-addressing path hash), CTrigramIndex (trigram inverted index, shares DFileMeta lower_name), CFileScanner + CParallelScanner (fts(3) walk + GCD parallel)
+  Index/                      # FileRecord, InMemoryIndex (thin Swift actor wrapping CIndex), Constants, ExtractedMetadata, ProductConfig
   Search/                     # SearchProvider, SearchCoordinator, QueryTerm, SearchTypes, SearchFilter, FilterPipeline, SearchSorter, ContentScanner, ContentSearchProvider, DuplicateFinder, FileHasher, FileIndexProvider, AutocompleteProvider, PatternMatcher, SearchBookmark
   FS/                         # FileSystemEventStream, FileScanner, FSEventWatcher, FSEventStreamImpl, MockEventStream, VolumeManager
-  Persist/                    # IndexPersistence (SQLite WAL), PathEncryption, SchemaMigrator, SecretsStore
+  Persist/                    # IndexPersistence (binary index.bin actor), BinaryIndex (DFIX engine + cursor sidecar), IndexRecovery, PathEncryption, SecretsStore
   Daemon/                     # DaemonMain, IPCServer, IPCProtocol, IPCClient, IPCFraming, ConfigStore, LaunchAgent
   CLI/                        # CLIMain, ArgParser, SingleShot, REPL, REPLCommands, REPLHistory, TerminalFormatter, CLIOutputWriter, ConfigCommands, DaemonCommands, InstallCommands, FuzzyCorrection, ServeMode, IPCClientProtocol
   GUI/                        # SearchPanelView, SearchPanelHostingController, ResultsListView, ResultsListState, ResultRowView, ResultCategory, ResultContextMenu, ResultDragView, SearchViewModel, SearchFilterBar, SearchHistory, AppDelegate, GlobalHotkey, HotkeyPermissionHelper, IntelligenceGlow, GlassEffectContainer, OnboardingView, QuickLookPreview, SettingsView, SettingsViewModel, SettingsProviders, SettingsWindow, StatusBarController, SpeechOverlayView, AccessHistory, ActionPanelView, EmptyStateView, FileDetailView, KeyboardHintBar, ToastView, WorkspaceProtocol
@@ -210,7 +211,7 @@ Tests/
 docs/
   superpowers/specs/          # design/ (architecture), ux/ (UX reqs), reqs/ (per-version REQ files, index at reqs/00-overview.md)
   superpowers/plans/          # implementation plans, OSS readiness assessment
-Package.swift                 # Single monolithic DeepFinder library target (split into sub-libraries planned)
+Package.swift                 # Modular targets: CIndex (C lib) → DeepFinderIndex → {DeepFinderPersist, DeepFinderSearch, ...}; DeepFinderCLI/Daemon/App executables; DeepFinderTests
 VERSION                       # Current: 3.2.0
 ```
 
@@ -248,13 +249,13 @@ Index layer has zero UI/CLI dependencies and can be tested in isolation.
 - **REPL**: Darwin.readline (libedit) for prompt, history, tab-completion. Commands: :help, :quit, :stats, :config, :daemon, :open N, :reveal N.
 - **Terminal output**: ANSI escape codes, `isatty()` auto-disables colors when piped. --json and --0 for scripting.
 - **SearchProvider protocol**: Returns `AsyncSequence<SearchResult, Never>`. MVP's in-memory index yields all results at once, but interface supports future streaming (AI, content search). `cancel(queryID:)` for cancellation.
-- **InMemoryIndex (actor)**: Speed over memory (M4+ unified memory). Index structures:
-  - Trie: O(k) prefix matching, Unicode scalar granularity
-  - FullSubstringMap: all substrings → FileRecord.ID for names ≤64 chars, O(1) lookup
-  - TrigramIndex: trigram → posting list for names >64 chars (rare fallback)
-  - PinyinIndex: CFStringTokenizer → pinyin tokens in a Trie for Chinese filename search
-- **Unicode**: All filenames NFC-normalized on ingestion (`precomposedStringWithCanonicalMapping`). Queries normalized the same way.
-- **Persistence**: SQLite WAL at `~/.deep-finder/cache/index.db` (permissions 600). Stores FileRecord[], rebuilds index structures in memory on startup (<1s on M4). Batch writes every 5s or 100 changes.
+- **InMemoryIndex (actor)**: Thin Swift wrapper around the C `CIndex`; all hot-path data lives in C. Index structures:
+  - **DFileMeta** (single `calloc`/record): name + lowercased name + path + parent_path inlined in a flexible-array-member blob (was 5 mallocs). One allocation owns all its strings; the sorted-name array and path-hash table hold non-owning pointers into it.
+  - **Sorted-name prefix array**: lowercased names, binary search → prefix match (`cindex_search_prefix`).
+  - **Trigram inverted index** (`CTrigramIndex`): trigram → posting list, intersect + verify → O(1)-ish substring search (`cindex_search_substring`); stores a non-owning pointer to the DFileMeta lowercased name (no separate arena copy).
+  - **id→meta direct map** + **open-addressing path hash** (backward-shift deletion, resizes at load factor >0.5): O(1) id/path lookup and upsert.
+- **Unicode**: All filenames NFC-normalized on ingestion (`precomposedStringWithCanonicalMapping`). Queries normalized the same way (the C index lowercases via `tolower` over UTF-8 bytes; CJK/emoji pass through unchanged).
+- **Persistence**: Custom binary format `~/.deep-finder/cache/index.bin` — DFIX header + length-prefixed records + metadata JSON, permissions 600 — with the FSEvents cursor in a sidecar `index.cursor`. Atomic write (`.tmp` → chmod 600 → fsync → rename). `IndexPersistence` (actor) delegates to `BinaryIndex`; `IndexRecovery` validates the DFIX header and, on corruption, deletes `index.bin` + rescans. path/parent_path are AES-256-GCM encrypted on disk (fail-closed). A pre-existing legacy `index.db` is ignored (the daemon rescans once into `index.bin`). Zero SQLite. Index structures rebuild in memory on startup.
 - **FSEvents**: Abstracted behind `FileSystemEventStream` protocol. Production wraps FSEventStreamCreate, tests use MockEventStream.
 - **Index state machine**: stale → verifying → live. CLI displays state via `:stats` command.
 
@@ -264,7 +265,7 @@ Index layer has zero UI/CLI dependencies and can be tested in isolation.
 
 **Exit codes**: 0=success, 1=no results, 2=daemon error, 3=query error.
 
-**Daemon lifecycle**: LaunchAgent (launchd plist in ~/Library/LaunchAgents/). Auto-started by CLI if not running. PID file at `~/.deep-finder/session/daemon.pid`. SIGTERM handler: flush SQLite + save FSEvents cursor + remove socket + exit.
+**Daemon lifecycle**: LaunchAgent (launchd plist in ~/Library/LaunchAgents/). Auto-started by CLI if not running. PID file at `~/.deep-finder/session/daemon.pid`. SIGTERM handler: flush `index.bin` + save FSEvents cursor + remove socket + exit.
 
 ## Team
 
@@ -273,8 +274,8 @@ Index layer has zero UI/CLI dependencies and can be tested in isolation.
 | 角色 | Agent 名称 | 职责 | 负责模块 |
 |------|-----------|------|----------|
 | **架构师** | `architect` | 技术决策、spec 维护、代码检视、版本规划、二轮确认 | 全局 |
-| **算法工程师** | `algo-dev` | 数据结构实现、搜索语法解析、性能优化、基准测试 | Index (Trie/FullSubstringMap/TrigramIndex/PinyinIndex), Search 语法 |
-| **macOS 工程师** | `macos-dev` | FSEvents、SQLite WAL、LaunchAgent、权限模型、打包分发、Unix socket IPC | IndexPersistence, DaemonMain, IPCServer |
+| **算法工程师** | `algo-dev` | 数据结构实现、搜索语法解析、性能优化、基准测试 | CIndex (CIndex/CTrigramIndex/DFileMeta), Search 语法 |
+| **macOS 工程师** | `macos-dev` | FSEvents、二进制持久化 (BinaryIndex)、LaunchAgent、权限模型、打包分发、Unix socket IPC | IndexPersistence/BinaryIndex, DaemonMain, IPCServer |
 | **CLI 工程师** | `cli-dev` | CLI 参数解析、REPL 交互、终端格式化、ANSI 颜色、readline | DeepFinderCLI: CLIMain, REPL, TerminalFormatter, IPCClient |
 | **UI 工程师** | `ui-dev` | SwiftUI 动画、Liquid Glass、无障碍、键盘交互、Quick Look (v2.0) | SearchPanel, IntelligenceGlow, ResultRowView, Settings |
 | **AI 工程师** | `ai-dev` | CoreML、Vision、LLM API、向量索引、RAG pipeline、隐私边界 | AI/, v3.0-v3.1 |

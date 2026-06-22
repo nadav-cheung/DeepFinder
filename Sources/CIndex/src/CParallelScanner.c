@@ -44,7 +44,6 @@ struct CParallelScanner {
     char**    skip_paths;     uint32_t skip_paths_count;
     int       max_depth;      // -1 = no limit
     bool      follow_symlinks;
-    uint32_t  worker_count;   // 0 = auto
     uint32_t  batch_size;
 };
 
@@ -112,7 +111,6 @@ CParallelScanner* cpscanner_create(void) {
     if (!s) return NULL;
     s->max_depth = -1;
     s->batch_size = DEFAULT_BATCH;
-    s->worker_count = 0;  // auto
     return s;
 }
 
@@ -149,8 +147,6 @@ void cpscanner_set_skip_paths(CParallelScanner* s, const char* const* paths, uin
 }
 void cpscanner_set_max_depth(CParallelScanner* s, int max_depth) { if (s) s->max_depth = max_depth; }
 void cpscanner_set_follow_symlinks(CParallelScanner* s, bool follow) { if (s) s->follow_symlinks = follow; }
-void cpscanner_set_worker_count(CParallelScanner* s, uint32_t count) { if (s) s->worker_count = count; }
-void cpscanner_set_batch_size(CParallelScanner* s, uint32_t size) { if (s && size > 0) s->batch_size = size; }
 
 // ── Per-subtree worker ──────────────────────────────────
 
@@ -349,8 +345,8 @@ uint32_t cpscanner_scan(CParallelScanner* s, CIndex* idx,
         return f;
     }
 
-    // Worker count: cap at subtree count, default to online CPUs.
-    (void)0;  // (worker_count only sizes the GCD queue, dispatch_apply ignores it)
+    // dispatch_apply sizes the worker pool itself from the global utility queue;
+    // there is no separate worker-count knob.
 
     dispatch_queue_t queue = dispatch_get_global_queue(QOS_CLASS_UTILITY, 0);
 

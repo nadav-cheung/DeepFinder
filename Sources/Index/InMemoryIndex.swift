@@ -16,6 +16,12 @@ public actor InMemoryIndex {
         _idx = cindex_create()
     }
 
+    /// Create an index with a custom initial path-hash capacity. For testing
+    /// resize logic at small scale; production uses `init()`.
+    internal init(pathHashCap: UInt32) {
+        _idx = cindex_create_with_path_cap(pathHashCap)
+    }
+
     // OpaquePointer isn't Sendable — use a method to avoid deinit issues
     private func _destroy() {
         if let idx = _idx {
@@ -231,75 +237,16 @@ public actor InMemoryIndex {
 
     // MARK: - C Scanner (zero-allocation scan)
 
-    /// Run the C file scanner over `rootPath`, inserting records directly into the C index.
-    /// Zero Swift String/FileRecord allocations during the scan — fts(3) traverses the
-    /// filesystem and calls cindex_insert directly with C strings.
+    /// Run the GCD-based parallel C scanner over `rootPath`, inserting records
+    /// directly into the C index. Zero Swift String/FileRecord allocations during
+    /// the scan — fts(3) traverses the filesystem and calls cindex_insert directly
+    /// with C strings.
     ///
-    /// This method is synchronous (blocks the calling thread). Run it from a `Task.detached`
-    /// to avoid blocking the actor or the main cooperative thread pool.
-    ///
-    /// - Parameters:
-    ///   - rootPath: The directory to scan.
-    ///   - skipNames: Directory names to skip (e.g. ".git", "node_modules").
-    ///   - skipFiles: File basenames to skip (e.g. ".DS_Store").
-    ///   - skipExtensions: File extensions to skip (e.g. "o", "pyc").
-    ///   - skipPaths: Path suffix patterns to skip (e.g. "/Library/Caches").
-    ///   - maxDepth: Maximum directory depth, or -1 for unlimited.
-    ///   - onProgress: Called every 100 files with (filesScanned, dirsScanned).
-    ///   - onError: Called for non-fatal errors with (path, reason).
-    /// - Returns: The number of files scanned (excluding directories and skipped items).
-    public func runCScan(
-        rootPath: String,
-        skipNames: [String],
-        skipFiles: [String],
-        skipExtensions: [String],
-        skipPaths: [String],
-        maxDepth: Int32,
-        onProgress: (@convention(c) (UInt32, UInt32, UnsafeMutableRawPointer?) -> Bool)?,
-        onError: (@convention(c) (UnsafePointer<CChar>?, UnsafePointer<CChar>?, UnsafeMutableRawPointer?) -> Void)?,
-        userData: UnsafeMutableRawPointer?
-    ) -> UInt32 {
-        guard let idx = _idx else { return 0 }
-
-        let scanner = cscanner_create()!
-        defer { cscanner_destroy(scanner) }
-
-        // Convert Swift strings to C strings (as UnsafePointer for const char*)
-        let cSkipNames = skipNames.map { UnsafePointer<CChar>?(strdup($0)) }
-        let cSkipFiles = skipFiles.map { UnsafePointer<CChar>?(strdup($0)) }
-        let cSkipExts = skipExtensions.map { UnsafePointer<CChar>?(strdup($0)) }
-        let cSkipPaths = skipPaths.map { UnsafePointer<CChar>?(strdup($0)) }
-        defer {
-            cSkipNames.forEach { free(UnsafeMutablePointer(mutating: $0)) }
-            cSkipFiles.forEach { free(UnsafeMutablePointer(mutating: $0)) }
-            cSkipExts.forEach { free(UnsafeMutablePointer(mutating: $0)) }
-            cSkipPaths.forEach { free(UnsafeMutablePointer(mutating: $0)) }
-        }
-
-        // Configure scanner
-        cSkipNames.withUnsafeBufferPointer { buf in
-            cscanner_set_skip_names(scanner, buf.baseAddress, UInt32(buf.count))
-        }
-        cSkipFiles.withUnsafeBufferPointer { buf in
-            cscanner_set_skip_files(scanner, buf.baseAddress, UInt32(buf.count))
-        }
-        cSkipExts.withUnsafeBufferPointer { buf in
-            cscanner_set_skip_extensions(scanner, buf.baseAddress, UInt32(buf.count))
-        }
-        cSkipPaths.withUnsafeBufferPointer { buf in
-            cscanner_set_skip_paths(scanner, buf.baseAddress, UInt32(buf.count))
-        }
-        cscanner_set_max_depth(scanner, maxDepth)
-        cscanner_set_follow_symlinks(scanner, false)
-
-        // Run the scan — blocks until complete or cancelled
-        return cscanner_scan(scanner, idx, rootPath, onProgress, onError, userData)
-    }
-
-    /// Run the GCD-based parallel C scanner. Same semantics as ``runCScan`` but
-    /// partitions the top-level children of `rootPath` across GCD worker threads
-    /// (architecture inspired by github.com/seeyebe/rq). Faster on multi-core
-    /// for wide directory trees; same zero-allocation property.
+    /// This method is synchronous (blocks the calling thread). Run it from a
+    /// `Task.detached` to avoid blocking the actor or the main cooperative thread
+    /// pool. The scanner partitions the top-level children of `rootPath` across GCD
+    /// worker threads (architecture inspired by github.com/seeyebe/rq). Faster on
+    /// multi-core for wide directory trees; same zero-allocation property.
     public func runParallelCScan(
         rootPath: String,
         skipNames: [String],
@@ -397,6 +344,11 @@ public actor InMemoryIndex {
             modifiedAt: modifiedAt,
             extension: dfDeriveExtension(name: name, isDirectory: isDir)
         )
+    }
+
+    /// Look up a single record by ID. O(1) (backed by the C id→meta direct map).
+    public func record(for id: UInt32) -> FileRecord? {
+        _lookup(id: id)
     }
 }
 
