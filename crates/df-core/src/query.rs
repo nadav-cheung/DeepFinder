@@ -1,29 +1,35 @@
 // SPDX-License-Identifier: MIT
-//! Query algorithm over a [`DbReader`].
-//!
-//! plocate-style: for queries with ≥3 bytes, pick the **rarest** query trigram
-//! (all query trigrams must be present — if any is absent, no path can contain
-//! the query), decode its posting list, then verify each candidate is an actual
-//! case-insensitive substring. Short queries (<3 bytes) fall back to a linear
-//! scan.
+//! Query entry point. Dispatches to the fast single-term path, or to the
+//! boolean evaluator ([`crate::boolquery`]) when the query contains
+//! `AND`/`OR`/`NOT`/parens or multiple terms.
 
+use crate::boolquery::{boolean_query, parse, Node};
 use crate::{trigram::trigrams, DbReader, DbSource, Result};
 
-/// Return matching paths for `q`, optionally capped at `limit`.
+/// Return matching paths for `q`, optionally capped at `limit`. Supports boolean
+/// operators (uppercase `AND`/`OR`/`NOT`, parentheses, implicit AND).
 pub fn query<S: DbSource>(db: &DbReader<S>, q: &str, limit: Option<u32>) -> Result<Vec<String>> {
     if q.is_empty() {
         return Ok(Vec::new());
     }
+    match parse(q) {
+        Some(Node::Term(_)) => single(db, q, limit),
+        Some(node) => boolean_query(db, &node, limit),
+        None => single(db, q, limit), // malformed → treat the raw string as one substring
+    }
+}
+
+/// Fast single-substring path: rarest query trigram → posting list → substring
+/// verify. Short queries (<3 bytes) fall back to a linear scan.
+fn single<S: DbSource>(db: &DbReader<S>, q: &str, limit: Option<u32>) -> Result<Vec<String>> {
     let q_lower = q.to_lowercase();
     let cap = limit.map(|l| l as usize).unwrap_or(usize::MAX);
     let needle = q_lower.as_str();
 
-    // Short query: no trigrams → linear scan over all docs.
     if q_lower.len() < 3 {
         return scan(db, needle, cap);
     }
 
-    // Trigram path: every query trigram must be indexed; pick the rarest.
     let qtris = trigrams(q_lower.as_bytes());
     let mut best: Option<Vec<u32>> = None;
     for t in &qtris {

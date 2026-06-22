@@ -7,6 +7,7 @@
 //! tests. This keeps the engine unit-testable and benchmarkable without a real
 //! DB on disk.
 
+pub mod boolquery;
 pub mod db;
 pub mod db_source;
 pub mod error;
