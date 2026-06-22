@@ -260,4 +260,17 @@ pipeline). All lightweight, well-maintained, Rust-standard.
 
 ## 16. Completion tracking
 
-To be filled as milestones land (commit range + status per M0–M7).
+| Milestone | Status | Commit range |
+|---|---|---|
+| M0 (v1 baseline locked) | ✅ done | (baseline; 67 tests pre-Phase-1) |
+| M1 (CandidateSource trait) | ✅ done | `584df39`–`5e8941b` (+ `4ba0940`) |
+| M2 (shard format: builder + reader + mmap) | ✅ done | `774c46b`–`4e40105` (+ `c75bfae`, `9534ce5`) |
+| M3 (single-shard content query) | ✅ done | `639f0b4`–`a8d3931` (+ `9ac4ab8`) |
+| **Phase 1 total** | ✅ **70 tests green, clippy/fmt clean** | `584df39^..9ac4ab8` |
+| M4 (streaming full-disk build) | ⏳ Phase 2 | — |
+| M5 (daemon ShardSet + combined results) | ⏳ Phase 2 | — |
+| M6 (CLI flags + `--direct` content grep) | ⏳ Phase 2 | — |
+| M7 (hardening: madvise/bigram/parallelism/1-char cap) | ⏳ Phase 2 | — |
+
+Phase 1 verification: per-milestone two-stage review (spec + code-quality) + a final holistic review. The `CandidateSource` abstraction unifies filename (`DbReader`) and content (`ShardReader`) through one `candidates()`; the `.dfcs` format is byte-compatible with v1's Robin Hood/TurboPFor primitives; mmap path documented with the no-truncate SIGBUS invariant.
+
