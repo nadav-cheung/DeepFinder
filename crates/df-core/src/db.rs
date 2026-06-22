@@ -28,6 +28,7 @@
 
 use std::collections::BTreeMap;
 use std::io::{Read, Write};
+use std::sync::Mutex;
 
 use crate::error::CoreError;
 use crate::meta::LiteMeta;
@@ -85,6 +86,28 @@ fn zstd_decode(comp: &[u8], dict: &[u8]) -> Result<Vec<u8>> {
     dec.read_to_end(&mut out)
         .map_err(|e| CoreError::Codec(format!("zstd read: {e}")))?;
     Ok(out)
+}
+
+/// Read the `local`-th length-prefixed path out of a decompressed filename
+/// block (`u32` len + bytes, repeated).
+fn extract_path(block: &[u8], local: u32) -> Result<String> {
+    let mut p = 0usize;
+    for j in 0..=local as usize {
+        if p + 4 > block.len() {
+            return Err(CoreError::DbFormat("truncated filename block".into()));
+        }
+        let plen = le_u32(block, p) as usize;
+        p += 4;
+        if p + plen > block.len() {
+            return Err(CoreError::DbFormat("path overruns filename block".into()));
+        }
+        if j == local as usize {
+            return String::from_utf8(block[p..p + plen].to_vec())
+                .map_err(|e| CoreError::DbFormat(format!("non-utf8 path: {e}")));
+        }
+        p += plen;
+    }
+    Err(CoreError::DbFormat("doc not found in block".into()))
 }
 
 /// Train a dictionary on the path corpus. Returns empty when the corpus is too
@@ -327,6 +350,10 @@ pub struct DbReader<S> {
     dict: Vec<u8>,
     blocks: Vec<(u64, u32, u32)>, // (abs_off, clen, count)
     block_start: Vec<u32>,        // first docid of each block
+    /// Single-slot cache of the last decompressed filename block (index, bytes).
+    /// Sequential DocID access — how posting lists are walked — hits this and
+    /// decompresses each block once instead of once per path.
+    cached_block: Mutex<Option<(usize, Vec<u8>)>>,
 }
 
 impl<S: DbSource> DbReader<S> {
@@ -384,6 +411,7 @@ impl<S: DbSource> DbReader<S> {
             dict,
             blocks,
             block_start,
+            cached_block: Mutex::new(None),
         })
     }
 
@@ -410,37 +438,36 @@ impl<S: DbSource> DbReader<S> {
         })
     }
 
-    /// Fetch the original-case path for `docid` (decompresses its filename block).
+    /// Fetch the original-case path for `docid`. Decompresses the filename block
+    /// on a miss and caches it — sequential DocID access (how posting lists are
+    /// walked) decompresses each block once instead of once per path.
     pub fn doc_path(&self, docid: u32) -> Result<String> {
         if self.block_start.is_empty() {
             return Err(CoreError::Query("no docs indexed".into()));
         }
         let i = self.block_start.partition_point(|&s| s <= docid);
         let i = if i == 0 { 0 } else { i - 1 };
-        let (off, clen, count) = self.blocks[i];
+        let (_, _, count) = self.blocks[i];
         let local = docid.saturating_sub(self.block_start[i]);
         if local >= count {
             return Err(CoreError::Query(format!("docid {docid} out of range")));
         }
+        // Fast path: block already cached (sequential access).
+        {
+            let guard = self.cached_block.lock().expect("block cache lock poisoned");
+            if let Some((idx, bytes)) = guard.as_ref() {
+                if *idx == i {
+                    return extract_path(bytes, local);
+                }
+            }
+        }
+        // Miss: read + decompress without the lock, then cache and return.
+        let (off, clen, _) = self.blocks[i];
         let comp = self.src.read_at(off, clen as usize)?;
         let block = zstd_decode(&comp, &self.dict)?;
-        let mut p = 0usize;
-        for j in 0..=local as usize {
-            if p + 4 > block.len() {
-                return Err(CoreError::DbFormat("truncated filename block".into()));
-            }
-            let plen = le_u32(&block, p) as usize;
-            p += 4;
-            if p + plen > block.len() {
-                return Err(CoreError::DbFormat("path overruns filename block".into()));
-            }
-            if j == local as usize {
-                return String::from_utf8(block[p..p + plen].to_vec())
-                    .map_err(|e| CoreError::DbFormat(format!("non-utf8 path: {e}")));
-            }
-            p += plen;
-        }
-        Err(CoreError::DbFormat("doc not found in block".into()))
+        let path = extract_path(&block, local)?;
+        *self.cached_block.lock().expect("block cache lock poisoned") = Some((i, block));
+        Ok(path)
     }
 
     /// Robin Hood lookup of `trig`; on hit, pread + TurboPFor-decode the posting.
