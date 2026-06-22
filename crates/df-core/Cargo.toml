@@ -16,3 +16,7 @@ criterion = { workspace = true }
 [[bench]]
 name = "turbopfor"
 harness = false
+
+[[bench]]
+name = "query"
+harness = false
