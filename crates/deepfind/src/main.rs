@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Parser, Subcommand};
 use df_core::LiteMeta;
-use df_ipc::proto::{CaseControl, MatchKind, ResponseFrame, SearchOptions, SearchRequest};
+use df_ipc::proto::{CaseControl, LineHit, MatchKind, ResponseFrame, SearchOptions, SearchRequest};
 use df_ipc::{decode_frame, default_db, default_socket, encode_request, framed};
 use futures::{SinkExt, StreamExt};
 use tokio::net::UnixStream;
@@ -26,6 +26,8 @@ struct Output {
     color: String,
     null: bool,
     count: bool,
+    line_number: bool,
+    context: Option<u32>,
     case_sensitive: bool,
 }
 
@@ -99,6 +101,12 @@ enum Cmd {
         /// Print only the count of matches (no paths).
         #[arg(long)]
         count: bool,
+        /// Show content matches with line numbers (`path:line:text`).
+        #[arg(short = 'n', long = "line-number")]
+        line_number: bool,
+        /// Show N lines of context around each content match.
+        #[arg(short = 'C', long = "context")]
+        context: Option<u32>,
         /// Force online scan (skip the daemon/index).
         #[arg(long)]
         direct: bool,
@@ -147,6 +155,8 @@ async fn main() {
             long,
             null,
             count,
+            line_number,
+            context,
             direct,
             ignore_case,
             case_sensitive,
@@ -167,13 +177,16 @@ async fn main() {
                 max_depth,
                 regex: regex.then(|| query.clone()),
                 case,
-                ..Default::default()
+                line_numbers: line_number,
+                context,
             };
             let out = Output {
                 long,
                 color,
                 null,
                 count,
+                line_number,
+                context,
                 case_sensitive: case.sensitive(&query),
             };
             cmd_search(&query, limit, scope, opts, exec, out).await
@@ -349,7 +362,7 @@ async fn cmd_search(
     } else {
         None
     };
-    let results = match results {
+    let (results, lines) = match results {
         Some(r) => r,
         None => match direct_scan(query, limit, scope, opts).await {
             Ok(r) => r,
@@ -363,7 +376,7 @@ async fn cmd_search(
     if let Some(template) = exec {
         exec_on(&results, &template);
     } else {
-        print_results(&results, &out, query);
+        print_results(&results, &lines, &out, query);
     }
 }
 
@@ -383,7 +396,33 @@ fn exec_on(results: &[(String, LiteMeta, MatchKind)], template: &str) {
     }
 }
 
-fn print_results(results: &[(String, LiteMeta, MatchKind)], out: &Output, query: &str) {
+fn print_results(
+    results: &[(String, LiteMeta, MatchKind)],
+    lines: &[LineHit],
+    out: &Output,
+    query: &str,
+) {
+    // Line-number / context mode (`-n` / `-C`): render content matches as
+    // `path:line:text` (requires the daemon's content index; `--direct` fallback
+    // produces no line hits). With `-C`, each line of the context block is
+    // numbered and printed with a `path-line:` prefix (grep/ripgrep-style).
+    if (out.line_number || out.context.is_some()) && !lines.is_empty() {
+        if out.count {
+            println!("{}", lines.len());
+            return;
+        }
+        let mut sorted: Vec<&LineHit> = lines.iter().collect();
+        sorted.sort_by_key(|h| (h.path.clone(), h.line_no));
+        let context_mode = out.context.is_some();
+        for h in sorted {
+            let body = h.text.trim_end_matches('\n');
+            for (i, line) in body.split('\n').enumerate() {
+                let sep = if context_mode { '-' } else { ':' };
+                println!("{}{}{}:{}", h.path, sep, h.line_no + i as u32, line);
+            }
+        }
+        return;
+    }
     if out.count {
         println!("{}", results.len());
         return;
@@ -472,7 +511,10 @@ async fn daemon_search(
     limit: Option<u32>,
     scope: Option<PathBuf>,
     opts: SearchOptions,
-) -> Result<Vec<(String, LiteMeta, MatchKind)>, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<
+    (Vec<(String, LiteMeta, MatchKind)>, Vec<LineHit>),
+    Box<dyn std::error::Error + Send + Sync>,
+> {
     let stream = UnixStream::connect(default_socket()).await?;
     let mut f = framed(stream);
     let req = SearchRequest {
@@ -483,6 +525,7 @@ async fn daemon_search(
     };
     f.send(encode_request(&req)?).await?;
     let mut out = Vec::new();
+    let mut lines = Vec::new();
     let mut done_total: Option<u32> = None;
     while let Some(frame) = f.next().await {
         match decode_frame(&frame?)? {
@@ -495,6 +538,7 @@ async fn daemon_search(
                     out.push((p, m, k));
                 }
             }
+            ResponseFrame::Lines { hits } => lines.extend(hits),
             ResponseFrame::Done { total } => {
                 done_total = Some(total);
                 break;
@@ -506,15 +550,16 @@ async fn daemon_search(
         // Stream ended without Done (daemon crash / socket reset): fall back to
         // --direct so the user gets complete results, not silent partial ones.
         None => return Err("daemon stream ended early".into()),
-        Some(total) if (total as usize) != out.len() => {
+        Some(total) if (total as usize) != out.len() && (total as usize) != lines.len() => {
             eprintln!(
-                "warning: daemon reported {total} results but delivered {}",
-                out.len()
+                "warning: daemon reported {total} results but delivered {} paths / {} lines",
+                out.len(),
+                lines.len()
             );
         }
         _ => {}
     }
-    Ok(out)
+    Ok((out, lines))
 }
 
 async fn direct_scan(
@@ -522,7 +567,10 @@ async fn direct_scan(
     limit: Option<u32>,
     scope: Option<PathBuf>,
     opts: SearchOptions,
-) -> Result<Vec<(String, LiteMeta, MatchKind)>, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<
+    (Vec<(String, LiteMeta, MatchKind)>, Vec<LineHit>),
+    Box<dyn std::error::Error + Send + Sync>,
+> {
     let q = query.to_lowercase();
     let case_sensitive = opts.case.sensitive(query);
     let cap = limit.map(|l| l as usize).unwrap_or(usize::MAX);
@@ -553,5 +601,5 @@ async fn direct_scan(
             }
         }
     }
-    Ok(out)
+    Ok((out, Vec::new()))
 }

@@ -14,6 +14,15 @@ pub enum MatchKind {
     Both,
 }
 
+/// A single content match rendered for grep-style output (`path:line:text`).
+/// Streamed via [`ResponseFrame::Lines`] when `-n`/`-C` is requested.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LineHit {
+    pub path: String,
+    pub line_no: u32,
+    pub text: String,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchRequest {
     pub query: String,
@@ -86,14 +95,20 @@ impl CaseControl {
     }
 }
 
-/// One frame of the streamed response. The daemon sends `Batch`* then exactly
-/// one terminal `Done` (or `Error`).
+/// One frame of the streamed response. The daemon sends `Batch`* (or `Lines`*
+/// for `-n`/`-C` content-line output) then exactly one terminal `Done` (or
+/// `Error`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum ResponseFrame {
     Batch {
         paths: Vec<String>,
         meta: Vec<LiteMeta>,
         kind: Vec<MatchKind>,
+    },
+    /// Content matches as grep-style line hits (`-n` / `-C`). Sent instead of
+    /// `Batch` when line-number output is requested.
+    Lines {
+        hits: Vec<LineHit>,
     },
     Done {
         total: u32,
@@ -132,9 +147,11 @@ mod tests {
         assert!(!opts.line_numbers);
         assert_eq!(opts.context, None);
 
-        let mut opts = SearchOptions::default();
-        opts.line_numbers = true;
-        opts.context = Some(2);
+        let opts = SearchOptions {
+            line_numbers: true,
+            context: Some(2),
+            ..Default::default()
+        };
         let bytes = bincode::serde::encode_to_vec(&opts, bincode::config::standard()).unwrap();
         let back: SearchOptions =
             bincode::serde::decode_from_slice(&bytes, bincode::config::standard())

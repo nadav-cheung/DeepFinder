@@ -7,7 +7,7 @@
 //! v2) once at startup, binds the socket, and spawns a task per connection.
 //! Blocking work runs on `spawn_blocking`. Results stream in `Batch` frames.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
@@ -18,7 +18,7 @@ use df_core::candidate::candidates;
 use df_core::db::DbReader;
 use df_core::{in_scope, query_docids, LiteMeta};
 use df_index::{FileSource, MmapSource};
-use df_ipc::proto::{MatchKind, ResponseFrame, SearchRequest};
+use df_ipc::proto::{LineHit, MatchKind, ResponseFrame, SearchRequest};
 use df_ipc::{decode_request, encode_frame, framed};
 use futures::{SinkExt, StreamExt};
 use tokio::net::{UnixListener, UnixStream};
@@ -51,6 +51,18 @@ async fn shutdown_signal() {
 /// The mmap'd content shard set, opened once at startup from the MANIFEST.
 struct ContentShards {
     sources: Vec<MmapSource>,
+}
+
+/// Inputs to a content line-query (`-n` / `-C`). Bundled to keep `query_lines`
+/// under clippy's argument-count limit.
+struct LineQuery<'a> {
+    folded: &'a [u8],
+    needle: &'a [u8],
+    case_sensitive: bool,
+    re: Option<&'a regex::bytes::Regex>,
+    scope: Option<&'a Path>,
+    limit: Option<u32>,
+    context: Option<u32>,
 }
 
 impl ContentShards {
@@ -95,6 +107,71 @@ impl ContentShards {
                     continue;
                 }
                 out.push((path, r.meta(d).unwrap_or_default(), MatchKind::Content));
+            }
+        }
+        out
+    }
+
+    /// Content matches rendered as grep-style line hits (`-n` / `-C`). `re`
+    /// selects regex vs literal matching; `context` adds surrounding lines.
+    /// Pure compute over content bytes — the content never leaves the daemon.
+    fn query_lines(&self, q: &LineQuery) -> Vec<LineHit> {
+        let mut out = Vec::new();
+        for src in &self.sources {
+            let r = match ShardReader::open(src.as_slice()) {
+                Ok(r) => r,
+                Err(_) => continue,
+            };
+            let docids = match q.re {
+                Some(rx) => {
+                    df_content::regex_query::content_regex_docids(&r, q.folded, rx, q.limit)
+                        .unwrap_or_default()
+                }
+                None => candidates(&r, q.folded, q.needle, q.case_sensitive, q.limit)
+                    .unwrap_or_default(),
+            };
+            for d in docids {
+                let path = match r.path(d) {
+                    Ok(p) => p,
+                    Err(_) => continue,
+                };
+                if !in_scope(&path, q.scope) {
+                    continue;
+                }
+                let content = match r.content(d) {
+                    Ok(c) => c,
+                    Err(_) => continue,
+                };
+                // Offsets of every match in this file's content.
+                let offsets: Vec<usize> = match q.re {
+                    Some(rx) => rx.find_iter(content).map(|m| m.start()).collect(),
+                    None => {
+                        let vneedle: &[u8] = if q.case_sensitive { q.needle } else { q.folded };
+                        df_content::lines::literal_match_offsets(content, vneedle, q.case_sensitive)
+                    }
+                };
+                let mut seen: HashSet<u32> = HashSet::new();
+                for off in offsets {
+                    if let Some(n) = q.context {
+                        let (first, block) = df_content::lines::context_block(content, off, n);
+                        if seen.insert(first) {
+                            out.push(LineHit {
+                                path: path.clone(),
+                                line_no: first,
+                                text: block,
+                            });
+                        }
+                    } else {
+                        let no = df_content::lines::line_number(content, off);
+                        if seen.insert(no) {
+                            out.push(LineHit {
+                                path: path.clone(),
+                                line_no: no,
+                                text: df_content::lines::line_text(content, off),
+                            });
+                        }
+                    }
+                }
             }
         }
         out
@@ -278,6 +355,41 @@ async fn handle_conn(
     let db_q = db.clone();
     let shards_q = shards.clone();
     let folded = df_content::fold::fold(needle.to_lowercase().as_bytes());
+
+    // Line-number / context mode (`-n` / `-C`): render content matches as
+    // grep-style line hits and stream them as `Lines` frames, then return.
+    if opts.line_numbers || opts.context.is_some() {
+        let folded_l = folded.clone();
+        let needle_l = needle.clone();
+        let scope_l = scope.clone();
+        let re_l = re_content.clone();
+        let ctx = opts.context;
+        let shards_l = shards.clone();
+        let hits = tokio::task::spawn_blocking(move || {
+            let q = LineQuery {
+                folded: &folded_l,
+                needle: needle_l.as_bytes(),
+                case_sensitive,
+                re: re_l.as_ref(),
+                scope: scope_l.as_deref(),
+                limit,
+                context: ctx,
+            };
+            shards_l.query_lines(&q)
+        })
+        .await?;
+        let total = hits.len() as u32;
+        for chunk in hits.chunks(STREAM_CHUNK) {
+            f.send(encode_frame(&ResponseFrame::Lines {
+                hits: chunk.to_vec(),
+            })?)
+            .await?;
+        }
+        f.send(encode_frame(&ResponseFrame::Done { total })?)
+            .await?;
+        return Ok(());
+    }
+
     let folded_c = folded.clone();
     let scope_c = scope.clone();
     let needle_c = needle.clone();

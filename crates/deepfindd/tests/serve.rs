@@ -5,7 +5,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use df_index::{build_content_index, build_index, ContentBuildOptions};
-use df_ipc::proto::{CaseControl, MatchKind, ResponseFrame, SearchOptions, SearchRequest};
+use df_ipc::proto::{CaseControl, LineHit, MatchKind, ResponseFrame, SearchOptions, SearchRequest};
 use df_ipc::{decode_frame, encode_request, framed};
 use futures::{SinkExt, StreamExt};
 use tokio::net::UnixStream;
@@ -50,6 +50,7 @@ async fn serve_query_roundtrip() {
     while let Some(frame) = f.next().await {
         match decode_frame(&frame.unwrap()) {
             Ok(ResponseFrame::Batch { paths, .. }) => got.extend(paths),
+            Ok(ResponseFrame::Lines { .. }) => {}
             Ok(ResponseFrame::Done { .. }) => break,
             Ok(ResponseFrame::Error { message }) => panic!("error frame: {message}"),
             Err(e) => panic!("decode: {e}"),
@@ -92,6 +93,7 @@ async fn query_and_collect(socket: &Path, req: SearchRequest) -> (usize, Vec<Str
                 batches += 1;
                 got.extend(paths);
             }
+            Ok(ResponseFrame::Lines { .. }) => {}
             Ok(ResponseFrame::Done { .. }) => break,
             Ok(ResponseFrame::Error { message }) => panic!("error frame: {message}"),
             Err(e) => panic!("decode: {e}"),
@@ -199,6 +201,7 @@ async fn combined_filename_and_content_results() {
                 paths.extend(p);
                 kinds.extend(kind);
             }
+            Ok(ResponseFrame::Lines { .. }) => {}
             Ok(ResponseFrame::Done { .. }) => break,
             Ok(ResponseFrame::Error { message }) => panic!("error frame: {message}"),
             Err(e) => panic!("decode: {e}"),
@@ -330,6 +333,66 @@ async fn content_regex_matches_grep_e() {
         !got.iter().any(|p| p.ends_with("c.rs")),
         "unexpected c.rs: {got:?}"
     );
+
+    server.abort();
+}
+
+/// `query_lines`: send a request, collect all `Lines` hits.
+async fn query_lines(socket: &Path, req: SearchRequest) -> Vec<LineHit> {
+    let stream = connect_wait(socket).await;
+    let mut f = framed(stream);
+    f.send(encode_request(&req).unwrap()).await.unwrap();
+    let mut hits = Vec::new();
+    while let Some(frame) = f.next().await {
+        match decode_frame(&frame.unwrap()) {
+            Ok(ResponseFrame::Lines { hits: h }) => hits.extend(h),
+            Ok(ResponseFrame::Batch { .. }) => {}
+            Ok(ResponseFrame::Done { .. }) => break,
+            Ok(ResponseFrame::Error { message }) => panic!("error frame: {message}"),
+            Err(e) => panic!("decode: {e}"),
+        }
+    }
+    hits
+}
+
+/// `-n` reports one line hit per matching line, numbered like `grep -n`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn content_line_numbers_match_grep_n() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(
+        tmp.path().join("a.txt"),
+        b"alpha\nbeta main\ngamma\nmain delta\n",
+    )
+    .unwrap();
+
+    let db_path = tmp.path().join("index.dfdb");
+    let content_dir = tmp.path().join("content");
+    build_content_index(
+        tmp.path(),
+        &db_path,
+        &content_dir,
+        &ContentBuildOptions::default(),
+    )
+    .unwrap();
+
+    let socket = tmp.path().join("daemon.sock");
+    let sock = socket.clone();
+    let db = db_path.clone();
+    let server = tokio::spawn(async move { deepfindd::serve(&sock, &db).await });
+
+    let req = SearchRequest {
+        query: "main".into(),
+        scope: None,
+        limit: None,
+        opts: SearchOptions {
+            line_numbers: true,
+            ..Default::default()
+        },
+    };
+    let hits = query_lines(&socket, req).await;
+    let mut nos: Vec<u32> = hits.iter().map(|h| h.line_no).collect();
+    nos.sort();
+    assert_eq!(nos, vec![2, 4], "line numbers: {hits:?}"); // "beta main" / "main delta"
 
     server.abort();
 }

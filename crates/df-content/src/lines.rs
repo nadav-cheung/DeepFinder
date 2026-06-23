@@ -3,6 +3,24 @@
 //! compute the 1-based line number, the line text, and a `-C N` context block.
 //! Pure over `&[u8]` — the daemon assembles the wire `LineHit` from these.
 
+use crate::fold::fold;
+
+/// All byte offsets where `needle` occurs in `content` (literal matching).
+/// `needle` is the verify needle (raw if `case_sensitive`, ASCII-folded
+/// otherwise); the content is folded internally when not case-sensitive so the
+/// offsets line up with the folded needle.
+pub fn literal_match_offsets(content: &[u8], needle: &[u8], case_sensitive: bool) -> Vec<usize> {
+    if needle.is_empty() {
+        return Vec::new();
+    }
+    if case_sensitive {
+        memchr::memmem::find_iter(content, needle).collect()
+    } else {
+        let folded = fold(content);
+        memchr::memmem::find_iter(&folded, needle).collect()
+    }
+}
+
 /// 1-based line number of the line containing `byte_off`.
 pub fn line_number(content: &[u8], byte_off: usize) -> u32 {
     let up = byte_off.min(content.len());
