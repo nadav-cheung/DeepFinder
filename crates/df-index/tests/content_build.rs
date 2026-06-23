@@ -52,12 +52,14 @@ fn build_content_index_end_to_end() {
     let src = MmapSource::open(&shard_path).unwrap();
     let r = ShardReader::open(src.as_slice()).unwrap();
 
-    let got = candidates(&r, &fold(b"alpha"), None).unwrap();
+    let got = candidates(&r, &fold(b"alpha"), b"alpha", false, None).unwrap();
     assert!(got.iter().any(|&d| r.path(d).unwrap().ends_with("a.rs")));
-    let got = candidates(&r, &fold(b"beta"), None).unwrap();
+    let got = candidates(&r, &fold(b"beta"), b"beta", false, None).unwrap();
     assert!(got.iter().any(|&d| r.path(d).unwrap().ends_with("b.rs")));
     // "zzz" absent
-    assert!(candidates(&r, &fold(b"zzz"), None).unwrap().is_empty());
+    assert!(candidates(&r, &fold(b"zzz"), b"zzz", false, None)
+        .unwrap()
+        .is_empty());
 }
 
 #[test]

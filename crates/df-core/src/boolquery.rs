@@ -148,15 +148,26 @@ impl Parser {
 
 /// DocID set for a single term (rarest-trigram + substring verify, or linear
 /// scan for <3-byte terms).
-fn term_docids<S: DbSource>(db: &DbReader<S>, term: &str) -> Result<BTreeSet<u32>> {
+fn term_docids<S: DbSource>(
+    db: &DbReader<S>,
+    term: &str,
+    case_sensitive: bool,
+) -> Result<BTreeSet<u32>> {
     let lower = term.to_lowercase();
     let mut set = BTreeSet::new();
-    if lower.is_empty() {
+    if term.is_empty() {
         return Ok(set);
     }
+    let matches = |p: &str| {
+        if case_sensitive {
+            p.contains(term)
+        } else {
+            p.to_lowercase().contains(lower.as_str())
+        }
+    };
     if lower.len() < 3 {
         for d in 0..db.num_docs() {
-            if db.doc_path(d)?.to_lowercase().contains(lower.as_str()) {
+            if matches(&db.doc_path(d)?) {
                 set.insert(d);
             }
         }
@@ -180,31 +191,35 @@ fn term_docids<S: DbSource>(db: &DbReader<S>, term: &str) -> Result<BTreeSet<u32
         return Ok(set);
     };
     for d in cands {
-        if db.doc_path(d)?.to_lowercase().contains(lower.as_str()) {
+        if matches(&db.doc_path(d)?) {
             set.insert(d);
         }
     }
     Ok(set)
 }
 
-fn evaluate<S: DbSource>(db: &DbReader<S>, node: &Node) -> Result<BTreeSet<u32>> {
+fn evaluate<S: DbSource>(
+    db: &DbReader<S>,
+    node: &Node,
+    case_sensitive: bool,
+) -> Result<BTreeSet<u32>> {
     match node {
-        Node::Term(t) => term_docids(db, t),
+        Node::Term(t) => term_docids(db, t, case_sensitive),
         Node::Not(inner) => {
-            let excl = evaluate(db, inner)?;
+            let excl = evaluate(db, inner, case_sensitive)?;
             // complement against all DocIDs (note: O(num_docs); scalability TODO)
             let mut all: BTreeSet<u32> = (0..db.num_docs()).collect();
             all.retain(|d| !excl.contains(d));
             Ok(all)
         }
         Node::And(a, b) => {
-            let sa = evaluate(db, a)?;
-            let sb = evaluate(db, b)?;
+            let sa = evaluate(db, a, case_sensitive)?;
+            let sb = evaluate(db, b, case_sensitive)?;
             Ok(sa.intersection(&sb).copied().collect())
         }
         Node::Or(a, b) => {
-            let sa = evaluate(db, a)?;
-            let sb = evaluate(db, b)?;
+            let sa = evaluate(db, a, case_sensitive)?;
+            let sb = evaluate(db, b, case_sensitive)?;
             Ok(sa.union(&sb).copied().collect())
         }
     }
@@ -214,9 +229,10 @@ fn evaluate<S: DbSource>(db: &DbReader<S>, node: &Node) -> Result<BTreeSet<u32>>
 pub fn boolean_docids<S: DbSource>(
     db: &DbReader<S>,
     parsed: &Node,
+    case_sensitive: bool,
     limit: Option<u32>,
 ) -> Result<Vec<u32>> {
-    let docids = evaluate(db, parsed)?;
+    let docids = evaluate(db, parsed, case_sensitive)?;
     let cap = limit.map(|l| l as usize).unwrap_or(usize::MAX);
     Ok(docids.into_iter().take(cap).collect())
 }
@@ -227,7 +243,7 @@ pub fn boolean_query<S: DbSource>(
     parsed: &Node,
     limit: Option<u32>,
 ) -> Result<Vec<String>> {
-    let docids = boolean_docids(db, parsed, limit)?;
+    let docids = boolean_docids(db, parsed, false, limit)?;
     let mut out = Vec::with_capacity(docids.len());
     for d in docids {
         out.push(db.doc_path(d)?);

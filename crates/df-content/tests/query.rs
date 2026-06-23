@@ -46,7 +46,7 @@ fn content_query_matches_grep() {
 
     for q in ["main", "fn ", "u32", "Notes", "zzz", "MA"] {
         let folded = fold(q.as_bytes());
-        let mut got = candidates(&r, &folded, None).unwrap();
+        let mut got = candidates(&r, &folded, q.as_bytes(), false, None).unwrap();
         got.sort();
         let want = brute_force(&refs, &folded);
         assert_eq!(got, want, "query {q:?} mismatch (folded {:?})", folded);
@@ -62,8 +62,18 @@ fn content_query_respects_limit() {
     let bytes = b.finish(1);
     let r = ShardReader::open(&bytes).unwrap();
     let folded = fold(b"abc");
-    assert_eq!(candidates(&r, &folded, Some(5)).unwrap().len(), 5);
-    assert_eq!(candidates(&r, &folded, Some(0)).unwrap().len(), 0);
+    assert_eq!(
+        candidates(&r, &folded, b"abc", false, Some(5))
+            .unwrap()
+            .len(),
+        5
+    );
+    assert_eq!(
+        candidates(&r, &folded, b"abc", false, Some(0))
+            .unwrap()
+            .len(),
+        0
+    );
 }
 
 /// Verify must filter trigram false-positives: a trigram present in a file where
@@ -79,7 +89,7 @@ fn content_query_filters_trigram_false_positives() {
     // "foobaz" shares trigrams with both files; only the foobaz file verifies.
     let folded = fold(b"foobaz");
     let got: Vec<u32> = {
-        let mut v = candidates(&r, &folded, None).unwrap();
+        let mut v = candidates(&r, &folded, b"foobaz", false, None).unwrap();
         v.sort();
         v
     };
@@ -88,7 +98,7 @@ fn content_query_filters_trigram_false_positives() {
     // "oob" is a trigram in both; as a query it must match both.
     let folded = fold(b"oob");
     let got: Vec<u32> = {
-        let mut v = candidates(&r, &folded, None).unwrap();
+        let mut v = candidates(&r, &folded, b"oob", false, None).unwrap();
         v.sort();
         v
     };
@@ -107,11 +117,38 @@ fn content_query_cjk() {
     // "日本" is 6 UTF-8 bytes (2 trigrams) present only in jp.txt.
     let folded = fold("日本".as_bytes());
     let got: Vec<u32> = {
-        let mut v = candidates(&r, &folded, None).unwrap();
+        let mut v = candidates(&r, &folded, "日本".as_bytes(), false, None).unwrap();
         v.sort();
         v
     };
     assert_eq!(got, vec![0]);
+}
+
+/// `case_sensitive = true` verifies exact-case content; `false` stays folded.
+#[test]
+fn content_query_case_sensitive() {
+    let mut b = ShardBuilder::new(0, 0);
+    b.add_file("/a/one.rs", false, 13, 1, b"fn FooBar() {}");
+    b.add_file("/a/two.rs", false, 13, 1, b"fn foobar() {}");
+    b.add_file("/a/three.rs", false, 13, 1, b"fn FOOBAZ() {}");
+    let bytes = b.finish(1);
+    let r = ShardReader::open(&bytes).unwrap();
+
+    let folded = fold(b"FooBar");
+    // Exact-case "FooBar" → only the doc with that exact content (docid 0).
+    let cs = {
+        let mut v = candidates(&r, &folded, b"FooBar", true, None).unwrap();
+        v.sort();
+        v
+    };
+    assert_eq!(cs, vec![0]);
+    // Folded "foobar" matches FooBar + foobar, but not FOOBAZ.
+    let ci = {
+        let mut v = candidates(&r, &folded, b"FooBar", false, None).unwrap();
+        v.sort();
+        v
+    };
+    assert_eq!(ci, vec![0, 1]);
 }
 
 /// metaData accessors + version validation.

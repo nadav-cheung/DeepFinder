@@ -8,7 +8,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Parser, Subcommand};
 use df_core::LiteMeta;
-use df_ipc::proto::{MatchKind, ResponseFrame, SearchOptions, SearchRequest};
+use df_ipc::proto::{CaseControl, MatchKind, ResponseFrame, SearchOptions, SearchRequest};
 use df_ipc::{decode_frame, default_db, default_socket, encode_request, framed};
 use futures::{SinkExt, StreamExt};
 use tokio::net::UnixStream;
@@ -26,6 +26,7 @@ struct Output {
     color: String,
     null: bool,
     count: bool,
+    case_sensitive: bool,
 }
 
 #[derive(Subcommand)]
@@ -101,6 +102,12 @@ enum Cmd {
         /// Force online scan (skip the daemon/index).
         #[arg(long)]
         direct: bool,
+        /// Case-insensitive search (disables the smart-case default).
+        #[arg(short = 'i', long = "ignore-case", conflicts_with = "case_sensitive")]
+        ignore_case: bool,
+        /// Case-sensitive search (disables the smart-case default).
+        #[arg(short = 's', long = "case-sensitive", conflicts_with = "ignore_case")]
+        case_sensitive: bool,
     },
 }
 
@@ -141,7 +148,16 @@ async fn main() {
             null,
             count,
             direct,
+            ignore_case,
+            case_sensitive,
         } => {
+            let case = if case_sensitive {
+                CaseControl::Sensitive
+            } else if ignore_case {
+                CaseControl::Insensitive
+            } else {
+                CaseControl::Smart
+            };
             let opts = SearchOptions {
                 direct,
                 extensions: extension,
@@ -150,12 +166,14 @@ async fn main() {
                 globs: glob,
                 max_depth,
                 regex: regex.then(|| query.clone()),
+                case,
             };
             let out = Output {
                 long,
                 color,
                 null,
                 count,
+                case_sensitive: case.sensitive(&query),
             };
             cmd_search(&query, limit, scope, opts, exec, out).await
         }
@@ -382,7 +400,7 @@ fn print_results(results: &[(String, LiteMeta, MatchKind)], out: &Output, query:
     };
     let q = query.to_lowercase();
     for (path, meta, kind) in results {
-        let shown = highlight(path, &q, color_on);
+        let shown = highlight(path, &q, query, out.case_sensitive, color_on);
         if out.long {
             let dir = if meta.is_dir { "/" } else { "" };
             let km = match kind {
@@ -400,20 +418,26 @@ fn print_results(results: &[(String, LiteMeta, MatchKind)], out: &Output, query:
 const C_MATCH: &str = "\x1b[1;31m"; // bold red
 const C_RESET: &str = "\x1b[0m";
 
-/// Return the path with the first (case-insensitive) query occurrence
-/// highlighted. Byte offsets are only safe when lowercasing is length-preserving
-/// (ASCII and most text); otherwise return the path unchanged.
-fn highlight(path: &str, q_lower: &str, color: bool) -> String {
-    if !color || q_lower.is_empty() {
+/// Return the path with the first query occurrence highlighted. When
+/// `case_sensitive`, the exact-case query is located directly; otherwise the
+/// lowercased query is matched against the lowercased path (byte offsets are
+/// only safe when lowercasing is length-preserving — ASCII and most text).
+fn highlight(path: &str, q_lower: &str, query: &str, case_sensitive: bool, color: bool) -> String {
+    if !color || query.is_empty() {
         return path.to_string();
     }
-    let pl = path.to_lowercase();
-    if pl.len() != path.len() {
-        return path.to_string();
-    }
-    match pl.find(q_lower) {
+    let (idx, qlen) = if case_sensitive {
+        (path.find(query), query.len())
+    } else {
+        let pl = path.to_lowercase();
+        if pl.len() != path.len() {
+            return path.to_string();
+        }
+        (pl.find(q_lower), q_lower.len())
+    };
+    match idx {
         Some(i) => {
-            let end = i + q_lower.len();
+            let end = i + qlen;
             format!(
                 "{}{C_MATCH}{}{C_RESET}{}",
                 &path[..i],
@@ -499,6 +523,7 @@ async fn direct_scan(
     opts: SearchOptions,
 ) -> Result<Vec<(String, LiteMeta, MatchKind)>, Box<dyn std::error::Error + Send + Sync>> {
     let q = query.to_lowercase();
+    let case_sensitive = opts.case.sensitive(query);
     let cap = limit.map(|l| l as usize).unwrap_or(usize::MAX);
     let root = scope.unwrap_or_else(|| PathBuf::from("."));
     let mut out = Vec::new();
@@ -508,7 +533,12 @@ async fn direct_scan(
         }
         let entry = result?;
         if let Some(s) = entry.path().to_str() {
-            if s.to_lowercase().contains(q.as_str()) && df_ipc::filter::passes(s, &opts) {
+            let hit = if case_sensitive {
+                s.contains(query)
+            } else {
+                s.to_lowercase().contains(q.as_str())
+            };
+            if hit && df_ipc::filter::passes(s, &opts) {
                 let is_dir = entry.file_type().is_some_and(|t| t.is_dir());
                 out.push((
                     s.to_string(),

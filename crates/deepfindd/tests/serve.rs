@@ -5,7 +5,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use df_index::{build_content_index, build_index, ContentBuildOptions};
-use df_ipc::proto::{MatchKind, ResponseFrame, SearchOptions, SearchRequest};
+use df_ipc::proto::{CaseControl, MatchKind, ResponseFrame, SearchOptions, SearchRequest};
 use df_ipc::{decode_frame, encode_request, framed};
 use futures::{SinkExt, StreamExt};
 use tokio::net::UnixStream;
@@ -210,6 +210,74 @@ async fn combined_filename_and_content_results() {
         kinds.contains(&MatchKind::Both),
         "no Both kind: {:?}",
         kinds
+    );
+
+    server.abort();
+}
+
+/// Smart-case + `-s`/`-i` end-to-end through the daemon. Files live in separate
+/// subdirs so the case-insensitive macOS FS can't collapse "Foo.txt"/"foo.txt".
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn case_sensitivity_end_to_end() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(tmp.path().join("d1")).unwrap();
+    std::fs::create_dir_all(tmp.path().join("d2")).unwrap();
+    std::fs::write(tmp.path().join("d1/Foo.txt"), b"fn Foo() {}").unwrap();
+    std::fs::write(tmp.path().join("d2/foo.txt"), b"fn foo() {}").unwrap();
+
+    let db_path = tmp.path().join("index.dfdb");
+    let content_dir = tmp.path().join("content");
+    let _ = build_content_index(
+        tmp.path(),
+        &db_path,
+        &content_dir,
+        &ContentBuildOptions::default(),
+    )
+    .unwrap();
+
+    let socket = tmp.path().join("daemon.sock");
+    let sock = socket.clone();
+    let db = db_path.clone();
+    let server = tokio::spawn(async move { deepfindd::serve(&sock, &db).await });
+
+    let basenames = |got: Vec<String>| {
+        let mut v: Vec<String> = got
+            .iter()
+            .filter_map(|p| p.rsplit('/').next().map(|s| s.to_string()))
+            .collect();
+        v.sort();
+        v
+    };
+    let req = |query: &str, case: CaseControl| SearchRequest {
+        query: query.into(),
+        scope: None,
+        limit: None,
+        opts: SearchOptions {
+            case,
+            ..Default::default()
+        },
+    };
+
+    // Smart-case default, uppercase query ⇒ case-sensitive: only Foo.txt.
+    let (_b, got) = query_and_collect(&socket, req("Foo", CaseControl::Smart)).await;
+    assert_eq!(basenames(got), vec!["Foo.txt".to_string()]);
+
+    // Smart-case, lowercase query ⇒ case-insensitive: both.
+    let (_b, got) = query_and_collect(&socket, req("foo", CaseControl::Smart)).await;
+    assert_eq!(
+        basenames(got),
+        vec!["Foo.txt".to_string(), "foo.txt".to_string()]
+    );
+
+    // Explicit -s on a lowercase query ⇒ case-sensitive: only foo.txt.
+    let (_b, got) = query_and_collect(&socket, req("foo", CaseControl::Sensitive)).await;
+    assert_eq!(basenames(got), vec!["foo.txt".to_string()]);
+
+    // Explicit -i on an uppercase query ⇒ case-insensitive: both.
+    let (_b, got) = query_and_collect(&socket, req("Foo", CaseControl::Insensitive)).await;
+    assert_eq!(
+        basenames(got),
+        vec!["Foo.txt".to_string(), "foo.txt".to_string()]
     );
 
     server.abort();

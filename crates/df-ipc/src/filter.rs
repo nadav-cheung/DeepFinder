@@ -185,6 +185,7 @@ mod tests {
             globs: vec![],
             max_depth: None,
             regex: None,
+            case: Default::default(),
         }
     }
 

@@ -74,6 +74,8 @@ impl ContentShards {
     fn query(
         &self,
         folded: &[u8],
+        needle: &[u8],
+        case_sensitive: bool,
         scope: Option<&Path>,
         per_shard_limit: Option<u32>,
     ) -> Vec<(String, LiteMeta, MatchKind)> {
@@ -83,7 +85,8 @@ impl ContentShards {
                 Ok(r) => r,
                 Err(_) => continue,
             };
-            let docids = candidates(&r, folded, per_shard_limit).unwrap_or_default();
+            let docids =
+                candidates(&r, folded, needle, case_sensitive, per_shard_limit).unwrap_or_default();
             for d in docids {
                 let path = match r.path(d) {
                     Ok(p) => p,
@@ -190,14 +193,26 @@ async fn handle_conn(
     // When scoping, fetch all matches then filter+cap so `limit` counts in-scope.
     let eff_limit = if scope.is_some() { None } else { limit };
 
+    // Resolve smart-case from the raw query/regex pattern once: any ASCII
+    // uppercase ⇒ case-sensitive (overridden by explicit -i / -s in opts.case).
+    let case_sensitive = opts.case.sensitive(&query_str);
+
     // Filename-regex mode (`--regex`): the query is a regex matched against
     // paths. Its longest literal atom drives candidate generation; the compiled
-    // regex verifies. The content layer is skipped in regex mode.
+    // regex verifies. The content layer is skipped in regex mode. The regex is
+    // case-insensitive unless smart-case / -s made the search case-sensitive.
     let re = match &opts.regex {
-        Some(r) => Some(
-            regex::Regex::new(&format!("(?i){r}"))
-                .map_err(|e| std::io::Error::other(format!("bad regex: {e}")))?,
-        ),
+        Some(r) => {
+            let pat = if case_sensitive {
+                r.clone()
+            } else {
+                format!("(?i){r}")
+            };
+            Some(
+                regex::Regex::new(&pat)
+                    .map_err(|e| std::io::Error::other(format!("bad regex: {e}")))?,
+            )
+        }
         None => None,
     };
     let regex_mode = re.is_some();
@@ -205,6 +220,10 @@ async fn handle_conn(
         Some(r) => df_ipc::filter::longest_literal_atom(r).unwrap_or_default(),
         None => query_str.clone(),
     };
+    // In regex mode the atom is only a candidate prefilter (regex.is_match is
+    // authoritative), so keep it case-insensitive to avoid false negatives. In
+    // literal mode the resolved smart-case flag applies to both layers.
+    let fn_case = if regex_mode { false } else { case_sensitive };
 
     // Engine work off the async pool: filename DocIDs + content matches.
     let db_q = db.clone();
@@ -214,11 +233,17 @@ async fn handle_conn(
     let scope_c = scope.clone();
     let needle_c = needle.clone();
     let (fn_docids, content_matches) = tokio::task::spawn_blocking(move || {
-        let fn_docids = query_docids(&db_q, &needle_c, eff_limit).unwrap_or_default();
+        let fn_docids = query_docids(&db_q, &needle_c, fn_case, eff_limit).unwrap_or_default();
         let content = if regex_mode {
             Vec::new()
         } else {
-            shards_q.query(&folded_c, scope_c.as_deref(), limit)
+            shards_q.query(
+                &folded_c,
+                needle_c.as_bytes(),
+                case_sensitive,
+                scope_c.as_deref(),
+                limit,
+            )
         };
         (fn_docids, content)
     })

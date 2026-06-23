@@ -11,26 +11,31 @@ use crate::boolquery::{boolean_docids, parse, Node};
 use crate::{DbReader, DbSource, Result};
 
 /// Matching DocIDs for `q`, optionally capped at `limit`. Supports boolean
-/// operators (uppercase `AND`/`OR`/`NOT`, parentheses, implicit AND).
+/// operators (uppercase `AND`/`OR`/`NOT`, parentheses, implicit AND). `case_sensitive`
+/// selects exact-case vs folded verify (the daemon resolves smart-case and calls
+/// this directly).
 pub fn query_docids<S: DbSource>(
     db: &DbReader<S>,
     q: &str,
+    case_sensitive: bool,
     limit: Option<u32>,
 ) -> Result<Vec<u32>> {
     if q.is_empty() {
         return Ok(Vec::new());
     }
     match parse(q) {
-        Some(Node::Term(_)) => single_docids(db, q, limit),
-        Some(node) => boolean_docids(db, &node, limit),
-        None => single_docids(db, q, limit), // malformed → raw substring
+        Some(Node::Term(_)) => single_docids(db, q, case_sensitive, limit),
+        Some(node) => boolean_docids(db, &node, case_sensitive, limit),
+        None => single_docids(db, q, case_sensitive, limit), // malformed → raw substring
     }
 }
 
 /// Return matching paths for `q`, optionally capped at `limit`. (Resolves
-/// [`query_docids`] to path strings.)
+/// [`query_docids`] to path strings.) Case-insensitive — the long-standing
+/// default; smart-case is resolved by the daemon, which calls `query_docids`
+/// directly.
 pub fn query<S: DbSource>(db: &DbReader<S>, q: &str, limit: Option<u32>) -> Result<Vec<String>> {
-    let docids = query_docids(db, q, limit)?;
+    let docids = query_docids(db, q, false, limit)?;
     let mut out = Vec::with_capacity(docids.len());
     for d in docids {
         out.push(db.doc_path(d)?);
@@ -40,7 +45,12 @@ pub fn query<S: DbSource>(db: &DbReader<S>, q: &str, limit: Option<u32>) -> Resu
 
 /// Fast single-substring path: rarest query trigram → posting list → substring
 /// verify. Short queries (<3 bytes) fall back to a linear scan.
-fn single_docids<S: DbSource>(db: &DbReader<S>, q: &str, limit: Option<u32>) -> Result<Vec<u32>> {
+fn single_docids<S: DbSource>(
+    db: &DbReader<S>,
+    q: &str,
+    case_sensitive: bool,
+    limit: Option<u32>,
+) -> Result<Vec<u32>> {
     let folded = q.to_lowercase();
-    crate::candidate::candidates(db, folded.as_bytes(), limit)
+    crate::candidate::candidates(db, folded.as_bytes(), q.as_bytes(), case_sensitive, limit)
 }

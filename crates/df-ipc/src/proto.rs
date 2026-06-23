@@ -48,6 +48,36 @@ pub struct SearchOptions {
     /// then regex.is_match verifies).
     #[serde(default)]
     pub regex: Option<String>,
+    /// Case-sensitivity control (`-i` / `-s`; default smart-case).
+    #[serde(default)]
+    pub case: CaseControl,
+}
+
+/// Case-sensitivity control for a search (fd/ripgrep-style).
+///
+/// - `Smart` (default): case-insensitive unless the query contains an ASCII
+///   uppercase letter, in which case it is case-sensitive.
+/// - `Insensitive` (`-i`): always case-insensitive.
+/// - `Sensitive` (`-s`): always case-sensitive.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CaseControl {
+    #[default]
+    Smart,
+    Insensitive,
+    Sensitive,
+}
+
+impl CaseControl {
+    /// Resolve to an effective case-sensitive flag for `pattern` (the raw user
+    /// query / regex). Smart-case treats any ASCII uppercase letter in the
+    /// pattern as a request for case-sensitive matching.
+    pub fn sensitive(self, pattern: &str) -> bool {
+        match self {
+            CaseControl::Sensitive => true,
+            CaseControl::Insensitive => false,
+            CaseControl::Smart => pattern.bytes().any(|b| b.is_ascii_uppercase()),
+        }
+    }
 }
 
 /// One frame of the streamed response. The daemon sends `Batch`* then exactly
@@ -65,4 +95,27 @@ pub enum ResponseFrame {
     Error {
         message: String,
     },
+}
+
+#[cfg(test)]
+mod tests {
+    use super::CaseControl as C;
+
+    #[test]
+    fn smart_case_resolution() {
+        // No uppercase → case-insensitive.
+        assert!(!C::Smart.sensitive("foo"));
+        assert!(!C::Smart.sensitive(""));
+        assert!(!C::Smart.sensitive("main.rs"));
+        // Any ASCII uppercase → case-sensitive.
+        assert!(C::Smart.sensitive("Foo"));
+        assert!(C::Smart.sensitive("README"));
+        assert!(C::Smart.sensitive("index.MD"));
+    }
+
+    #[test]
+    fn explicit_case_overrides_smart() {
+        assert!(C::Sensitive.sensitive("foo")); // -s forces sensitive even on lowercase
+        assert!(!C::Insensitive.sensitive("Foo")); // -i forces insensitive even on uppercase
+    }
 }

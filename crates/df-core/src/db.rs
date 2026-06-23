@@ -517,14 +517,15 @@ impl<S: DbSource> CandidateSource for DbReader<S> {
         self.posting(trig)
     }
 
-    fn cs_verify(&self, docid: u32, needle: &[u8]) -> Result<bool> {
+    fn cs_verify(&self, docid: u32, needle: &[u8], case_sensitive: bool) -> Result<bool> {
+        if needle.is_empty() {
+            return Ok(true);
+        }
         let p = self.doc_path(docid)?;
-        let low = p.to_lowercase();
-        Ok(if needle.is_empty() {
-            true
-        } else {
-            low.as_bytes().windows(needle.len()).any(|w| w == needle)
-        })
+        // case_sensitive ⇒ match the raw path; otherwise match the lowercased
+        // path against the (caller-pre-folded) needle.
+        let hay = if case_sensitive { p } else { p.to_lowercase() };
+        Ok(hay.as_bytes().windows(needle.len()).any(|w| w == needle))
     }
 
     fn cs_num_docs(&self) -> u32 {

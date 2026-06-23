@@ -440,14 +440,24 @@ impl<'a> CandidateSource for ShardReader<'a> {
         self.posting(trig)
     }
 
-    fn cs_verify(&self, local_docid: u32, needle: &[u8]) -> df_core::Result<bool> {
+    fn cs_verify(
+        &self,
+        local_docid: u32,
+        needle: &[u8],
+        case_sensitive: bool,
+    ) -> df_core::Result<bool> {
         if needle.is_empty() {
             return Ok(true);
         }
         let content = self.content(local_docid)?;
-        // ASCII-fold the content slice, then memmem the (already-folded) needle.
-        let folded = fold(content);
-        Ok(memchr::memmem::find(&folded, needle).is_some())
+        if case_sensitive {
+            // Exact bytes: raw content vs raw needle.
+            Ok(memchr::memmem::find(content, needle).is_some())
+        } else {
+            // ASCII-fold the content, then memmem the (already-folded) needle.
+            let folded = fold(content);
+            Ok(memchr::memmem::find(&folded, needle).is_some())
+        }
     }
 
     fn cs_num_docs(&self) -> u32 {

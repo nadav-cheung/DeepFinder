@@ -93,3 +93,35 @@ fn cjk_substring() {
     let m2 = query(&r, "下载", None).unwrap();
     assert_eq!(m2, vec!["/users/x/下载/安全浏览器.app".to_string()]);
 }
+
+/// `query_docids` with `case_sensitive` honors exact case on the trigram path,
+/// the short-query linear-scan path, and stays case-insensitive when off.
+#[test]
+fn case_sensitive_matching() {
+    let bytes = build(&["/m/Foo.txt", "/m/foo.txt", "/m/FOO.txt", "/m/bar.txt"]);
+    let r = DbReader::open(bytes.as_slice()).unwrap();
+    let resolve = |ids: Vec<u32>| {
+        let mut v: Vec<String> = ids.into_iter().map(|d| r.doc_path(d).unwrap()).collect();
+        v.sort();
+        v
+    };
+
+    // 3-byte query (trigram verify path): exact-case narrows to one path.
+    let cs = resolve(df_core::query_docids(&r, "Foo", true, None).unwrap());
+    assert_eq!(cs, vec!["/m/Foo.txt".to_string()]);
+    let ci = resolve(df_core::query_docids(&r, "Foo", false, None).unwrap());
+    assert_eq!(
+        ci,
+        vec![
+            "/m/FOO.txt".to_string(),
+            "/m/Foo.txt".to_string(),
+            "/m/foo.txt".to_string(),
+        ]
+    );
+
+    // 2-byte query (linear-scan path): exact-case still narrows.
+    let cs_short = resolve(df_core::query_docids(&r, "Fo", true, None).unwrap());
+    assert_eq!(cs_short, vec!["/m/Foo.txt".to_string()]);
+    let ci_short = resolve(df_core::query_docids(&r, "fo", false, None).unwrap());
+    assert_eq!(ci_short.len(), 3);
+}

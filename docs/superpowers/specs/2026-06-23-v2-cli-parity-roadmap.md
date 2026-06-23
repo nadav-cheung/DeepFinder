@@ -5,7 +5,7 @@
 
 **Goal (user directive 2026-06-23):** make DeepFinder's CLI feature-complete by integrating the strengths of each reference project. GUI is deferred until explicit user confirmation.
 
-**STATUS (2026-06-23) — done this round:** `-e/--extension`, `-t/--type`, `-E/--exclude`, `-g/--glob`, `-d/--max-depth`, `-x/--exec`, `--color` (match highlight), `--regex` (filename-regex via longest-literal-atom candidate gen), `-0/--null`, `--count` — all live + integration-tested (one real bug, the `./`-prefix glob match, caught + fixed). Combined filename∪content results with `MatchKind` (M5). Remaining P0: **smart-case + content-regex** (engine-level: verify-mode change / content-byte regex). Remaining P1: `-n/-c` context, ranking, multi-DB, bfs expression language.
+**STATUS (2026-06-23) — done this round:** `-e/--extension`, `-t/--type`, `-E/--exclude`, `-g/--glob`, `-d/--max-depth`, `-x/--exec`, `--color` (match highlight), `--regex` (filename-regex via longest-literal-atom candidate gen), `-0/--null`, `--count` — all live + integration-tested (one real bug, the `./`-prefix glob match, caught + fixed). Combined filename∪content results with `MatchKind` (M5). **Smart-case done:** default smart-case (uppercase in query ⇒ case-sensitive) + `-i/--ignore-case` + `-s/--case-sensitive`, threaded through `cs_verify`/`candidates`/`query_docids`/`boolquery` (filename + content layers) + the daemon (incl. conditional regex `(?i)`) + CLI (`--direct` + highlight honor it); 5 new tests (89 green). Remaining P0: **content-regex** (engine-level: content-byte `regex.is_match`). Remaining P1: `-n/-c` context, ranking, multi-DB, bfs expression language.
 
 ---
 
