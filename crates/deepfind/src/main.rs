@@ -20,6 +20,13 @@ struct Cli {
     cmd: Cmd,
 }
 
+/// How to render results (bundled so cmd_search stays under the arg-count lint).
+struct Output {
+    long: bool,
+    color: String,
+    null: bool,
+}
+
 #[derive(Subcommand)]
 enum Cmd {
     /// Build / rebuild the index DB.
@@ -84,6 +91,9 @@ enum Cmd {
         /// Long listing: show size and a directory marker.
         #[arg(short = 'l', long)]
         long: bool,
+        /// Print paths NUL-separated (for `xargs -0`); ignores -l/--color.
+        #[arg(short = '0', long = "null")]
+        null: bool,
         /// Force online scan (skip the daemon/index).
         #[arg(long)]
         direct: bool,
@@ -124,6 +134,7 @@ async fn main() {
             color,
             regex,
             long,
+            null,
             direct,
         } => {
             let opts = SearchOptions {
@@ -135,7 +146,8 @@ async fn main() {
                 max_depth,
                 regex: regex.then(|| query.clone()),
             };
-            cmd_search(&query, limit, scope, long, opts, exec, color).await
+            let out = Output { long, color, null };
+            cmd_search(&query, limit, scope, opts, exec, out).await
         }
     }
 }
@@ -291,10 +303,9 @@ async fn cmd_search(
     query: &str,
     limit: Option<u32>,
     scope: Option<PathBuf>,
-    long: bool,
     opts: SearchOptions,
     exec: Option<String>,
-    color: String,
+    out: Output,
 ) {
     // Try the daemon unless --direct; fall back to --direct on failure.
     let results = if !opts.direct {
@@ -323,12 +334,7 @@ async fn cmd_search(
     if let Some(template) = exec {
         exec_on(&results, &template);
     } else {
-        let color_on = match color.as_str() {
-            "always" => true,
-            "never" => false,
-            _ => std::io::stdout().is_terminal(),
-        };
-        print_results(results, long, query, color_on);
+        print_results(&results, &out, query);
     }
 }
 
@@ -348,16 +354,22 @@ fn exec_on(results: &[(String, LiteMeta, MatchKind)], template: &str) {
     }
 }
 
-fn print_results(
-    results: Vec<(String, LiteMeta, MatchKind)>,
-    long: bool,
-    query: &str,
-    color: bool,
-) {
+fn print_results(results: &[(String, LiteMeta, MatchKind)], out: &Output, query: &str) {
+    if out.null {
+        for (path, _, _) in results {
+            print!("{path}\0");
+        }
+        return;
+    }
+    let color_on = match out.color.as_str() {
+        "always" => true,
+        "never" => false,
+        _ => std::io::stdout().is_terminal(),
+    };
     let q = query.to_lowercase();
     for (path, meta, kind) in results {
-        let shown = highlight(&path, &q, color);
-        if long {
+        let shown = highlight(path, &q, color_on);
+        if out.long {
             let dir = if meta.is_dir { "/" } else { "" };
             let km = match kind {
                 MatchKind::Filename => "[f]",
