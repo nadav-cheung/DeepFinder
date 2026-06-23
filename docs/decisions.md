@@ -86,3 +86,13 @@
 - **ASCII direct array / dirTable / per-shard parallel / madvise (D2.3–D2.6)** — signal unclear without a real multi-GB corpus; deferred until one is benchmarked.
 
 **Reason:** The spec mandates "按基准结果选做" + "每项量化提升 + 测试全绿". No item met the quantified-improvement bar on the baseline, so per the measurement-driven rule and simplicity-first, none is kept. D1 (benches + `perf-baseline.md`) is the Phase D deliverable; revisit D2 with a large real corpus.
+
+## 2026-06-23 — F2 dir-mtime table + F3 MANIFEST signature deferred (Phase F)
+
+**Default:** F is delivered as F1 (ArcSwap SIGBUS-safe hot-swap, proven) + F4 (notify watcher → `rebuild_and_swap` → hot-swap, proven by a live integration test). The watcher does a **full rescan of the changed root** on each debounced change event, which is *correct* (equivalent to `--force` — it reuses `build_content_index`) and SIGBUS-safe, just not minimal-I/O.
+
+**Deferred (correctness-neutral optimizations):**
+- **F2 dir-mtime table** — would let the watcher skip unchanged dirs instead of a full rescan. Not needed for correctness (full rescan is equivalent); added complexity for an optimization only measurable on a large real corpus.
+- **F3 MANIFEST signature** — drift/tamper detection before swapping. The watcher rebuilds from its own `build_content_index` output, so the on-disk shards always match by construction.
+
+**Reason:** Both are perf/hardening extras; the spec's F correctness gates (incremental ≡ full rebuild, SIGBUS-safe hot-swap, no offline window, `--force` retained) are met without them. Revisit when benchmarking incremental latency on a large corpus.
