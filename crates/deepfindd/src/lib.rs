@@ -48,9 +48,16 @@ async fn shutdown_signal() {
     }
 }
 
-/// The mmap'd content shard set, opened once at startup from the MANIFEST.
+/// The mmap'd content shard set, opened once at startup from the MANIFEST. The
+/// set lives behind an [`ArcSwap`]: a rebuild builds NEW shard files and calls
+/// [`ContentShards::reload`], which atomically swaps the snapshot. In-flight
+/// queries hold an `Arc` clone of the old snapshot (via [`Self::snapshot`]); on
+/// Unix the atomic-rename-over preserves the old inode, so reading through the
+/// old mmap stays valid — no SIGBUS — until the old `Arc` drops.
 struct ContentShards {
-    sources: Vec<MmapSource>,
+    #[allow(dead_code)] // read by reload(); wired into the F4 watcher.
+    content_dir: PathBuf,
+    shards: arc_swap::ArcSwap<Vec<Arc<MmapSource>>>,
 }
 
 /// Inputs to a content line-query (`-n` / `-C`). Bundled to keep `query_lines`
@@ -65,19 +72,41 @@ struct LineQuery<'a> {
     context: Option<u32>,
 }
 
+/// Load the shard mmap set listed in `content_dir/MANIFEST`.
+fn load_shard_set(content_dir: &Path) -> Vec<Arc<MmapSource>> {
+    let mut set = Vec::new();
+    if let Some(manifest) = df_index::Manifest::read(&content_dir.join("MANIFEST")) {
+        for entry in &manifest.shards {
+            let path = content_dir.join(&entry.file);
+            if let Ok(src) = MmapSource::open(&path) {
+                set.push(Arc::new(src));
+            }
+        }
+    }
+    set
+}
+
 impl ContentShards {
     /// Open every shard listed in `content_dir/MANIFEST`. Empty if absent.
     fn open(content_dir: &Path) -> Self {
-        let mut sources = Vec::new();
-        if let Some(manifest) = df_index::Manifest::read(&content_dir.join("MANIFEST")) {
-            for entry in &manifest.shards {
-                let path = content_dir.join(&entry.file);
-                if let Ok(src) = MmapSource::open(&path) {
-                    sources.push(src);
-                }
-            }
+        Self {
+            content_dir: content_dir.to_path_buf(),
+            shards: arc_swap::ArcSwap::from_pointee(load_shard_set(content_dir)),
         }
-        Self { sources }
+    }
+
+    /// A stable `Arc` snapshot of the current shard set. Hold this for the whole
+    /// query so the mmaps stay mapped (the set can be swapped concurrently).
+    fn snapshot(&self) -> Arc<Vec<Arc<MmapSource>>> {
+        self.shards.load_full()
+    }
+
+    /// Re-read the shard set from disk and atomically swap it in. Old shards stay
+    /// mapped (via any outstanding snapshot `Arc`) until their queries finish.
+    #[allow(dead_code)] // the F4 df-watch watcher is the caller.
+    fn reload(&self) {
+        self.shards
+            .store(Arc::new(load_shard_set(&self.content_dir)));
     }
 
     /// Content-regex query across all shards. `atom_folded` prefilters candidates
@@ -90,7 +119,8 @@ impl ContentShards {
         per_shard_limit: Option<u32>,
     ) -> Vec<(String, LiteMeta, MatchKind)> {
         let mut out = Vec::new();
-        for src in &self.sources {
+        let snap = self.snapshot();
+        for src in snap.iter() {
             let r = match ShardReader::open(src.as_slice()) {
                 Ok(r) => r,
                 Err(_) => continue,
@@ -117,7 +147,8 @@ impl ContentShards {
     /// Pure compute over content bytes — the content never leaves the daemon.
     fn query_lines(&self, q: &LineQuery) -> Vec<LineHit> {
         let mut out = Vec::new();
-        for src in &self.sources {
+        let snap = self.snapshot();
+        for src in snap.iter() {
             let r = match ShardReader::open(src.as_slice()) {
                 Ok(r) => r,
                 Err(_) => continue,
@@ -189,7 +220,8 @@ impl ContentShards {
         per_shard_limit: Option<u32>,
     ) -> Vec<(String, LiteMeta, MatchKind)> {
         let mut out = Vec::new();
-        for src in &self.sources {
+        let snap = self.snapshot();
+        for src in snap.iter() {
             let r = match ShardReader::open(src.as_slice()) {
                 Ok(r) => r,
                 Err(_) => continue,
@@ -721,5 +753,43 @@ fn combine_kind(a: MatchKind, b: MatchKind) -> MatchKind {
             M::Both
         }
         _ => b,
+    }
+}
+
+#[cfg(test)]
+mod shard_hotswap_tests {
+    //! F1: ArcSwap shard hot-swap is SIGBUS-safe. On Unix, `build_content_index`
+    //! replaces a shard via atomic rename-over, which preserves the OLD inode; an
+    //! outstanding snapshot's mmap maps that old inode, so it keeps reading valid
+    //! bytes after the swap — no SIGBUS.
+
+    use super::*;
+
+    #[test]
+    fn hot_swap_keeps_old_snapshot_valid() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let db = root.join("index.dfdb");
+        let content_dir = root.join("content");
+
+        std::fs::write(root.join("a.txt"), b"old content here").unwrap();
+        df_index::build_content_index(root, &db, &content_dir, &Default::default()).unwrap();
+
+        let cs = ContentShards::open(&content_dir);
+        let snap_old = cs.snapshot();
+        assert!(!snap_old.is_empty(), "expected at least one shard");
+        let old_bytes = snap_old[0].as_slice().to_vec();
+
+        // Rebuild with different content (atomic rename-over the shard file).
+        std::fs::write(root.join("a.txt"), b"completely new and different content").unwrap();
+        std::fs::write(root.join("b.txt"), b"another file").unwrap();
+        df_index::build_content_index(root, &db, &content_dir, &Default::default()).unwrap();
+        cs.reload();
+        let snap_new = cs.snapshot();
+
+        // The old snapshot still maps the pre-swap inode → unchanged, valid bytes.
+        assert_eq!(snap_old[0].as_slice(), old_bytes.as_slice());
+        // The new snapshot reflects the rebuild (different bytes).
+        assert_ne!(snap_old[0].as_slice(), snap_new[0].as_slice());
     }
 }
