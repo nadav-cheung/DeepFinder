@@ -76,3 +76,13 @@
 **Default:** `df-watch` coalesces FSEvents, rescans only changed directories (dir-mtime table, hook at `index.dfdb` header offset 36), and rebuilds **affected shards** into new files, then hot-swaps via `ArcSwap`. Old shards are **rename-aside + drain-then-delete** (never truncate/unlink while mapped → no SIGBUS). Full rebuild is retained as `--force`. Per-file in-place TurboPFor posting merge is **not** implemented (shard rebuild approximates it).
 
 **Reason:** True incremental posting merge is high-risk and out of the verified scope; shard-rebuild incremental is correct (proven by equivalence vs full rebuild) and far simpler. New deps: `notify = "6"`, `arc-swap = "1"`.
+
+## 2026-06-23 — D2 hardening: measured, none justified on the synthetic baseline (Phase D)
+
+**Default:** No M7 hardening item is implemented this round. Each was evaluated against `docs/perf-baseline.md`:
+
+- **2-rarest intersection (D2.1)** — implemented + benchmarked, then **reverted**. For DeepFinder's *literal-substring* candidate generation, a query's trigrams are contiguous, so they co-occur in the same documents ⇒ the two rarest postings overlap almost entirely ⇒ intersecting them does not shrink the verify set. Measured: `common` ("src") 1.05 ms → 1.06 ms (noise). 2-rarest only helps *multi-term* queries, which DeepFinder routes through the boolean AST, not `candidates()`.
+- **Bigram short-query path (D2.2)** — the only hot signal (2-byte `short` = 2.43 ms linear scan), but it needs an on-disk bigram index = an invasive filename-DB + content-shard **format change** for a modest, narrow gain. Not justified at current corpus scale.
+- **ASCII direct array / dirTable / per-shard parallel / madvise (D2.3–D2.6)** — signal unclear without a real multi-GB corpus; deferred until one is benchmarked.
+
+**Reason:** The spec mandates "按基准结果选做" + "每项量化提升 + 测试全绿". No item met the quantified-improvement bar on the baseline, so per the measurement-driven rule and simplicity-first, none is kept. D1 (benches + `perf-baseline.md`) is the Phase D deliverable; revisit D2 with a large real corpus.
