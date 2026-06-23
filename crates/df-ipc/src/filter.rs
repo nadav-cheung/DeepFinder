@@ -92,7 +92,18 @@ pub fn passes(path: &str, opts: &SearchOptions) -> bool {
     if !opts.globs.is_empty() && !opts.globs.iter().any(|g| glob_matches(g, path)) {
         return false;
     }
+    if let Some(maxd) = opts.max_depth {
+        if depth_of(path) > maxd {
+            return false;
+        }
+    }
     true
+}
+
+/// Path depth = separator count from the index root (a leading `./` is stripped).
+fn depth_of(path: &str) -> u32 {
+    let p = path.strip_prefix("./").unwrap_or(path);
+    p.matches('/').count() as u32
 }
 
 fn ext_of(path: &str) -> &str {
@@ -113,6 +124,7 @@ mod tests {
             types: types.iter().map(|s| s.to_string()).collect(),
             excludes: exc.iter().map(|s| s.to_string()).collect(),
             globs: vec![],
+            max_depth: None,
         }
     }
 

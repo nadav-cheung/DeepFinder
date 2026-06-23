@@ -67,6 +67,9 @@ enum Cmd {
         /// Inclusive glob — a path must match at least one. Repeatable.
         #[arg(short = 'g', long = "glob")]
         glob: Vec<String>,
+        /// Max path depth (separator count from the index root).
+        #[arg(short = 'd', long = "max-depth")]
+        max_depth: Option<u32>,
         /// Execute a command for each result. `{}` is replaced by the path
         /// (e.g. -x 'wc -l {}'). If set, results are not printed.
         #[arg(short = 'x', long = "exec")]
@@ -109,6 +112,7 @@ async fn main() {
             types,
             exclude,
             glob,
+            max_depth,
             exec,
             long,
             direct,
@@ -119,6 +123,7 @@ async fn main() {
                 types,
                 excludes: exclude,
                 globs: glob,
+                max_depth,
             };
             cmd_search(&query, limit, scope, long, opts, exec).await
         }

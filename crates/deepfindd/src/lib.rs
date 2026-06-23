@@ -211,6 +211,7 @@ async fn handle_conn(
         && opts.types.is_empty()
         && opts.excludes.is_empty()
         && opts.globs.is_empty()
+        && opts.max_depth.is_none()
     {
         cap
     } else {

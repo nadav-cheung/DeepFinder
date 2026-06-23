@@ -40,6 +40,9 @@ pub struct SearchOptions {
     /// `-g`: inclusive glob patterns — a path must match at least one.
     #[serde(default)]
     pub globs: Vec<String>,
+    /// `-d`: max path depth (separator count from the index root; `./` stripped).
+    #[serde(default)]
+    pub max_depth: Option<u32>,
 }
 
 /// One frame of the streamed response. The daemon sends `Batch`* then exactly
