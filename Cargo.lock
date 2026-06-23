@@ -319,6 +319,7 @@ dependencies = [
  "df-index",
  "df-ipc",
  "futures",
+ "regex",
  "tempfile",
  "tokio",
  "tracing",

@@ -190,15 +190,36 @@ async fn handle_conn(
     // When scoping, fetch all matches then filter+cap so `limit` counts in-scope.
     let eff_limit = if scope.is_some() { None } else { limit };
 
+    // Filename-regex mode (`--regex`): the query is a regex matched against
+    // paths. Its longest literal atom drives candidate generation; the compiled
+    // regex verifies. The content layer is skipped in regex mode.
+    let re = match &opts.regex {
+        Some(r) => Some(
+            regex::Regex::new(&format!("(?i){r}"))
+                .map_err(|e| std::io::Error::other(format!("bad regex: {e}")))?,
+        ),
+        None => None,
+    };
+    let regex_mode = re.is_some();
+    let needle = match &opts.regex {
+        Some(r) => df_ipc::filter::longest_literal_atom(r).unwrap_or_default(),
+        None => query_str.clone(),
+    };
+
     // Engine work off the async pool: filename DocIDs + content matches.
     let db_q = db.clone();
     let shards_q = shards.clone();
-    let folded = df_content::fold::fold(query_str.to_lowercase().as_bytes());
+    let folded = df_content::fold::fold(needle.to_lowercase().as_bytes());
     let folded_c = folded.clone();
     let scope_c = scope.clone();
+    let needle_c = needle.clone();
     let (fn_docids, content_matches) = tokio::task::spawn_blocking(move || {
-        let fn_docids = query_docids(&db_q, &query_str, eff_limit).unwrap_or_default();
-        let content = shards_q.query(&folded_c, scope_c.as_deref(), limit);
+        let fn_docids = query_docids(&db_q, &needle_c, eff_limit).unwrap_or_default();
+        let content = if regex_mode {
+            Vec::new()
+        } else {
+            shards_q.query(&folded_c, scope_c.as_deref(), limit)
+        };
         (fn_docids, content)
     })
     .await?;
@@ -254,6 +275,7 @@ async fn handle_conn(
     let mut entries: Vec<(String, LiteMeta, MatchKind)> = merged
         .into_iter()
         .filter(|(p, _)| df_ipc::filter::passes(p, &opts))
+        .filter(|(p, _)| re.as_ref().is_none_or(|r| r.is_match(p)))
         .map(|(p, (m, k))| (p, m, k))
         .collect();
     entries.truncate(cap);

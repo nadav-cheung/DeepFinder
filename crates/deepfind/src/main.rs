@@ -74,6 +74,9 @@ enum Cmd {
         /// Colorize output: always | never | auto (auto = only on a TTY).
         #[arg(long, default_value = "auto")]
         color: String,
+        /// Treat the query as a regex matched against paths (filename-regex mode).
+        #[arg(long, short = 'r')]
+        regex: bool,
         /// Execute a command for each result. `{}` is replaced by the path
         /// (e.g. -x 'wc -l {}'). If set, results are not printed.
         #[arg(short = 'x', long = "exec")]
@@ -119,6 +122,7 @@ async fn main() {
             max_depth,
             exec,
             color,
+            regex,
             long,
             direct,
         } => {
@@ -129,6 +133,7 @@ async fn main() {
                 excludes: exclude,
                 globs: glob,
                 max_depth,
+                regex: regex.then(|| query.clone()),
             };
             cmd_search(&query, limit, scope, long, opts, exec, color).await
         }

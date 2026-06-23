@@ -106,6 +106,61 @@ fn depth_of(path: &str) -> u32 {
     p.matches('/').count() as u32
 }
 
+/// Extract the longest run of literal (non-metacharacter) characters from a
+/// regex string, to drive trigram candidate generation in filename-regex mode.
+/// Strips escapes, character classes, groups, quantifiers, anchors, and `.`.
+/// Returns None if there is no literal run.
+pub fn longest_literal_atom(regex: &str) -> Option<String> {
+    let mut best: Vec<char> = Vec::new();
+    let mut cur: Vec<char> = Vec::new();
+    let mut chars = regex.chars().peekable();
+    let mut in_class = false;
+    while let Some(c) = chars.next() {
+        if in_class {
+            if c == '\\' {
+                chars.next();
+            } else if c == ']' {
+                in_class = false;
+            }
+            flush_run(&mut cur, &mut best);
+            continue;
+        }
+        match c {
+            '\\' => {
+                chars.next();
+                flush_run(&mut cur, &mut best);
+            }
+            '[' => {
+                flush_run(&mut cur, &mut best);
+                in_class = true;
+            }
+            '(' | ')' | '|' | '*' | '+' | '?' | '^' | '$' | '.' => flush_run(&mut cur, &mut best),
+            '{' => {
+                for nc in chars.by_ref() {
+                    if nc == '}' {
+                        break;
+                    }
+                }
+                flush_run(&mut cur, &mut best);
+            }
+            _ => cur.push(c),
+        }
+    }
+    flush_run(&mut cur, &mut best);
+    if best.is_empty() {
+        None
+    } else {
+        Some(best.into_iter().collect())
+    }
+}
+
+fn flush_run(cur: &mut Vec<char>, best: &mut Vec<char>) {
+    if cur.len() > best.len() {
+        std::mem::swap(best, cur);
+    }
+    cur.clear();
+}
+
 fn ext_of(path: &str) -> &str {
     Path::new(path)
         .extension()
@@ -125,6 +180,7 @@ mod tests {
             excludes: exc.iter().map(|s| s.to_string()).collect(),
             globs: vec![],
             max_depth: None,
+            regex: None,
         }
     }
 
@@ -161,5 +217,17 @@ mod tests {
         assert!(!glob_matches("*.rs", "a.go"));
         assert!(glob_matches("foo?bar", "fooXbar"));
         assert!(glob_matches("*", "anything"));
+    }
+
+    #[test]
+    fn longest_atom() {
+        assert_eq!(longest_literal_atom("foo.*bar"), Some("foo".to_string()));
+        assert_eq!(
+            longest_literal_atom("config\\.rs"),
+            Some("config".to_string())
+        );
+        assert_eq!(longest_literal_atom("\\d+"), None);
+        assert_eq!(longest_literal_atom("[a-z]main"), Some("main".to_string()));
+        assert_eq!(longest_literal_atom("a|bb|ccc"), Some("ccc".to_string()));
     }
 }

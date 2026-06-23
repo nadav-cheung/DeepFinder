@@ -19,6 +19,7 @@ df-content = { workspace = true }
 df-index = { workspace = true }
 df-ipc = { workspace = true }
 bytes = { workspace = true }
+regex = { workspace = true }
 tokio = { workspace = true }
 futures = { workspace = true }
 tracing = { workspace = true }

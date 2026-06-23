@@ -45,6 +45,7 @@ criterion = "0.5"
 memmap2 = "0.9"
 memchr = "2"
 crossbeam-channel = "0.5"
+regex = "1"
 
 [profile.release]
 lto = "thin"

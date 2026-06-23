@@ -18,6 +18,7 @@ fn sample_request() -> SearchRequest {
             excludes: vec![],
             globs: vec![],
             max_depth: None,
+            regex: None,
         },
     }
 }

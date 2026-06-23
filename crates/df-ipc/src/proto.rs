@@ -43,6 +43,11 @@ pub struct SearchOptions {
     /// `-d`: max path depth (separator count from the index root; `./` stripped).
     #[serde(default)]
     pub max_depth: Option<u32>,
+    /// `--regex`: treat the query as a regex matched against paths (filename
+    /// regex mode; the longest literal atom in the regex drives candidate gen,
+    /// then regex.is_match verifies).
+    #[serde(default)]
+    pub regex: Option<String>,
 }
 
 /// One frame of the streamed response. The daemon sends `Batch`* then exactly
