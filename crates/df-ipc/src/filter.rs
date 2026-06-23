@@ -186,6 +186,7 @@ mod tests {
             max_depth: None,
             regex: None,
             case: Default::default(),
+            ..Default::default()
         }
     }
 

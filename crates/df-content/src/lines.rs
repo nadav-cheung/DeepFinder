@@ -76,7 +76,10 @@ pub fn context_block(content: &[u8], byte_off: usize, n: u32) -> (u32, String) {
         .filter(|&&b| b == b'\n')
         .count() as u32
         + 1;
-    (first_no, String::from_utf8_lossy(&content[block_start..block_end]).into_owned())
+    (
+        first_no,
+        String::from_utf8_lossy(&content[block_start..block_end]).into_owned(),
+    )
 }
 
 #[cfg(test)]

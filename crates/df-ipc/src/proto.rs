@@ -51,6 +51,12 @@ pub struct SearchOptions {
     /// Case-sensitivity control (`-i` / `-s`; default smart-case).
     #[serde(default)]
     pub case: CaseControl,
+    /// `-n`: report content matches with line numbers (`path:line:text`).
+    #[serde(default)]
+    pub line_numbers: bool,
+    /// `-C N`: show N lines of context around each content match.
+    #[serde(default)]
+    pub context: Option<u32>,
 }
 
 /// Case-sensitivity control for a search (fd/ripgrep-style).
@@ -100,6 +106,7 @@ pub enum ResponseFrame {
 #[cfg(test)]
 mod tests {
     use super::CaseControl as C;
+    use super::SearchOptions;
 
     #[test]
     fn smart_case_resolution() {
@@ -117,5 +124,23 @@ mod tests {
     fn explicit_case_overrides_smart() {
         assert!(C::Sensitive.sensitive("foo")); // -s forces sensitive even on lowercase
         assert!(!C::Insensitive.sensitive("Foo")); // -i forces insensitive even on uppercase
+    }
+
+    #[test]
+    fn line_options_default_and_roundtrip() {
+        let opts = SearchOptions::default();
+        assert!(!opts.line_numbers);
+        assert_eq!(opts.context, None);
+
+        let mut opts = SearchOptions::default();
+        opts.line_numbers = true;
+        opts.context = Some(2);
+        let bytes = bincode::serde::encode_to_vec(&opts, bincode::config::standard()).unwrap();
+        let back: SearchOptions =
+            bincode::serde::decode_from_slice(&bytes, bincode::config::standard())
+                .unwrap()
+                .0;
+        assert!(back.line_numbers);
+        assert_eq!(back.context, Some(2));
     }
 }

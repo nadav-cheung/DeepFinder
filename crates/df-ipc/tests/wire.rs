@@ -20,6 +20,7 @@ fn sample_request() -> SearchRequest {
             max_depth: None,
             regex: None,
             case: Default::default(),
+            ..Default::default()
         },
     }
 }

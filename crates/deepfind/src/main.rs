@@ -167,6 +167,7 @@ async fn main() {
                 max_depth,
                 regex: regex.then(|| query.clone()),
                 case,
+                ..Default::default()
             };
             let out = Output {
                 long,
