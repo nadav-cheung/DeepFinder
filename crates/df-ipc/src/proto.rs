@@ -82,6 +82,10 @@ pub struct SearchOptions {
     /// `--sort`: result ordering (default: kind-weight + depth + path).
     #[serde(default)]
     pub sort: SortMode,
+    /// `--expr`: a bfs/find-style expression (`-name/-path/-size/-newer` + boolean
+    /// + parens), evaluated post-query as an advanced filter.
+    #[serde(default)]
+    pub expr: Option<String>,
 }
 
 /// Which layers a query touches (default both; `#[serde(default)]` ⇒ BOTH for old

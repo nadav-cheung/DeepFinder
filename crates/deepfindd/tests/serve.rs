@@ -679,3 +679,43 @@ async fn multi_db_search_unions_and_selects() {
 
     server.abort();
 }
+
+/// `--expr` (bfs): a find-style expression filters query results post-query.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn bfs_expression_filters_results() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(tmp.path().join("adata.rs"), vec![b'x'; 200]).unwrap(); // rs + >100 bytes
+    std::fs::write(tmp.path().join("bdata.rs"), vec![b'x'; 10]).unwrap(); // rs but small
+    std::fs::write(tmp.path().join("cdata.txt"), vec![b'x'; 200]).unwrap(); // big but .txt
+
+    let db_path = tmp.path().join("index.dfdb");
+    let content_dir = tmp.path().join("content");
+    build_content_index(
+        tmp.path(),
+        &db_path,
+        &content_dir,
+        &ContentBuildOptions::default(),
+    )
+    .unwrap();
+    let socket = tmp.path().join("daemon.sock");
+    let sock = socket.clone();
+    let db = db_path.clone();
+    let server = tokio::spawn(async move { deepfindd::serve(&sock, &db).await });
+
+    // "data" matches all three by filename; the expr keeps only *.rs over 100 bytes.
+    let req = SearchRequest {
+        query: "data".into(),
+        scope: None,
+        limit: None,
+        opts: SearchOptions {
+            expr: Some("-name '*.rs' -size +100c".into()),
+            ..Default::default()
+        },
+        db: None,
+    };
+    let (_b, got) = query_and_collect(&socket, req).await;
+    let basenames: Vec<&str> = got.iter().map(|p| p.rsplit('/').next().unwrap()).collect();
+    assert_eq!(basenames, vec!["adata.rs"], "expr filter: {got:?}");
+
+    server.abort();
+}

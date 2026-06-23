@@ -140,6 +140,9 @@ enum Cmd {
         /// Sort order: default | path | kind | none.
         #[arg(long, value_name = "MODE")]
         sort: Option<String>,
+        /// bfs/find-style expression, e.g. `-name '*.rs' -size +100c`.
+        #[arg(long = "expr", value_name = "EXPR")]
+        expr: Option<String>,
         /// Restrict the query to one registered named DB.
         #[arg(long, value_name = "NAME")]
         db: Option<String>,
@@ -219,6 +222,7 @@ async fn main() {
             hidden,
             max_results,
             sort,
+            expr,
             db,
             direct,
             ignore_case,
@@ -263,6 +267,7 @@ async fn main() {
                 path_mode,
                 hidden,
                 sort: sort_mode,
+                expr,
             };
             let limit = max_results.or(limit);
             let out = Output {

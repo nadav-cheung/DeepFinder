@@ -5,6 +5,7 @@
 //! stream with [`tokio_util::codec::LengthDelimitedCodec`] (4-byte prefix) via
 //! [`framed`]. The daemon sends a sequence of `ResponseFrame`s (Batch* then Done).
 
+pub mod bfs;
 pub mod error;
 pub mod filter;
 pub mod paths;

@@ -598,7 +598,19 @@ async fn handle_conn(
     })
     .await?;
 
-    // Apply post-query filters (-e/-t/-E), then cap to `limit`.
+    // `--expr` (bfs): compile once, pre-resolve `-newer FILE` mtimes, then filter.
+    let bfs_expr = opts
+        .expr
+        .as_deref()
+        .and_then(|s| df_ipc::bfs::parse(s).ok());
+    let mut newer_cache: HashMap<String, Option<i64>> = HashMap::new();
+    if let Some(e) = &bfs_expr {
+        for f in df_ipc::bfs::newer_files(e) {
+            newer_cache.insert(f.clone(), file_mtime_secs(&f));
+        }
+    }
+
+    // Apply post-query filters (-e/-t/-E/-expr), then cap to `limit`.
     let mut entries: Vec<(String, LiteMeta, MatchKind)> = merged
         .into_iter()
         .filter(|(p, _)| df_ipc::filter::passes(p, &opts))
@@ -611,6 +623,10 @@ async fn handle_conn(
             } else {
                 true
             }
+        })
+        .filter(|(p, (m, _))| match &bfs_expr {
+            Some(e) => df_ipc::bfs::eval(e, p, m, &|file| newer_cache.get(file).copied().flatten()),
+            None => true,
         })
         .map(|(p, (m, k))| (p, m, k))
         .collect();
@@ -665,6 +681,18 @@ fn kind_weight(k: MatchKind) -> u8 {
 fn depth_of(path: &str) -> u32 {
     let p = path.strip_prefix("./").unwrap_or(path);
     p.matches('/').count() as u32
+}
+
+/// A file's mtime in seconds (for `-newer FILE`), or `None` if unstatable.
+fn file_mtime_secs(path: &str) -> Option<i64> {
+    use std::time::UNIX_EPOCH;
+    std::fs::metadata(path)
+        .ok()?
+        .modified()
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|d| d.as_secs() as i64)
 }
 
 /// Insert/merge a match into the dedup map. Filename + Content on same path → Both.
