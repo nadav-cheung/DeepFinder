@@ -5,6 +5,8 @@
 
 **Goal (user directive 2026-06-23):** make DeepFinder's CLI feature-complete by integrating the strengths of each reference project. GUI is deferred until explicit user confirmation.
 
+**STATUS (2026-06-23) — done this round:** `-e/--extension`, `-t/--type`, `-E/--exclude`, `-g/--glob`, `-d/--max-depth`, `-x/--exec`, `--color` (match highlight), `--regex` (filename-regex via longest-literal-atom candidate gen), `-0/--null`, `--count` — all live + integration-tested (one real bug, the `./`-prefix glob match, caught + fixed). Combined filename∪content results with `MatchKind` (M5). Remaining P0: **smart-case + content-regex** (engine-level: verify-mode change / content-byte regex). Remaining P1: `-n/-c` context, ranking, multi-DB, bfs expression language.
+
 ---
 
 ## What each project is best at (signature strength → adopt)
