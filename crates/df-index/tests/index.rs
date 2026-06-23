@@ -76,7 +76,7 @@ fn extra_skip_excludes_custom_dirs() {
     fs::write(tmp.path().join("vendored/lib/a.c"), b"x").unwrap();
 
     let db_path = tmp.path().join("index.dfdb");
-    build_index_with(tmp.path(), &db_path, &["vendored".to_string()]).unwrap();
+    build_index_with(tmp.path(), &db_path, &["vendored".to_string()], false).unwrap();
     let src = FileSource::open(&db_path).unwrap();
     let reader = DbReader::open(src).unwrap();
 

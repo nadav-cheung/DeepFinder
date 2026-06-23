@@ -56,14 +56,19 @@ pub struct IndexReport {
 /// Build (or rebuild) the index DB for `root` with the default skip-list,
 /// writing atomically to `out_db`. Returns the number of indexed entries.
 pub fn build_index(root: &Path, out_db: &Path) -> Result<u32> {
-    Ok(build_index_report(root, out_db, &[])?.docs)
+    Ok(build_index_report(root, out_db, &[], false)?.docs)
 }
 
 /// Like [`build_index`] but with `extra_skip` directory names pruned in addition
 /// to [`DEFAULT_SKIP`] (REVIEW §8.1 #3: configurable skip-list). Extras are
-/// deduped against the defaults.
-pub fn build_index_with(root: &Path, out_db: &Path, extra_skip: &[String]) -> Result<u32> {
-    Ok(build_index_report(root, out_db, extra_skip)?.docs)
+/// deduped against the defaults. `hidden` includes dotfiles when true.
+pub fn build_index_with(
+    root: &Path,
+    out_db: &Path,
+    extra_skip: &[String],
+    hidden: bool,
+) -> Result<u32> {
+    Ok(build_index_report(root, out_db, extra_skip, hidden)?.docs)
 }
 
 /// Build and return a full [`IndexReport`] (doc count + permission-denied count
@@ -72,6 +77,7 @@ pub fn build_index_report(
     root: &Path,
     out_db: &Path,
     extra_skip: &[String],
+    hidden: bool,
 ) -> Result<IndexReport> {
     let mut skip: Vec<&str> = DEFAULT_SKIP.to_vec();
     for e in extra_skip {
@@ -79,7 +85,7 @@ pub fn build_index_report(
             skip.push(e.as_str());
         }
     }
-    let (recs, denied) = collect_records(root, &skip)?;
+    let (recs, denied) = collect_records(root, &skip, hidden)?;
     let mut builder = DbBuilder::new();
     builder.set_build_time(now_secs());
     for r in &recs {
@@ -109,9 +115,9 @@ fn is_permission_denied(e: &ignore::Error) -> bool {
 /// Walk `root` in parallel (gitignore + hidden + `skip` dir names), returning
 /// sorted-unique, valid-UTF-8 records with per-file metadata, plus a count of
 /// permission-denied entries (FDA signal).
-fn collect_records(root: &Path, skip: &[&str]) -> Result<(Vec<DocRec>, u32)> {
+fn collect_records(root: &Path, skip: &[&str], hidden: bool) -> Result<(Vec<DocRec>, u32)> {
     let mut walker = WalkBuilder::new(root);
-    walker.standard_filters(true).hidden(true);
+    walker.standard_filters(true).hidden(!hidden);
 
     let collected: Arc<Mutex<Vec<DocRec>>> = Arc::new(Mutex::new(Vec::new()));
     let denied: Arc<AtomicU32> = Arc::new(AtomicU32::new(0));

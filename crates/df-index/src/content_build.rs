@@ -83,6 +83,8 @@ pub struct ContentBuildOptions {
     pub max_file_size: u64,
     pub extra_skip: Vec<String>,
     pub one_file_system: bool,
+    /// Index hidden files (dotfiles) too. Off by default.
+    pub hidden: bool,
 }
 
 impl Default for ContentBuildOptions {
@@ -91,6 +93,7 @@ impl Default for ContentBuildOptions {
             max_file_size: DEFAULT_MAX_FILE_SIZE,
             extra_skip: Vec::new(),
             one_file_system: false,
+            hidden: false,
         }
     }
 }
@@ -211,7 +214,7 @@ pub fn build_content_index(
     let mut walker = WalkBuilder::new(root);
     walker
         .standard_filters(true)
-        .hidden(true)
+        .hidden(!opts.hidden)
         .same_file_system(opts.one_file_system);
     let tx2 = tx.clone();
     let d2 = denied.clone();

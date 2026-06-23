@@ -396,3 +396,195 @@ async fn content_line_numbers_match_grep_n() {
 
     server.abort();
 }
+
+/// `--filename` layer-only excludes content matches; `--content` excludes
+/// filename matches.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn layer_select_restricts_layers() {
+    let tmp = tempfile::tempdir().unwrap();
+    // alpha.rs matches "alpha" by BOTH filename and content.
+    std::fs::write(tmp.path().join("alpha.rs"), b"fn alpha() {}").unwrap();
+    // beta.rs matches "alpha" by CONTENT only.
+    std::fs::write(tmp.path().join("beta.rs"), b"// alpha mention\n").unwrap();
+
+    let db_path = tmp.path().join("index.dfdb");
+    let content_dir = tmp.path().join("content");
+    build_content_index(
+        tmp.path(),
+        &db_path,
+        &content_dir,
+        &ContentBuildOptions::default(),
+    )
+    .unwrap();
+    let socket = tmp.path().join("daemon.sock");
+    let sock = socket.clone();
+    let db = db_path.clone();
+    let server = tokio::spawn(async move { deepfindd::serve(&sock, &db).await });
+
+    let basenames = |got: Vec<String>| {
+        let mut v: Vec<String> = got
+            .iter()
+            .filter_map(|p| p.rsplit('/').next().map(|s| s.to_string()))
+            .collect();
+        v.sort();
+        v
+    };
+
+    // Filename-only: only alpha.rs (its path contains "alpha"); beta.rs path does not.
+    let req = SearchRequest {
+        query: "alpha".into(),
+        scope: None,
+        limit: None,
+        opts: SearchOptions {
+            layers: df_ipc::proto::LayerMask {
+                filename: true,
+                content: false,
+            },
+            ..Default::default()
+        },
+    };
+    let (_b, got) = query_and_collect(&socket, req).await;
+    assert_eq!(basenames(got), vec!["alpha.rs".to_string()]);
+
+    // Content-only: both (alpha.rs content + beta.rs content).
+    let req = SearchRequest {
+        query: "alpha".into(),
+        scope: None,
+        limit: None,
+        opts: SearchOptions {
+            layers: df_ipc::proto::LayerMask {
+                filename: false,
+                content: true,
+            },
+            ..Default::default()
+        },
+    };
+    let (_b, got) = query_and_collect(&socket, req).await;
+    assert_eq!(
+        basenames(got),
+        vec!["alpha.rs".to_string(), "beta.rs".to_string()]
+    );
+
+    server.abort();
+}
+
+/// `-b` (basename mode): the query must match the file's base name, not the
+/// full path.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn basename_mode_matches_only_basename() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(tmp.path().join("sub")).unwrap();
+    // "x.txt" under dir "sub": full path contains "sub", basename does not.
+    std::fs::write(tmp.path().join("sub/x.txt"), b"x").unwrap();
+    // a file literally named "sub.txt": basename contains "sub".
+    std::fs::write(tmp.path().join("sub.txt"), b"x").unwrap();
+
+    let db_path = tmp.path().join("index.dfdb");
+    build_index(tmp.path(), &db_path).unwrap();
+    let socket = tmp.path().join("daemon.sock");
+    let sock = socket.clone();
+    let db = db_path.clone();
+    let server = tokio::spawn(async move { deepfindd::serve(&sock, &db).await });
+
+    let basenames = |got: Vec<String>| {
+        let mut v: Vec<String> = got
+            .iter()
+            .filter_map(|p| p.rsplit('/').next().map(|s| s.to_string()))
+            .collect();
+        v.sort();
+        v
+    };
+
+    // Full-path mode (default): x.txt matches because its PATH contains "sub".
+    let req = SearchRequest {
+        query: "sub".into(),
+        scope: None,
+        limit: None,
+        opts: SearchOptions::default(),
+    };
+    let (_b, got) = query_and_collect(&socket, req).await;
+    assert!(
+        basenames(got).contains(&"x.txt".to_string()),
+        "full-path mode should include x.txt"
+    );
+
+    // Basename mode: x.txt is gone (its basename "x.txt" lacks "sub"); sub.txt
+    // still matches (basename "sub.txt" contains "sub").
+    let req = SearchRequest {
+        query: "sub".into(),
+        scope: None,
+        limit: None,
+        opts: SearchOptions {
+            path_mode: df_ipc::proto::PathMode::Basename,
+            ..Default::default()
+        },
+    };
+    let (_b, got) = query_and_collect(&socket, req).await;
+    let bn = basenames(got);
+    assert!(
+        !bn.contains(&"x.txt".to_string()),
+        "basename mode should exclude x.txt: {bn:?}"
+    );
+    assert!(
+        bn.contains(&"sub.txt".to_string()),
+        "basename mode should include sub.txt: {bn:?}"
+    );
+
+    server.abort();
+}
+
+/// Default sort: Both before Content before Filename, then by path; stable.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn default_sort_orders_by_kind_then_path() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(tmp.path().join("zfile.txt"), b"needle here\n").unwrap(); // content-only
+    std::fs::write(tmp.path().join("aneedle.txt"), b"unrelated\n").unwrap(); // filename-only
+
+    let db_path = tmp.path().join("index.dfdb");
+    let content_dir = tmp.path().join("content");
+    build_content_index(
+        tmp.path(),
+        &db_path,
+        &content_dir,
+        &ContentBuildOptions::default(),
+    )
+    .unwrap();
+    let socket = tmp.path().join("daemon.sock");
+    let sock = socket.clone();
+    let db = db_path.clone();
+    let server = tokio::spawn(async move { deepfindd::serve(&sock, &db).await });
+
+    let req = SearchRequest {
+        query: "needle".into(),
+        scope: None,
+        limit: None,
+        opts: SearchOptions::default(),
+    };
+    // Collect paths in delivery order (default sort applied server-side).
+    let stream = connect_wait(&socket).await;
+    let mut f = framed(stream);
+    f.send(encode_request(&req).unwrap()).await.unwrap();
+    let mut order: Vec<String> = Vec::new();
+    while let Some(frame) = f.next().await {
+        match decode_frame(&frame.unwrap()) {
+            Ok(ResponseFrame::Batch { paths, .. }) => order.extend(paths),
+            Ok(ResponseFrame::Lines { .. }) => {}
+            Ok(ResponseFrame::Done { .. }) => break,
+            Ok(ResponseFrame::Error { message }) => panic!("error frame: {message}"),
+            Err(e) => panic!("decode: {e}"),
+        }
+    }
+    // zfile.txt is a content match (weight 1); aneedle.txt is filename-only (weight 2).
+    // Content-first ⇒ zfile.txt before aneedle.txt regardless of alphabetic order.
+    let basenames: Vec<&str> = order
+        .iter()
+        .map(|p| p.rsplit('/').next().unwrap())
+        .collect();
+    assert_eq!(
+        basenames,
+        vec!["zfile.txt", "aneedle.txt"],
+        "order: {order:?}"
+    );
+
+    server.abort();
+}

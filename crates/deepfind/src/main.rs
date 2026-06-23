@@ -8,7 +8,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Parser, Subcommand};
 use df_core::LiteMeta;
-use df_ipc::proto::{CaseControl, LineHit, MatchKind, ResponseFrame, SearchOptions, SearchRequest};
+use df_ipc::proto::{
+    CaseControl, LayerMask, LineHit, MatchKind, PathMode, ResponseFrame, SearchOptions,
+    SearchRequest, SortMode,
+};
 use df_ipc::{decode_frame, default_db, default_socket, encode_request, framed};
 use futures::{SinkExt, StreamExt};
 use tokio::net::UnixStream;
@@ -32,6 +35,7 @@ struct Output {
 }
 
 #[derive(Subcommand)]
+#[allow(clippy::large_enum_variant)] // clap subcommand enum; one instance exists transiently at parse time.
 enum Cmd {
     /// Build / rebuild the index DB.
     Index {
@@ -53,6 +57,9 @@ enum Cmd {
         /// Don't cross mount/filesystem boundaries.
         #[arg(long)]
         one_file_system: bool,
+        /// Index hidden files (dotfiles) too. Off by default.
+        #[arg(short = 'H', long)]
+        hidden: bool,
     },
     /// Run the resident daemon.
     Daemon,
@@ -107,6 +114,27 @@ enum Cmd {
         /// Show N lines of context around each content match.
         #[arg(short = 'C', long = "context")]
         context: Option<u32>,
+        /// Search only the content layer (exclude filename matches).
+        #[arg(long, conflicts_with = "filename")]
+        content: bool,
+        /// Search only the filename layer (exclude content matches).
+        #[arg(long, conflicts_with = "content")]
+        filename: bool,
+        /// Match the full path (default).
+        #[arg(short = 'p', long = "full-path")]
+        full_path: bool,
+        /// Match the file's base name only.
+        #[arg(short = 'b', long = "basename")]
+        basename: bool,
+        /// Include hidden files (affects --direct; indexed search reflects the build).
+        #[arg(short = 'H', long = "hidden")]
+        hidden: bool,
+        /// Stop after N results (alias for --limit with early exit).
+        #[arg(long = "max-results", value_name = "N")]
+        max_results: Option<u32>,
+        /// Sort order: default | path | kind | none.
+        #[arg(long, value_name = "MODE")]
+        sort: Option<String>,
         /// Force online scan (skip the daemon/index).
         #[arg(long)]
         direct: bool,
@@ -130,6 +158,7 @@ async fn main() {
             max_file_size,
             no_content,
             one_file_system,
+            hidden,
         } => cmd_index(
             &root,
             force,
@@ -137,6 +166,7 @@ async fn main() {
             max_file_size,
             no_content,
             one_file_system,
+            hidden,
         ),
         Cmd::Daemon => cmd_daemon().await,
         Cmd::Status => cmd_status().await,
@@ -157,6 +187,13 @@ async fn main() {
             count,
             line_number,
             context,
+            content,
+            filename,
+            full_path,
+            basename,
+            hidden,
+            max_results,
+            sort,
             direct,
             ignore_case,
             case_sensitive,
@@ -168,6 +205,23 @@ async fn main() {
             } else {
                 CaseControl::Smart
             };
+            // Layer select: default both; --content / --filename restrict to one.
+            let layers = LayerMask {
+                filename: !content || filename,
+                content: !filename || content,
+            };
+            let path_mode = if basename {
+                PathMode::Basename
+            } else {
+                PathMode::Full
+            };
+            let sort_mode = match sort.as_deref() {
+                Some("path") => SortMode::Path,
+                Some("kind") => SortMode::Kind,
+                Some("none") => SortMode::None,
+                _ => SortMode::Default,
+            };
+            let _ = full_path; // -p is the default (Full); kept for CLI parity.
             let opts = SearchOptions {
                 direct,
                 extensions: extension,
@@ -179,8 +233,12 @@ async fn main() {
                 case,
                 line_numbers: line_number,
                 context,
-                ..Default::default()
+                layers,
+                path_mode,
+                hidden,
+                sort: sort_mode,
             };
+            let limit = max_results.or(limit);
             let out = Output {
                 long,
                 color,
@@ -209,6 +267,7 @@ fn cmd_index(
     max_file_size: u64,
     no_content: bool,
     one_file_system: bool,
+    hidden: bool,
 ) {
     let db = default_db();
     if !force {
@@ -229,7 +288,7 @@ fn cmd_index(
     }
 
     if no_content {
-        match df_index::build_index_with(root, &db, &skip) {
+        match df_index::build_index_with(root, &db, &skip, hidden) {
             Ok(n) => println!("indexed {n} entries (filename only) -> {}", db.display()),
             Err(e) => {
                 eprintln!("index failed: {e}");
@@ -244,6 +303,7 @@ fn cmd_index(
         max_file_size,
         extra_skip: skip,
         one_file_system,
+        hidden,
     };
     match df_index::build_content_index(root, &db, &content_dir, &opts) {
         Ok(r) => {
@@ -577,7 +637,12 @@ async fn direct_scan(
     let cap = limit.map(|l| l as usize).unwrap_or(usize::MAX);
     let root = scope.unwrap_or_else(|| PathBuf::from("."));
     let mut out = Vec::new();
-    for result in ignore::Walk::new(&root) {
+    // `-H` includes hidden files in the online scan; default skips them.
+    let walker = ignore::WalkBuilder::new(&root)
+        .standard_filters(true)
+        .hidden(!opts.hidden)
+        .build();
+    for result in walker {
         if out.len() >= cap {
             break;
         }

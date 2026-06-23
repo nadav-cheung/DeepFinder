@@ -393,19 +393,29 @@ async fn handle_conn(
     let folded_c = folded.clone();
     let scope_c = scope.clone();
     let needle_c = needle.clone();
+    let (want_fn, want_ct) = (opts.layers.filename, opts.layers.content);
     let (fn_docids, content_matches) = tokio::task::spawn_blocking(move || {
-        let fn_docids = query_docids(&db_q, &needle_c, fn_case, eff_limit).unwrap_or_default();
-        let content = match re_content.as_ref() {
-            // Regex mode: the longest-literal-atom prefilters candidates; the
-            // compiled byte regex verifies over the mmap'd content bytes.
-            Some(re) => shards_q.query_regex(&folded_c, re, scope_c.as_deref(), limit),
-            None => shards_q.query(
-                &folded_c,
-                needle_c.as_bytes(),
-                case_sensitive,
-                scope_c.as_deref(),
-                limit,
-            ),
+        // Layer gating: --filename / --content restrict which layers run.
+        let fn_docids = if want_fn {
+            query_docids(&db_q, &needle_c, fn_case, eff_limit).unwrap_or_default()
+        } else {
+            Vec::new()
+        };
+        let content = if !want_ct {
+            Vec::new()
+        } else {
+            match re_content.as_ref() {
+                // Regex mode: the longest-literal-atom prefilters candidates; the
+                // compiled byte regex verifies over the mmap'd content bytes.
+                Some(re) => shards_q.query_regex(&folded_c, re, scope_c.as_deref(), limit),
+                None => shards_q.query(
+                    &folded_c,
+                    needle_c.as_bytes(),
+                    case_sensitive,
+                    scope_c.as_deref(),
+                    limit,
+                ),
+            }
         };
         (fn_docids, content)
     })
@@ -434,6 +444,9 @@ async fn handle_conn(
         let chunk: Vec<u32> = chunk.to_vec();
         let db_r = db.clone();
         let scope_r = scope.clone();
+        let needle_r = needle.clone();
+        let path_mode = opts.path_mode;
+        let fn_case_r = fn_case;
         let batch = tokio::task::spawn_blocking(move || {
             let mut out = Vec::new();
             for &d in &chunk {
@@ -443,6 +456,20 @@ async fn handle_conn(
                 };
                 if !in_scope(&path, scope_r.as_deref()) {
                     continue;
+                }
+                // Basename mode (`-b`): the query must match the file's base
+                // name, not the full path. Candidate gen used full-path trigrams
+                // (a superset), so this re-check narrows to basename matches.
+                if path_mode == df_ipc::proto::PathMode::Basename {
+                    let bn = path.rsplit('/').next().unwrap_or(&path);
+                    let hit = if fn_case_r {
+                        bn.contains(&needle_r)
+                    } else {
+                        bn.to_lowercase().contains(&needle_r.to_lowercase())
+                    };
+                    if !hit {
+                        continue;
+                    }
                 }
                 let meta = db_r.doc_meta(d).unwrap_or_default();
                 out.push((path, meta));
@@ -474,6 +501,7 @@ async fn handle_conn(
         })
         .map(|(p, (m, k))| (p, m, k))
         .collect();
+    sort_entries(&mut entries, opts.sort);
     entries.truncate(cap);
     let mut total: u32 = 0;
     for chunk in entries.chunks(STREAM_CHUNK) {
@@ -492,6 +520,38 @@ async fn handle_conn(
     f.send(encode_frame(&ResponseFrame::Done { total })?)
         .await?;
     Ok(())
+}
+
+/// Order `entries` per `mode`. `Default` = (kind weight, path depth, path) —
+/// best matches first, deterministic and reproducible.
+fn sort_entries(entries: &mut [(String, LiteMeta, MatchKind)], mode: df_ipc::proto::SortMode) {
+    use df_ipc::proto::SortMode as S;
+    match mode {
+        S::None => {}
+        S::Path => entries.sort_by(|a, b| a.0.cmp(&b.0)),
+        S::Kind => entries.sort_by_key(|(_, _, k)| kind_weight(*k)),
+        S::Default => entries.sort_by(|a, b| {
+            kind_weight(a.2)
+                .cmp(&kind_weight(b.2))
+                .then_with(|| depth_of(&a.0).cmp(&depth_of(&b.0)))
+                .then_with(|| a.0.cmp(&b.0))
+        }),
+    }
+}
+
+/// Best-match-first weight: Both (0) < Content (1) < Filename (2).
+fn kind_weight(k: MatchKind) -> u8 {
+    match k {
+        MatchKind::Both => 0,
+        MatchKind::Content => 1,
+        MatchKind::Filename => 2,
+    }
+}
+
+/// Path depth = separator count from the index root (leading `./` stripped).
+fn depth_of(path: &str) -> u32 {
+    let p = path.strip_prefix("./").unwrap_or(path);
+    p.matches('/').count() as u32
 }
 
 /// Insert/merge a match into the dedup map. Filename + Content on same path → Both.
