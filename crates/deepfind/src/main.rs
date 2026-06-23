@@ -179,6 +179,7 @@ async fn main() {
                 case,
                 line_numbers: line_number,
                 context,
+                ..Default::default()
             };
             let out = Output {
                 long,

@@ -66,6 +66,61 @@ pub struct SearchOptions {
     /// `-C N`: show N lines of context around each content match.
     #[serde(default)]
     pub context: Option<u32>,
+    /// `--content` / `--filename`: which layers to query (default: both).
+    #[serde(default)]
+    pub layers: LayerMask,
+    /// `-p` (full path) / `-b` (basename only) match mode (default: full path).
+    #[serde(default)]
+    pub path_mode: PathMode,
+    /// `-H`: include hidden files (only affects `--direct`; indexed search reflects
+    /// what was built).
+    #[serde(default)]
+    pub hidden: bool,
+    /// `--sort`: result ordering (default: kind-weight + depth + path).
+    #[serde(default)]
+    pub sort: SortMode,
+}
+
+/// Which layers a query touches (default both; `#[serde(default)]` ⇒ BOTH for old
+/// clients that omit the field).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LayerMask {
+    #[serde(default = "default_true")]
+    pub filename: bool,
+    #[serde(default = "default_true")]
+    pub content: bool,
+}
+
+fn default_true() -> bool {
+    true
+}
+
+impl Default for LayerMask {
+    fn default() -> Self {
+        LayerMask {
+            filename: true,
+            content: true,
+        }
+    }
+}
+
+/// Filename match mode: full path (default) or basename only.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PathMode {
+    #[default]
+    Full,
+    Basename,
+}
+
+/// Result ordering. `Default` = match-kind weight + path depth + path (best
+/// matches first, deterministic).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SortMode {
+    #[default]
+    Default,
+    Path,
+    Kind,
+    None,
 }
 
 /// Case-sensitivity control for a search (fd/ripgrep-style).
@@ -122,6 +177,7 @@ pub enum ResponseFrame {
 mod tests {
     use super::CaseControl as C;
     use super::SearchOptions;
+    use super::{LayerMask, PathMode, SortMode};
 
     #[test]
     fn smart_case_resolution() {
@@ -159,5 +215,47 @@ mod tests {
                 .0;
         assert!(back.line_numbers);
         assert_eq!(back.context, Some(2));
+    }
+
+    #[test]
+    fn b_options_default_and_roundtrip() {
+        // Defaults: both layers, full-path mode, no hidden, default sort.
+        let opts = SearchOptions::default();
+        assert_eq!(
+            opts.layers,
+            LayerMask {
+                filename: true,
+                content: true
+            }
+        );
+        assert_eq!(opts.path_mode, PathMode::Full);
+        assert!(!opts.hidden);
+        assert_eq!(opts.sort, SortMode::Default);
+
+        let opts = SearchOptions {
+            layers: LayerMask {
+                filename: false,
+                content: true,
+            },
+            path_mode: PathMode::Basename,
+            hidden: true,
+            sort: SortMode::Path,
+            ..Default::default()
+        };
+        let bytes = bincode::serde::encode_to_vec(&opts, bincode::config::standard()).unwrap();
+        let back: SearchOptions =
+            bincode::serde::decode_from_slice(&bytes, bincode::config::standard())
+                .unwrap()
+                .0;
+        assert_eq!(
+            back.layers,
+            LayerMask {
+                filename: false,
+                content: true
+            }
+        );
+        assert_eq!(back.path_mode, PathMode::Basename);
+        assert!(back.hidden);
+        assert_eq!(back.sort, SortMode::Path);
     }
 }
