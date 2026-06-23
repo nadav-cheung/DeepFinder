@@ -44,6 +44,7 @@ zstd = "0.13"
 criterion = "0.5"
 memmap2 = "0.9"
 memchr = "2"
+crossbeam-channel = "0.5"
 
 [profile.release]
 lto = "thin"

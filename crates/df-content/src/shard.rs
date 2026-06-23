@@ -89,6 +89,11 @@ impl ShardBuilder {
         self.paths.len() as u32
     }
 
+    /// Current contentCorpus size in bytes (flush-threshold check).
+    pub fn content_bytes(&self) -> usize {
+        self.corpus.len()
+    }
+
     /// Serialize the shard to bytes (sections + TOC + footer).
     pub fn finish(self, build_time: u64) -> Vec<u8> {
         let num_docs = self.paths.len() as u32;

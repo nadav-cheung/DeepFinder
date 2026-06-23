@@ -16,7 +16,9 @@ use df_core::db::DbBuilder;
 use df_core::DbSource;
 use ignore::{WalkBuilder, WalkState};
 
+pub mod content_build;
 pub mod error;
+pub mod manifest;
 pub mod mmap_source;
 
 pub use error::{IndexError, Result};
