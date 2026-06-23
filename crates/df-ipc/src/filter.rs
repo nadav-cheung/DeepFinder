@@ -84,12 +84,16 @@ pub fn passes(path: &str, opts: &SearchOptions) -> bool {
             return false;
         }
     }
+    // Globs/excludes match against the raw path OR the `./`-stripped path, so a
+    // user pattern like `docs/*` excludes `./docs/readme.md`.
+    let norm = path.strip_prefix("./").unwrap_or(path);
+    let gmatch = |pat: &str| glob_matches(pat, path) || glob_matches(pat, norm);
     for pat in &opts.excludes {
-        if glob_matches(pat, path) {
+        if gmatch(pat) {
             return false;
         }
     }
-    if !opts.globs.is_empty() && !opts.globs.iter().any(|g| glob_matches(g, path)) {
+    if !opts.globs.is_empty() && !opts.globs.iter().any(|g| gmatch(g)) {
         return false;
     }
     if let Some(maxd) = opts.max_depth {
@@ -208,6 +212,21 @@ mod tests {
         assert!(!passes("/proj/target/debug/x", &o));
         assert!(!passes("/proj/a.log", &o));
         assert!(passes("/proj/src/main.rs", &o));
+    }
+
+    #[test]
+    fn glob_matches_dot_prefix() {
+        // A `./`-prefixed stored path must still match a pattern without the prefix.
+        let o = opts(&[], &[], &["docs/*"]);
+        assert!(!passes("./docs/readme.md", &o));
+        assert!(passes("./src/main.rs", &o));
+        let o = opts(&[], &[], &[]); // globs field empty by default in opts() — test inclusive directly
+        let o = SearchOptions {
+            globs: vec!["src/*".to_string()],
+            ..opts(&[], &[], &[])
+        };
+        assert!(passes("./src/main.rs", &o));
+        assert!(!passes("./docs/readme.md", &o));
     }
 
     #[test]
