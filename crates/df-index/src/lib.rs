@@ -21,7 +21,9 @@ pub mod error;
 pub mod manifest;
 pub mod mmap_source;
 
+pub use content_build::{build_content_index, ContentBuildOptions, ContentReport};
 pub use error::{IndexError, Result};
+pub use manifest::{Manifest, ShardEntry};
 pub use mmap_source::MmapSource;
 
 /// Default skip-list (on top of `.gitignore` + hidden), per REVIEW §8.1 #3.
