@@ -1,50 +1,124 @@
 // SPDX-License-Identifier: MIT
-//! deepfindd library — resident daemon: serves the index DB over a Unix socket.
+//! deepfindd library — resident daemon: serves the filename DB + content shards
+//! over a Unix socket. A query returns COMBINED filename+content matches, deduped
+//! by path (a hit in both layers = MatchKind::Both).
 //!
-//! `serve()` opens the DB once (shared via `Arc`), binds the socket, and spawns
-//! a task per connection. Queries (blocking pread + substring) run on
-//! `spawn_blocking` so the async runtime stays responsive. Results are streamed
-//! in chunks (REVIEW §7.9 "stream hits, do not buffer"); per-file metadata is
-//! resolved from the DB META section and an optional `scope` filters matches.
+//! `serve()` opens the filename DB (pread, v1) + the content shard set (mmap,
+//! v2) once at startup, binds the socket, and spawns a task per connection.
+//! Blocking work runs on `spawn_blocking`. Results stream in `Batch` frames.
 
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use bytes::Bytes;
+use df_content::ShardReader;
+use df_core::candidate::candidates;
 use df_core::db::DbReader;
 use df_core::{in_scope, query_docids, LiteMeta};
-use df_index::FileSource;
-use df_ipc::proto::{ResponseFrame, SearchRequest};
+use df_index::{FileSource, MmapSource};
+use df_ipc::proto::{MatchKind, ResponseFrame, SearchRequest};
 use df_ipc::{decode_request, encode_frame, framed};
 use futures::{SinkExt, StreamExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::task::JoinSet;
 
-/// Results per `Batch` frame (streamed chunking, REVIEW §7.9).
+/// Results per `Batch` frame.
 const STREAM_CHUNK: usize = 512;
 /// Grace window for in-flight connections on shutdown before aborting.
 const DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Complete on SIGINT (Ctrl-C) or SIGTERM.
 async fn shutdown_signal() {
-    use tokio::signal::unix::{signal, SignalKind};
-    let mut interrupt = signal(SignalKind::interrupt()).expect("install SIGINT handler");
-    let mut terminate = signal(SignalKind::terminate()).expect("install SIGTERM handler");
+    let ctrl_c = async {
+        let _ = tokio::signal::ctrl_c().await;
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        use tokio::signal::unix::{signal, SignalKind};
+        let mut s = signal(SignalKind::terminate()).expect("install SIGTERM handler");
+        s.recv().await;
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
     tokio::select! {
-        _ = interrupt.recv() => {}
-        _ = terminate.recv() => {}
+        _ = ctrl_c => {}
+        _ = terminate => {}
     }
 }
 
-/// Open `db_path`, bind `socket_path`, serve until a shutdown signal arrives,
-/// then drain in-flight connections and remove the socket.
+/// The mmap'd content shard set, opened once at startup from the MANIFEST.
+struct ContentShards {
+    sources: Vec<MmapSource>,
+}
+
+impl ContentShards {
+    /// Open every shard listed in `content_dir/MANIFEST`. Empty if absent.
+    fn open(content_dir: &Path) -> Self {
+        let mut sources = Vec::new();
+        if let Some(manifest) = df_index::Manifest::read(&content_dir.join("MANIFEST")) {
+            for entry in &manifest.shards {
+                let path = content_dir.join(&entry.file);
+                if let Ok(src) = MmapSource::open(&path) {
+                    sources.push(src);
+                }
+            }
+        }
+        Self { sources }
+    }
+
+    /// Run a content query across all shards. Returns (path, meta, Content) for
+    /// each in-scope verified match. `ShardReader` is opened on demand per shard
+    /// (avoids storing a borrowing reader next to its owning mmap).
+    fn query(
+        &self,
+        folded: &[u8],
+        scope: Option<&Path>,
+        per_shard_limit: Option<u32>,
+    ) -> Vec<(String, LiteMeta, MatchKind)> {
+        let mut out = Vec::new();
+        for src in &self.sources {
+            let r = match ShardReader::open(src.as_slice()) {
+                Ok(r) => r,
+                Err(_) => continue,
+            };
+            let docids = candidates(&r, folded, per_shard_limit).unwrap_or_default();
+            for d in docids {
+                let path = match r.path(d) {
+                    Ok(p) => p,
+                    Err(_) => continue,
+                };
+                if !in_scope(&path, scope) {
+                    continue;
+                }
+                let meta = r.meta(d).unwrap_or_default();
+                out.push((path, meta, MatchKind::Content));
+            }
+        }
+        out
+    }
+}
+
+/// Open `db_path` (+ the content shard set beside it), bind `socket_path`, serve
+/// until a shutdown signal, then drain + remove the socket.
 pub async fn serve(socket_path: &Path, db_path: &Path) -> std::io::Result<()> {
     let src = FileSource::open(db_path)?;
     let reader = DbReader::open(src).map_err(std::io::Error::other)?;
     let db = Arc::new(reader);
 
-    tracing::info!(socket = ?socket_path, db = ?db_path, "deepfindd listening");
+    let content_dir = db_path
+        .parent()
+        .map(|p| p.join("content"))
+        .unwrap_or_else(|| PathBuf::from("content"));
+    let shards = Arc::new(ContentShards::open(&content_dir));
+
+    tracing::info!(
+        socket = ?socket_path,
+        db = ?db_path,
+        shards = shards.sources.len(),
+        "deepfindd listening"
+    );
 
     if let Some(dir) = socket_path.parent() {
         tokio::fs::create_dir_all(dir).await?;
@@ -63,8 +137,7 @@ pub async fn serve(socket_path: &Path, db_path: &Path) -> std::io::Result<()> {
                 break;
             }
             res = listener.accept() => {
-                // Transient accept errors (EMFILE, ECONNABORTED, …) must not
-                // tear down the daemon or skip the graceful drain; log + continue.
+                // Transient accept errors must not tear down the daemon.
                 let (stream, _) = match res {
                     Ok(v) => v,
                     Err(e) => {
@@ -73,8 +146,9 @@ pub async fn serve(socket_path: &Path, db_path: &Path) -> std::io::Result<()> {
                     }
                 };
                 let db = db.clone();
+                let shards = shards.clone();
                 join_set.spawn(async move {
-                    if let Err(e) = handle_conn(stream, db).await {
+                    if let Err(e) = handle_conn(stream, db, shards).await {
                         tracing::warn!("connection error: {e}");
                     }
                 });
@@ -98,6 +172,7 @@ pub async fn serve(socket_path: &Path, db_path: &Path) -> std::io::Result<()> {
 async fn handle_conn(
     stream: UnixStream,
     db: Arc<DbReader<FileSource>>,
+    shards: Arc<ContentShards>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut f = framed(stream);
 
@@ -108,73 +183,108 @@ async fn handle_conn(
     };
     let req: SearchRequest = decode_request(&req_bytes)?;
 
-    // Engine work runs off the async pool. When a scope is set we fetch all
-    // matches (limit = None) so `limit` can refer to in-scope results after
-    // filtering; without a scope the engine caps directly.
     let query_str = req.query.clone();
     let scope: Option<PathBuf> = req.scope.clone();
     let limit = req.limit;
+    // When scoping, fetch all matches then filter+cap so `limit` counts in-scope.
     let eff_limit = if scope.is_some() { None } else { limit };
-    let db_q = db.clone();
-    let docids = tokio::task::spawn_blocking(move || query_docids(&db_q, &query_str, eff_limit))
-        .await?
-        .map_err(std::io::Error::other)?;
 
-    // Stream resolved (path, meta) pairs in chunks. Each chunk's blocking pread
-    // work runs on the pool; frames are sent between chunks.
+    // Engine work off the async pool: filename DocIDs + content matches.
+    let db_q = db.clone();
+    let shards_q = shards.clone();
+    let folded = df_content::fold::fold(query_str.to_lowercase().as_bytes());
+    let folded_c = folded.clone();
+    let scope_c = scope.clone();
+    let (fn_docids, content_matches) = tokio::task::spawn_blocking(move || {
+        let fn_docids = query_docids(&db_q, &query_str, eff_limit).unwrap_or_default();
+        let content = shards_q.query(&folded_c, scope_c.as_deref(), limit);
+        (fn_docids, content)
+    })
+    .await?;
+
+    // Merge filename + content by path. Filename DocIDs resolved in chunks.
     let cap = limit.map(|l| l as usize).unwrap_or(usize::MAX);
-    let mut total: u32 = 0;
-    for chunk in docids.chunks(STREAM_CHUNK) {
-        if total as usize >= cap {
+    let mut merged: HashMap<String, (LiteMeta, MatchKind)> = HashMap::new();
+
+    for chunk in fn_docids.chunks(STREAM_CHUNK) {
+        if merged.len() >= cap {
             break;
         }
-        let remaining = cap - total as usize;
+        let chunk: Vec<u32> = chunk.to_vec();
         let db_r = db.clone();
         let scope_r = scope.clone();
-        let chunk: Vec<u32> = chunk.to_vec();
         let batch = tokio::task::spawn_blocking(move || {
-            resolve_chunk(&db_r, &chunk, scope_r.as_deref(), remaining)
+            let mut out = Vec::new();
+            for &d in &chunk {
+                let path = match db_r.doc_path(d) {
+                    Ok(p) => p,
+                    Err(_) => continue,
+                };
+                if !in_scope(&path, scope_r.as_deref()) {
+                    continue;
+                }
+                let meta = db_r.doc_meta(d).unwrap_or_default();
+                out.push((path, meta));
+            }
+            out
         })
         .await?;
-        if batch.is_empty() {
-            continue;
+        for (path, meta) in batch {
+            merge_in(&mut merged, path, meta, MatchKind::Filename, cap);
         }
-        let count = batch.len() as u32;
-        let (paths, meta): (Vec<String>, Vec<LiteMeta>) = batch.into_iter().unzip();
-        f.send(encode_frame(&ResponseFrame::Batch { paths, meta })?)
+    }
+    for (path, meta, kind) in content_matches {
+        merge_in(&mut merged, path, meta, kind, cap);
+    }
+
+    // Stream merged results in chunks.
+    let mut entries: Vec<(String, LiteMeta, MatchKind)> =
+        merged.into_iter().map(|(p, (m, k))| (p, m, k)).collect();
+    entries.truncate(cap);
+    let mut total: u32 = 0;
+    for chunk in entries.chunks(STREAM_CHUNK) {
+        let mut paths = Vec::with_capacity(chunk.len());
+        let mut meta = Vec::with_capacity(chunk.len());
+        let mut kind = Vec::with_capacity(chunk.len());
+        for (p, m, k) in chunk {
+            paths.push(p.clone());
+            meta.push(m.clone());
+            kind.push(*k);
+        }
+        f.send(encode_frame(&ResponseFrame::Batch { paths, meta, kind })?)
             .await?;
-        total += count;
+        total += chunk.len() as u32;
     }
     f.send(encode_frame(&ResponseFrame::Done { total })?)
         .await?;
     Ok(())
 }
 
-/// Resolve a chunk of DocIDs to `(path, meta)` pairs, applying scope filtering
-/// and the result cap. Docs that fail to resolve are skipped (logged).
-fn resolve_chunk(
-    db: &DbReader<FileSource>,
-    docids: &[u32],
-    scope: Option<&Path>,
-    max: usize,
-) -> Vec<(String, LiteMeta)> {
-    let mut out = Vec::new();
-    for &d in docids {
-        if out.len() >= max {
-            break;
-        }
-        let path = match db.doc_path(d) {
-            Ok(p) => p,
-            Err(e) => {
-                tracing::warn!(docid = d, "skip unresolvable doc: {e}");
-                continue;
-            }
-        };
-        if !in_scope(&path, scope) {
-            continue;
-        }
-        let meta = db.doc_meta(d).unwrap_or_default();
-        out.push((path, meta));
+/// Insert/merge a match into the dedup map. Filename + Content on same path → Both.
+fn merge_in(
+    map: &mut HashMap<String, (LiteMeta, MatchKind)>,
+    path: String,
+    meta: LiteMeta,
+    kind: MatchKind,
+    cap: usize,
+) {
+    if map.len() >= cap && !map.contains_key(&path) {
+        return;
     }
-    out
+    match map.get_mut(&path) {
+        Some((_, existing)) => *existing = combine_kind(*existing, kind),
+        None => {
+            map.insert(path, (meta, kind));
+        }
+    }
+}
+
+fn combine_kind(a: MatchKind, b: MatchKind) -> MatchKind {
+    use MatchKind as M;
+    match (a, b) {
+        (M::Filename, M::Content) | (M::Content, M::Filename) | (M::Both, _) | (_, M::Both) => {
+            M::Both
+        }
+        _ => b,
+    }
 }

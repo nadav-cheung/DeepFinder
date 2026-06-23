@@ -2,7 +2,7 @@
 //! Wire tests: bincode message round-trips + LengthDelimitedCodec framing.
 
 use bytes::{Bytes, BytesMut};
-use df_ipc::proto::{ResponseFrame, SearchOptions, SearchRequest};
+use df_ipc::proto::{MatchKind, ResponseFrame, SearchOptions, SearchRequest};
 use df_ipc::wire::{decode_frame, decode_request, encode_frame, encode_request};
 use tokio_util::codec::{Decoder, Encoder, LengthDelimitedCodec};
 
@@ -32,6 +32,7 @@ fn frame_roundtrip_all_variants() {
         ResponseFrame::Batch {
             paths: vec!["/a/b".into(), "/c/d".into()],
             meta: vec![],
+            kind: vec![MatchKind::Filename, MatchKind::Content],
         },
         ResponseFrame::Done { total: 7 },
         ResponseFrame::Error {

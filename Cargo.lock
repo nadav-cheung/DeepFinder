@@ -314,6 +314,7 @@ name = "deepfindd"
 version = "0.1.0"
 dependencies = [
  "bytes",
+ "df-content",
  "df-core",
  "df-index",
  "df-ipc",

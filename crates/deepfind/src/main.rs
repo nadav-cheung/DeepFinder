@@ -7,7 +7,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use clap::{Parser, Subcommand};
 use df_core::LiteMeta;
-use df_ipc::proto::{ResponseFrame, SearchOptions, SearchRequest};
+use df_ipc::proto::{MatchKind, ResponseFrame, SearchOptions, SearchRequest};
 use df_ipc::{decode_frame, default_db, default_socket, encode_request, framed};
 use futures::{SinkExt, StreamExt};
 use tokio::net::UnixStream;
@@ -267,11 +267,16 @@ async fn cmd_search(
     }
 }
 
-fn print_results(results: Vec<(String, LiteMeta)>, long: bool) {
-    for (path, meta) in results {
+fn print_results(results: Vec<(String, LiteMeta, MatchKind)>, long: bool) {
+    for (path, meta, kind) in results {
         if long {
             let dir = if meta.is_dir { "/" } else { "" };
-            println!("{}\t{}{}", humansize(meta.size), path, dir);
+            let km = match kind {
+                MatchKind::Filename => "[f]",
+                MatchKind::Content => "[c]",
+                MatchKind::Both => "[b]",
+            };
+            println!("{km}\t{}\t{}{}", humansize(meta.size), path, dir);
         } else {
             println!("{path}");
         }
@@ -299,7 +304,7 @@ async fn daemon_search(
     query: &str,
     limit: Option<u32>,
     scope: Option<PathBuf>,
-) -> Result<Vec<(String, LiteMeta)>, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<Vec<(String, LiteMeta, MatchKind)>, Box<dyn std::error::Error + Send + Sync>> {
     let stream = UnixStream::connect(default_socket()).await?;
     let mut f = framed(stream);
     let req = SearchRequest {
@@ -313,11 +318,13 @@ async fn daemon_search(
     let mut done_total: Option<u32> = None;
     while let Some(frame) = f.next().await {
         match decode_frame(&frame?)? {
-            ResponseFrame::Batch { paths, meta } => {
+            ResponseFrame::Batch { paths, meta, kind } => {
                 let mut meta = meta.into_iter();
+                let mut kind = kind.into_iter();
                 for p in paths {
                     let m = meta.next().unwrap_or_default();
-                    out.push((p, m));
+                    let k = kind.next().unwrap_or(MatchKind::Filename);
+                    out.push((p, m, k));
                 }
             }
             ResponseFrame::Done { total } => {
@@ -346,7 +353,7 @@ async fn direct_scan(
     query: &str,
     limit: Option<u32>,
     scope: Option<PathBuf>,
-) -> Result<Vec<(String, LiteMeta)>, Box<dyn std::error::Error + Send + Sync>> {
+) -> Result<Vec<(String, LiteMeta, MatchKind)>, Box<dyn std::error::Error + Send + Sync>> {
     let q = query.to_lowercase();
     let cap = limit.map(|l| l as usize).unwrap_or(usize::MAX);
     let root = scope.unwrap_or_else(|| PathBuf::from("."));
@@ -366,6 +373,7 @@ async fn direct_scan(
                         size: 0,
                         mtime: 0,
                     },
+                    MatchKind::Filename,
                 ));
             }
         }

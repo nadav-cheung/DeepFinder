@@ -6,6 +6,14 @@ use std::path::PathBuf;
 use df_core::LiteMeta;
 use serde::{Deserialize, Serialize};
 
+/// How a result matched: by filename, content, or both.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+pub enum MatchKind {
+    Filename,
+    Content,
+    Both,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SearchRequest {
     pub query: String,
@@ -28,6 +36,7 @@ pub enum ResponseFrame {
     Batch {
         paths: Vec<String>,
         meta: Vec<LiteMeta>,
+        kind: Vec<MatchKind>,
     },
     Done {
         total: u32,

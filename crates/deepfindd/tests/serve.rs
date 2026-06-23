@@ -4,8 +4,8 @@
 use std::path::Path;
 use std::time::Duration;
 
-use df_index::build_index;
-use df_ipc::proto::{ResponseFrame, SearchOptions, SearchRequest};
+use df_index::{build_content_index, build_index, ContentBuildOptions};
+use df_ipc::proto::{MatchKind, ResponseFrame, SearchOptions, SearchRequest};
 use df_ipc::{decode_frame, encode_request, framed};
 use futures::{SinkExt, StreamExt};
 use tokio::net::UnixStream;
@@ -152,6 +152,65 @@ async fn scope_filters_subtree() {
     let (_batches, got) = query_and_collect(&socket, req).await;
     assert!(got.iter().any(|p| p.ends_with("match_a.txt")));
     assert!(!got.iter().any(|p| p.ends_with("match_b.txt")));
+
+    server.abort();
+}
+
+/// Combined filename + content results: a file matching by BOTH name and content
+/// is reported once with MatchKind::Both.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn combined_filename_and_content_results() {
+    let tmp = tempfile::tempdir().unwrap();
+    // alpha.rs matches by filename (path contains "alpha") AND content ("fn alpha").
+    std::fs::write(tmp.path().join("alpha.rs"), b"fn alpha() {}").unwrap();
+    // other.txt matches by NEITHER name nor content for query "alpha".
+    std::fs::write(tmp.path().join("other.txt"), b"nothing relevant here").unwrap();
+
+    let db_path = tmp.path().join("index.dfdb");
+    let content_dir = tmp.path().join("content");
+    let _ = build_content_index(
+        tmp.path(),
+        &db_path,
+        &content_dir,
+        &ContentBuildOptions::default(),
+    )
+    .unwrap();
+
+    let socket = tmp.path().join("daemon.sock");
+    let sock = socket.clone();
+    let db = db_path.clone();
+    let server = tokio::spawn(async move { deepfindd::serve(&sock, &db).await });
+
+    let stream = connect_wait(&socket).await;
+    let mut f = framed(stream);
+    let req = SearchRequest {
+        query: "alpha".into(),
+        scope: None,
+        limit: None,
+        opts: SearchOptions::default(),
+    };
+    f.send(encode_request(&req).unwrap()).await.unwrap();
+
+    let mut paths: Vec<String> = Vec::new();
+    let mut kinds: Vec<MatchKind> = Vec::new();
+    while let Some(frame) = f.next().await {
+        match decode_frame(&frame.unwrap()) {
+            Ok(ResponseFrame::Batch { paths: p, kind, .. }) => {
+                paths.extend(p);
+                kinds.extend(kind);
+            }
+            Ok(ResponseFrame::Done { .. }) => break,
+            Ok(ResponseFrame::Error { message }) => panic!("error frame: {message}"),
+            Err(e) => panic!("decode: {e}"),
+        }
+    }
+    assert!(paths.iter().any(|p| p.ends_with("alpha.rs")));
+    // alpha.rs matched both layers ⇒ at least one Both.
+    assert!(
+        kinds.contains(&MatchKind::Both),
+        "no Both kind: {:?}",
+        kinds
+    );
 
     server.abort();
 }
