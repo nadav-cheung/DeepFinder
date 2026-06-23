@@ -32,6 +32,15 @@ enum Cmd {
         /// Also read from the DEEPFIND_SKIP env var (colon-separated).
         #[arg(long = "skip", value_name = "NAME")]
         skip: Vec<String>,
+        /// Max file size (bytes) to index content of (default 1MB).
+        #[arg(long, default_value_t = 1024 * 1024)]
+        max_file_size: u64,
+        /// Build filename index only (skip content).
+        #[arg(long)]
+        no_content: bool,
+        /// Don't cross mount/filesystem boundaries.
+        #[arg(long)]
+        one_file_system: bool,
     },
     /// Run the resident daemon.
     Daemon,
@@ -58,7 +67,21 @@ enum Cmd {
 async fn main() {
     let cli = Cli::parse();
     match cli.cmd {
-        Cmd::Index { root, force, skip } => cmd_index(&root, force, skip),
+        Cmd::Index {
+            root,
+            force,
+            skip,
+            max_file_size,
+            no_content,
+            one_file_system,
+        } => cmd_index(
+            &root,
+            force,
+            skip,
+            max_file_size,
+            no_content,
+            one_file_system,
+        ),
         Cmd::Daemon => cmd_daemon().await,
         Cmd::Status => cmd_status().await,
         Cmd::Search {
@@ -78,7 +101,14 @@ const FRESH_THRESHOLD_SECS: u64 = 60;
 /// silently out of date (REVIEW §6.2).
 const STALE_THRESHOLD_SECS: u64 = 7 * 86_400;
 
-fn cmd_index(root: &Path, force: bool, mut skip: Vec<String>) {
+fn cmd_index(
+    root: &Path,
+    force: bool,
+    mut skip: Vec<String>,
+    max_file_size: u64,
+    no_content: bool,
+    one_file_system: bool,
+) {
     let db = default_db();
     if !force {
         if let Some(age) = index_build_age(&db) {
@@ -88,7 +118,6 @@ fn cmd_index(root: &Path, force: bool, mut skip: Vec<String>) {
             }
         }
     }
-    // DEEPFIND_SKIP=foo:bar adds extra skip names (REVIEW §8.1 #3).
     if let Ok(v) = std::env::var("DEEPFIND_SKIP") {
         for s in v.split(':') {
             let t = s.trim();
@@ -97,20 +126,43 @@ fn cmd_index(root: &Path, force: bool, mut skip: Vec<String>) {
             }
         }
     }
-    match df_index::build_index_report(root, &db, &skip) {
-        Ok(report) => {
-            println!("indexed {} entries -> {}", report.docs, db.display());
-            // REVIEW §8.2: surface Full Disk Access denials (can't be granted
-            // programmatically — only detected and guided).
-            if report.denied > 0 {
+
+    if no_content {
+        match df_index::build_index_with(root, &db, &skip) {
+            Ok(n) => println!("indexed {n} entries (filename only) -> {}", db.display()),
+            Err(e) => {
+                eprintln!("index failed: {e}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
+    let content_dir = db.parent().expect("db has parent").join("content");
+    let opts = df_index::ContentBuildOptions {
+        max_file_size,
+        extra_skip: skip,
+        one_file_system,
+    };
+    match df_index::build_content_index(root, &db, &content_dir, &opts) {
+        Ok(r) => {
+            println!(
+                "indexed {} entries ({} content docs, {} shards) -> {}",
+                r.filename_docs,
+                r.content_docs,
+                r.shards,
+                db.display()
+            );
+            if r.denied > 0 {
                 eprintln!(
-                    "warning: {} entr{} skipped due to permission errors.",
-                    report.denied,
-                    if report.denied == 1 { "y" } else { "ies" }
+                    "warning: {} entries skipped (permission denied). Grant Full Disk Access in System Settings → Privacy & Security.",
+                    r.denied
                 );
+            }
+            if r.content_skipped_binary + r.content_skipped_large > 0 {
                 eprintln!(
-                    "  To index protected locations, grant Full Disk Access to this\n  \
-                     binary in System Settings → Privacy & Security → Full Disk Access."
+                    "note: {} files content-skipped (binary), {} (oversized).",
+                    r.content_skipped_binary, r.content_skipped_large
                 );
             }
         }
