@@ -318,9 +318,18 @@ async fn content_regex_matches_grep_e() {
         },
     };
     let (_b, got) = query_and_collect(&socket, req).await;
-    assert!(got.iter().any(|p| p.ends_with("a.rs")), "missing a.rs: {got:?}");
-    assert!(got.iter().any(|p| p.ends_with("b.rs")), "missing b.rs: {got:?}");
-    assert!(!got.iter().any(|p| p.ends_with("c.rs")), "unexpected c.rs: {got:?}");
+    assert!(
+        got.iter().any(|p| p.ends_with("a.rs")),
+        "missing a.rs: {got:?}"
+    );
+    assert!(
+        got.iter().any(|p| p.ends_with("b.rs")),
+        "missing b.rs: {got:?}"
+    );
+    assert!(
+        !got.iter().any(|p| p.ends_with("c.rs")),
+        "unexpected c.rs: {got:?}"
+    );
 
     server.abort();
 }

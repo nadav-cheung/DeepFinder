@@ -332,6 +332,7 @@ version = "0.1.0"
 dependencies = [
  "df-core",
  "memchr",
+ "regex",
  "tempfile",
 ]
 

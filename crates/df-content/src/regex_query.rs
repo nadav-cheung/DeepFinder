@@ -54,8 +54,8 @@ mod tests {
             ("c.rs", b"struct Foo; // no main here"),
         ]);
         let r = ShardReader::open(&bytes).unwrap();
-        let re = regex::bytes::Regex::new("fn.*main").unwrap(); // case-sensitive
-        // atom = "fn" (the longest literal run in "fn.*main"), folded.
+        let re = regex::bytes::Regex::new("fn.*main").unwrap();
+        // atom = "fn" (a valid longest-literal-run prefilter of the regex), folded.
         let atom_folded = fold::fold(b"fn");
         let ds = content_regex_docids(&r, &atom_folded, &re, None).unwrap();
         assert_eq!(ds, vec![0, 1]); // a.rs, b.rs; NOT c.rs
