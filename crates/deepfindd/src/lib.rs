@@ -68,6 +68,38 @@ impl ContentShards {
         Self { sources }
     }
 
+    /// Content-regex query across all shards. `atom_folded` prefilters candidates
+    /// (case-insensitive); `re` verifies authoritatively over the content bytes.
+    fn query_regex(
+        &self,
+        atom_folded: &[u8],
+        re: &regex::bytes::Regex,
+        scope: Option<&Path>,
+        per_shard_limit: Option<u32>,
+    ) -> Vec<(String, LiteMeta, MatchKind)> {
+        let mut out = Vec::new();
+        for src in &self.sources {
+            let r = match ShardReader::open(src.as_slice()) {
+                Ok(r) => r,
+                Err(_) => continue,
+            };
+            let docids =
+                df_content::regex_query::content_regex_docids(&r, atom_folded, re, per_shard_limit)
+                    .unwrap_or_default();
+            for d in docids {
+                let path = match r.path(d) {
+                    Ok(p) => p,
+                    Err(_) => continue,
+                };
+                if !in_scope(&path, scope) {
+                    continue;
+                }
+                out.push((path, r.meta(d).unwrap_or_default(), MatchKind::Content));
+            }
+        }
+        out
+    }
+
     /// Run a content query across all shards. Returns (path, meta, Content) for
     /// each in-scope verified match. `ShardReader` is opened on demand per shard
     /// (avoids storing a borrowing reader next to its owning mmap).
@@ -216,6 +248,23 @@ async fn handle_conn(
         None => None,
     };
     let regex_mode = re.is_some();
+    // Content regex uses the byte-oriented engine (content is raw bytes); the
+    // filename regex above uses the str engine (paths are UTF-8). Same pattern +
+    // smart-case `(?i)` conditioning.
+    let re_content = match &opts.regex {
+        Some(r) => {
+            let pat = if case_sensitive {
+                r.clone()
+            } else {
+                format!("(?i){r}")
+            };
+            Some(
+                regex::bytes::Regex::new(&pat)
+                    .map_err(|e| std::io::Error::other(format!("bad regex: {e}")))?,
+            )
+        }
+        None => None,
+    };
     let needle = match &opts.regex {
         Some(r) => df_ipc::filter::longest_literal_atom(r).unwrap_or_default(),
         None => query_str.clone(),
@@ -234,16 +283,17 @@ async fn handle_conn(
     let needle_c = needle.clone();
     let (fn_docids, content_matches) = tokio::task::spawn_blocking(move || {
         let fn_docids = query_docids(&db_q, &needle_c, fn_case, eff_limit).unwrap_or_default();
-        let content = if regex_mode {
-            Vec::new()
-        } else {
-            shards_q.query(
+        let content = match re_content.as_ref() {
+            // Regex mode: the longest-literal-atom prefilters candidates; the
+            // compiled byte regex verifies over the mmap'd content bytes.
+            Some(re) => shards_q.query_regex(&folded_c, re, scope_c.as_deref(), limit),
+            None => shards_q.query(
                 &folded_c,
                 needle_c.as_bytes(),
                 case_sensitive,
                 scope_c.as_deref(),
                 limit,
-            )
+            ),
         };
         (fn_docids, content)
     })
@@ -300,7 +350,16 @@ async fn handle_conn(
     let mut entries: Vec<(String, LiteMeta, MatchKind)> = merged
         .into_iter()
         .filter(|(p, _)| df_ipc::filter::passes(p, &opts))
-        .filter(|(p, _)| re.as_ref().is_none_or(|r| r.is_match(p)))
+        .filter(|(p, (_, k))| {
+            // The path-regex verify gates only FILENAME matches (Both already
+            // passed it via the filename layer); content matches are verified by
+            // the byte regex in `query_regex`, so their paths need not match.
+            if matches!(k, MatchKind::Filename) {
+                re.as_ref().is_none_or(|r| r.is_match(p))
+            } else {
+                true
+            }
+        })
         .map(|(p, (m, k))| (p, m, k))
         .collect();
     entries.truncate(cap);

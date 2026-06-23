@@ -282,3 +282,45 @@ async fn case_sensitivity_end_to_end() {
 
     server.abort();
 }
+
+/// Content-regex (`--regex`) matches files whose *content* matches the pattern,
+/// equivalent to `grep -El`. The longest literal atom drives candidate gen;
+/// `regex.is_match` over the mmap content bytes is authoritative.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn content_regex_matches_grep_e() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(tmp.path().join("a.rs"), b"fn main() { }").unwrap();
+    std::fs::write(tmp.path().join("b.rs"), b"async fn main() {}").unwrap();
+    std::fs::write(tmp.path().join("c.rs"), b"struct Foo;").unwrap();
+
+    let db_path = tmp.path().join("index.dfdb");
+    let content_dir = tmp.path().join("content");
+    build_content_index(
+        tmp.path(),
+        &db_path,
+        &content_dir,
+        &ContentBuildOptions::default(),
+    )
+    .unwrap();
+
+    let socket = tmp.path().join("daemon.sock");
+    let sock = socket.clone();
+    let db = db_path.clone();
+    let server = tokio::spawn(async move { deepfindd::serve(&sock, &db).await });
+
+    let req = SearchRequest {
+        query: "fn.*main".into(),
+        scope: None,
+        limit: None,
+        opts: SearchOptions {
+            regex: Some("fn.*main".into()),
+            ..Default::default()
+        },
+    };
+    let (_b, got) = query_and_collect(&socket, req).await;
+    assert!(got.iter().any(|p| p.ends_with("a.rs")), "missing a.rs: {got:?}");
+    assert!(got.iter().any(|p| p.ends_with("b.rs")), "missing b.rs: {got:?}");
+    assert!(!got.iter().any(|p| p.ends_with("c.rs")), "unexpected c.rs: {got:?}");
+
+    server.abort();
+}
