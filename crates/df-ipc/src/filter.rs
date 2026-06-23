@@ -89,6 +89,9 @@ pub fn passes(path: &str, opts: &SearchOptions) -> bool {
             return false;
         }
     }
+    if !opts.globs.is_empty() && !opts.globs.iter().any(|g| glob_matches(g, path)) {
+        return false;
+    }
     true
 }
 
@@ -109,6 +112,7 @@ mod tests {
             extensions: ext.iter().map(|s| s.to_string()).collect(),
             types: types.iter().map(|s| s.to_string()).collect(),
             excludes: exc.iter().map(|s| s.to_string()).collect(),
+            globs: vec![],
         }
     }
 

@@ -37,6 +37,9 @@ pub struct SearchOptions {
     /// `-E`: exclude glob patterns (matched against the full path).
     #[serde(default)]
     pub excludes: Vec<String>,
+    /// `-g`: inclusive glob patterns — a path must match at least one.
+    #[serde(default)]
+    pub globs: Vec<String>,
 }
 
 /// One frame of the streamed response. The daemon sends `Batch`* then exactly

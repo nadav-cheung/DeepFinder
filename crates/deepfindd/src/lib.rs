@@ -207,12 +207,15 @@ async fn handle_conn(
     let cap = limit.map(|l| l as usize).unwrap_or(usize::MAX);
     // With filters active, collect all matches then filter+truncate to `cap`;
     // without filters, cap the merge early (efficient).
-    let merge_cap =
-        if opts.extensions.is_empty() && opts.types.is_empty() && opts.excludes.is_empty() {
-            cap
-        } else {
-            usize::MAX
-        };
+    let merge_cap = if opts.extensions.is_empty()
+        && opts.types.is_empty()
+        && opts.excludes.is_empty()
+        && opts.globs.is_empty()
+    {
+        cap
+    } else {
+        usize::MAX
+    };
     let mut merged: HashMap<String, (LiteMeta, MatchKind)> = HashMap::new();
 
     for chunk in fn_docids.chunks(STREAM_CHUNK) {

@@ -64,6 +64,9 @@ enum Cmd {
         /// Exclude glob patterns (matched against the full path). Repeatable.
         #[arg(short = 'E', long = "exclude")]
         exclude: Vec<String>,
+        /// Inclusive glob — a path must match at least one. Repeatable.
+        #[arg(short = 'g', long = "glob")]
+        glob: Vec<String>,
         /// Execute a command for each result. `{}` is replaced by the path
         /// (e.g. -x 'wc -l {}'). If set, results are not printed.
         #[arg(short = 'x', long = "exec")]
@@ -105,6 +108,7 @@ async fn main() {
             extension,
             types,
             exclude,
+            glob,
             exec,
             long,
             direct,
@@ -114,6 +118,7 @@ async fn main() {
                 extensions: extension,
                 types,
                 excludes: exclude,
+                globs: glob,
             };
             cmd_search(&query, limit, scope, long, opts, exec).await
         }

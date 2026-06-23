@@ -16,6 +16,7 @@ fn sample_request() -> SearchRequest {
             extensions: vec![],
             types: vec![],
             excludes: vec![],
+            globs: vec![],
         },
     }
 }
