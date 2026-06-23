@@ -167,6 +167,11 @@ fn collect_records(root: &Path, skip: &[&str]) -> Result<(Vec<DocRec>, u32)> {
     Ok((recs, denied))
 }
 
+/// Sibling-module access to atomic_write (content_build, manifest).
+pub(crate) fn atomic_write_public(path: &Path, data: &[u8]) -> Result<()> {
+    atomic_write(path, data)
+}
+
 /// Write `data` to `path` atomically: create parent, write `<name>.tmp`, fsync,
 /// rename over the target.
 fn atomic_write(path: &Path, data: &[u8]) -> Result<()> {
