@@ -270,7 +270,7 @@ pipeline). All lightweight, well-maintained, Rust-standard.
 | M4 (streaming full-disk build) | ✅ done | `48f8968`–`bce68d5` (+ `0f35979`) |
 | M5 (daemon ShardSet + combined results) | ✅ done | `…8e01fc5` |
 | M6 (CLI flags + `--direct` content grep) | ✅ partial (filters/exec/glob done) | `839dac1`–`f1a5397` |
-| — M6 follow-up: regex search + smart-case | ⏳ next | — |
+| — M6 follow-up: regex search + smart-case | ✅ regex (filename) done (`0bff1a4`); smart-case + content-regex ⏳ engine | — |
 | M7 (hardening: madvise/bigram/parallelism/1-char cap) | ⏳ Phase 2 | — |
 
 Phase 1 verification: per-milestone two-stage review (spec + code-quality) + a final holistic review. The `CandidateSource` abstraction unifies filename (`DbReader`) and content (`ShardReader`) through one `candidates()`; the `.dfcs` format is byte-compatible with v1's Robin Hood/TurboPFor primitives; mmap path documented with the no-truncate SIGBUS invariant.
