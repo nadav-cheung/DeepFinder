@@ -7,4 +7,6 @@ pub type Result<T> = std::result::Result<T, IndexError>;
 pub enum IndexError {
     #[error("index io error: {0}")]
     Io(#[from] std::io::Error),
+    #[error("index error: {0}")]
+    Other(String),
 }
