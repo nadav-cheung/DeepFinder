@@ -4,6 +4,7 @@
 //!   and lends `&[u8]`). No filesystem I/O of its own.
 
 pub mod fold;
+pub mod lines;
 pub mod regex_query;
 pub mod shard;
 
