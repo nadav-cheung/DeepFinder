@@ -212,23 +212,175 @@ impl ContentShards {
     }
 }
 
-/// Open `db_path` (+ the content shard set beside it), bind `socket_path`, serve
-/// until a shutdown signal, then drain + remove the socket.
-pub async fn serve(socket_path: &Path, db_path: &Path) -> std::io::Result<()> {
-    let src = FileSource::open(db_path)?;
-    let reader = DbReader::open(src).map_err(std::io::Error::other)?;
-    let db = Arc::new(reader);
+/// One loaded DB: the filename reader + its content shards, named.
+struct DbEntry {
+    name: String,
+    db: Arc<DbReader<FileSource>>,
+    shards: Arc<ContentShards>,
+}
 
+/// The set of DBs a daemon serves: the default DB (the one `serve` was handed)
+/// plus every registered named DB. A query loops the selected entries and merges
+/// by path (cross-DB dedup is path-keyed, so no global docid mapping is needed).
+struct DbSet {
+    entries: Vec<DbEntry>,
+}
+
+impl DbSet {
+    /// Open the default DB at `db_path` plus every DB in the registry beside it.
+    /// The registry dir is two levels up from `db_path` (the `data/db/index.dfdb`
+    /// layout ⇒ `data/`); absent or unreadable DBs are skipped.
+    fn open(db_path: &Path) -> Self {
+        let mut entries = Vec::new();
+
+        // Default DB.
+        if let Some(e) = open_entry("default", db_path) {
+            entries.push(e);
+        }
+
+        // Registered named DBs. Registry lives at <data_dir>/dbs.toml, where
+        // <data_dir> is two levels above the default db file.
+        let registry_dir = db_path
+            .parent()
+            .and_then(Path::parent)
+            .unwrap_or_else(|| Path::new("."));
+        let reg = df_index::Registry::load(registry_dir);
+        for rec in &reg.records {
+            if let Some(e) = open_entry(&rec.name, &rec.db_path) {
+                entries.push(e);
+            }
+        }
+
+        Self { entries }
+    }
+
+    /// Entries to query: all of them, or just the named one if `name` is set.
+    fn select<'a>(&'a self, name: Option<&str>) -> Vec<&'a DbEntry> {
+        match name {
+            Some(n) => self.entries.iter().filter(|e| e.name == n).collect(),
+            None => self.entries.iter().collect(),
+        }
+    }
+
+    /// Entries whose name is in `names` (used to resume a selection inside a
+    /// `spawn_blocking` that owns its own `Arc<DbSet>` borrow).
+    fn select_named<'a>(&'a self, names: &[String]) -> Vec<&'a DbEntry> {
+        self.entries
+            .iter()
+            .filter(|e| names.contains(&e.name))
+            .collect()
+    }
+}
+
+/// Open one DB entry by its `index.dfdb` path (content shards beside it). `None`
+/// if the DB is missing/unreadable (e.g. registry points at a not-yet-built DB).
+fn open_entry(name: &str, db_path: &Path) -> Option<DbEntry> {
+    let src = FileSource::open(db_path).ok()?;
+    let db = DbReader::open(src).ok()?;
     let content_dir = db_path
         .parent()
         .map(|p| p.join("content"))
         .unwrap_or_else(|| PathBuf::from("content"));
     let shards = Arc::new(ContentShards::open(&content_dir));
+    Some(DbEntry {
+        name: name.to_string(),
+        db: Arc::new(db),
+        shards,
+    })
+}
+
+/// Shared, read-only query context for one search (carried across DB entries).
+struct QueryCtx<'a> {
+    folded: &'a [u8],
+    needle: &'a str,
+    case_sensitive: bool,
+    fn_case: bool,
+    re_content: Option<&'a regex::bytes::Regex>,
+    scope: Option<&'a Path>,
+    eff_limit: Option<u32>,
+    limit: Option<u32>,
+    want_fn: bool,
+    want_ct: bool,
+    path_mode: df_ipc::proto::PathMode,
+}
+
+/// Filename + content query for ONE DB entry, merged by path. The building block
+/// the multi-DB loop calls per entry; handle_conn merges the per-entry maps.
+fn query_entry(
+    ctx: &QueryCtx,
+    entry: &DbEntry,
+    merge_cap: usize,
+) -> HashMap<String, (LiteMeta, MatchKind)> {
+    let mut merged: HashMap<String, (LiteMeta, MatchKind)> = HashMap::new();
+
+    // Filename layer.
+    if ctx.want_fn {
+        let fn_docids =
+            query_docids(&entry.db, ctx.needle, ctx.fn_case, ctx.eff_limit).unwrap_or_default();
+        for d in fn_docids {
+            if merged.len() >= merge_cap {
+                break;
+            }
+            let path = match entry.db.doc_path(d) {
+                Ok(p) => p,
+                Err(_) => continue,
+            };
+            if !in_scope(&path, ctx.scope) {
+                continue;
+            }
+            if ctx.path_mode == df_ipc::proto::PathMode::Basename {
+                let bn = path.rsplit('/').next().unwrap_or(&path);
+                let hit = if ctx.fn_case {
+                    bn.contains(ctx.needle)
+                } else {
+                    bn.to_lowercase().contains(&ctx.needle.to_lowercase())
+                };
+                if !hit {
+                    continue;
+                }
+            }
+            let meta = entry.db.doc_meta(d).unwrap_or_default();
+            merge_in(&mut merged, path, meta, MatchKind::Filename, merge_cap);
+        }
+    }
+
+    // Content layer.
+    if ctx.want_ct {
+        let content = match ctx.re_content {
+            Some(re) => entry
+                .shards
+                .query_regex(ctx.folded, re, ctx.scope, ctx.limit),
+            None => entry.shards.query(
+                ctx.folded,
+                ctx.needle.as_bytes(),
+                ctx.case_sensitive,
+                ctx.scope,
+                ctx.limit,
+            ),
+        };
+        for (path, meta, kind) in content {
+            merge_in(&mut merged, path, meta, kind, merge_cap);
+        }
+    }
+
+    merged
+}
+
+/// Open `db_path` (+ the content shard set beside it), bind `socket_path`, serve
+/// until a shutdown signal, then drain + remove the socket.
+pub async fn serve(socket_path: &Path, db_path: &Path) -> std::io::Result<()> {
+    let dbset = Arc::new(DbSet::open(db_path));
+    if dbset.entries.is_empty() {
+        return Err(std::io::Error::other(format!(
+            "no index DB found at {} (run 'deepfind index')",
+            db_path.display()
+        )));
+    }
 
     tracing::info!(
         socket = ?socket_path,
         db = ?db_path,
-        shards = shards.sources.len(),
+        dbs = dbset.entries.len(),
         "deepfindd listening"
     );
 
@@ -257,10 +409,9 @@ pub async fn serve(socket_path: &Path, db_path: &Path) -> std::io::Result<()> {
                         continue;
                     }
                 };
-                let db = db.clone();
-                let shards = shards.clone();
+                let dbset = dbset.clone();
                 join_set.spawn(async move {
-                    if let Err(e) = handle_conn(stream, db, shards).await {
+                    if let Err(e) = handle_conn(stream, dbset).await {
                         tracing::warn!("connection error: {e}");
                     }
                 });
@@ -283,8 +434,7 @@ pub async fn serve(socket_path: &Path, db_path: &Path) -> std::io::Result<()> {
 
 async fn handle_conn(
     stream: UnixStream,
-    db: Arc<DbReader<FileSource>>,
-    shards: Arc<ContentShards>,
+    dbset: Arc<DbSet>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let mut f = framed(stream);
 
@@ -351,10 +501,16 @@ async fn handle_conn(
     // literal mode the resolved smart-case flag applies to both layers.
     let fn_case = if regex_mode { false } else { case_sensitive };
 
-    // Engine work off the async pool: filename DocIDs + content matches.
-    let db_q = db.clone();
-    let shards_q = shards.clone();
     let folded = df_content::fold::fold(needle.to_lowercase().as_bytes());
+    let want_fn = opts.layers.filename;
+    let want_ct = opts.layers.content;
+
+    // Select the DB entry/entries to query (`--db <name>` or all).
+    let selected: Vec<String> = dbset
+        .select(req.db.as_deref())
+        .into_iter()
+        .map(|e| e.name.clone())
+        .collect();
 
     // Line-number / context mode (`-n` / `-C`): render content matches as
     // grep-style line hits and stream them as `Lines` frames, then return.
@@ -364,18 +520,23 @@ async fn handle_conn(
         let scope_l = scope.clone();
         let re_l = re_content.clone();
         let ctx = opts.context;
-        let shards_l = shards.clone();
+        let dbset_l = dbset.clone();
+        let selected_l = selected.clone();
         let hits = tokio::task::spawn_blocking(move || {
-            let q = LineQuery {
-                folded: &folded_l,
-                needle: needle_l.as_bytes(),
-                case_sensitive,
-                re: re_l.as_ref(),
-                scope: scope_l.as_deref(),
-                limit,
-                context: ctx,
-            };
-            shards_l.query_lines(&q)
+            let mut all = Vec::new();
+            for entry in dbset_l.select_named(&selected_l) {
+                let q = LineQuery {
+                    folded: &folded_l,
+                    needle: needle_l.as_bytes(),
+                    case_sensitive,
+                    re: re_l.as_ref(),
+                    scope: scope_l.as_deref(),
+                    limit,
+                    context: ctx,
+                };
+                all.extend(entry.shards.query_lines(&q));
+            }
+            all
         })
         .await?;
         let total = hits.len() as u32;
@@ -390,38 +551,7 @@ async fn handle_conn(
         return Ok(());
     }
 
-    let folded_c = folded.clone();
-    let scope_c = scope.clone();
-    let needle_c = needle.clone();
-    let (want_fn, want_ct) = (opts.layers.filename, opts.layers.content);
-    let (fn_docids, content_matches) = tokio::task::spawn_blocking(move || {
-        // Layer gating: --filename / --content restrict which layers run.
-        let fn_docids = if want_fn {
-            query_docids(&db_q, &needle_c, fn_case, eff_limit).unwrap_or_default()
-        } else {
-            Vec::new()
-        };
-        let content = if !want_ct {
-            Vec::new()
-        } else {
-            match re_content.as_ref() {
-                // Regex mode: the longest-literal-atom prefilters candidates; the
-                // compiled byte regex verifies over the mmap'd content bytes.
-                Some(re) => shards_q.query_regex(&folded_c, re, scope_c.as_deref(), limit),
-                None => shards_q.query(
-                    &folded_c,
-                    needle_c.as_bytes(),
-                    case_sensitive,
-                    scope_c.as_deref(),
-                    limit,
-                ),
-            }
-        };
-        (fn_docids, content)
-    })
-    .await?;
-
-    // Merge filename + content by path. Filename DocIDs resolved in chunks.
+    // Path-batch mode: query each selected DB entry, merge by path across DBs.
     let cap = limit.map(|l| l as usize).unwrap_or(usize::MAX);
     // With filters active, collect all matches then filter+truncate to `cap`;
     // without filters, cap the merge early (efficient).
@@ -435,55 +565,38 @@ async fn handle_conn(
     } else {
         usize::MAX
     };
-    let mut merged: HashMap<String, (LiteMeta, MatchKind)> = HashMap::new();
 
-    for chunk in fn_docids.chunks(STREAM_CHUNK) {
-        if merged.len() >= merge_cap {
-            break;
-        }
-        let chunk: Vec<u32> = chunk.to_vec();
-        let db_r = db.clone();
-        let scope_r = scope.clone();
-        let needle_r = needle.clone();
-        let path_mode = opts.path_mode;
-        let fn_case_r = fn_case;
-        let batch = tokio::task::spawn_blocking(move || {
-            let mut out = Vec::new();
-            for &d in &chunk {
-                let path = match db_r.doc_path(d) {
-                    Ok(p) => p,
-                    Err(_) => continue,
-                };
-                if !in_scope(&path, scope_r.as_deref()) {
-                    continue;
-                }
-                // Basename mode (`-b`): the query must match the file's base
-                // name, not the full path. Candidate gen used full-path trigrams
-                // (a superset), so this re-check narrows to basename matches.
-                if path_mode == df_ipc::proto::PathMode::Basename {
-                    let bn = path.rsplit('/').next().unwrap_or(&path);
-                    let hit = if fn_case_r {
-                        bn.contains(&needle_r)
-                    } else {
-                        bn.to_lowercase().contains(&needle_r.to_lowercase())
-                    };
-                    if !hit {
-                        continue;
-                    }
-                }
-                let meta = db_r.doc_meta(d).unwrap_or_default();
-                out.push((path, meta));
+    let folded_q = folded.clone();
+    let needle_q = needle.clone();
+    let scope_q = scope.clone();
+    let re_content_q = re_content.clone();
+    let path_mode_q = opts.path_mode;
+    let dbset_q = dbset.clone();
+    let selected_q = selected.clone();
+    let merged = tokio::task::spawn_blocking(move || {
+        let ctx = QueryCtx {
+            folded: &folded_q,
+            needle: &needle_q,
+            case_sensitive,
+            fn_case,
+            re_content: re_content_q.as_ref(),
+            scope: scope_q.as_deref(),
+            eff_limit,
+            limit,
+            want_fn,
+            want_ct,
+            path_mode: path_mode_q,
+        };
+        let mut merged: HashMap<String, (LiteMeta, MatchKind)> = HashMap::new();
+        for entry in dbset_q.select_named(&selected_q) {
+            let per = query_entry(&ctx, entry, merge_cap);
+            for (path, (meta, kind)) in per {
+                merge_in(&mut merged, path, meta, kind, merge_cap);
             }
-            out
-        })
-        .await?;
-        for (path, meta) in batch {
-            merge_in(&mut merged, path, meta, MatchKind::Filename, merge_cap);
         }
-    }
-    for (path, meta, kind) in content_matches {
-        merge_in(&mut merged, path, meta, kind, merge_cap);
-    }
+        merged
+    })
+    .await?;
 
     // Apply post-query filters (-e/-t/-E), then cap to `limit`.
     let mut entries: Vec<(String, LiteMeta, MatchKind)> = merged

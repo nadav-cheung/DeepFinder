@@ -12,7 +12,7 @@ use df_ipc::proto::{
     CaseControl, LayerMask, LineHit, MatchKind, PathMode, ResponseFrame, SearchOptions,
     SearchRequest, SortMode,
 };
-use df_ipc::{decode_frame, default_db, default_socket, encode_request, framed};
+use df_ipc::{data_dir, decode_frame, default_db, default_socket, encode_request, framed};
 use futures::{SinkExt, StreamExt};
 use tokio::net::UnixStream;
 
@@ -65,6 +65,11 @@ enum Cmd {
     Daemon,
     /// Daemon health + DB stats.
     Status,
+    /// Manage named DBs (build/remove/list named roots).
+    Db {
+        #[command(subcommand)]
+        action: DbAction,
+    },
     /// Search the index (falls back to --direct if the daemon is down).
     Search {
         query: String,
@@ -135,6 +140,9 @@ enum Cmd {
         /// Sort order: default | path | kind | none.
         #[arg(long, value_name = "MODE")]
         sort: Option<String>,
+        /// Restrict the query to one registered named DB.
+        #[arg(long, value_name = "NAME")]
+        db: Option<String>,
         /// Force online scan (skip the daemon/index).
         #[arg(long)]
         direct: bool,
@@ -145,6 +153,22 @@ enum Cmd {
         #[arg(short = 's', long = "case-sensitive", conflicts_with = "ignore_case")]
         case_sensitive: bool,
     },
+}
+
+#[derive(Subcommand)]
+enum DbAction {
+    /// Build a named DB for <root> and register it.
+    Add {
+        name: String,
+        root: PathBuf,
+        /// Max file size (bytes) to index content of (default 1MB).
+        #[arg(long, default_value_t = 1024 * 1024)]
+        max_file_size: u64,
+    },
+    /// Remove a named DB (registry + on-disk index).
+    Remove { name: String },
+    /// List registered named DBs.
+    List,
 }
 
 #[tokio::main]
@@ -170,6 +194,7 @@ async fn main() {
         ),
         Cmd::Daemon => cmd_daemon().await,
         Cmd::Status => cmd_status().await,
+        Cmd::Db { action } => cmd_db(action),
         Cmd::Search {
             query,
             limit,
@@ -194,6 +219,7 @@ async fn main() {
             hidden,
             max_results,
             sort,
+            db,
             direct,
             ignore_case,
             case_sensitive,
@@ -248,7 +274,7 @@ async fn main() {
                 context,
                 case_sensitive: case.sensitive(&query),
             };
-            cmd_search(&query, limit, scope, opts, exec, out).await
+            cmd_search(&query, limit, scope, opts, db, exec, out).await
         }
     }
 }
@@ -365,6 +391,72 @@ fn warn_if_stale(db_path: &Path) {
     }
 }
 
+/// `deepfind db add/remove/list` — manage named DBs under `~/.deep-finder/`.
+fn cmd_db(action: DbAction) {
+    let data = data_dir();
+    match action {
+        DbAction::Add {
+            name,
+            root,
+            max_file_size,
+        } => {
+            let db_dir = data.join("db").join(&name);
+            let db_path = db_dir.join("index.dfdb");
+            let content_dir = db_dir.join("content");
+            let opts = df_index::ContentBuildOptions {
+                max_file_size,
+                extra_skip: Vec::new(),
+                one_file_system: false,
+                hidden: false,
+            };
+            match df_index::build_content_index(&root, &db_path, &content_dir, &opts) {
+                Ok(r) => {
+                    let mut reg = df_index::Registry::load(&data);
+                    reg.upsert(df_index::DbRecord {
+                        name: name.clone(),
+                        root: root.clone(),
+                        db_path: db_path.clone(),
+                        content_dir: content_dir.clone(),
+                    });
+                    if let Err(e) = reg.save() {
+                        eprintln!("warning: could not save registry: {e}");
+                    }
+                    println!(
+                        "db '{name}': {} filename / {} content docs -> {}",
+                        r.filename_docs,
+                        r.content_docs,
+                        db_path.display()
+                    );
+                }
+                Err(e) => {
+                    eprintln!("db add failed: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        DbAction::Remove { name } => {
+            let mut reg = df_index::Registry::load(&data);
+            if reg.remove(&name) {
+                let _ = reg.save();
+                let _ = std::fs::remove_dir_all(data.join("db").join(&name));
+                println!("removed db '{name}'");
+            } else {
+                eprintln!("no such db: {name}");
+                std::process::exit(1);
+            }
+        }
+        DbAction::List => {
+            let reg = df_index::Registry::load(&data);
+            if reg.records.is_empty() {
+                println!("(no named DBs registered)");
+            }
+            for r in &reg.records {
+                println!("{}\t{}\t{}", r.name, r.root.display(), r.db_path.display());
+            }
+        }
+    }
+}
+
 async fn cmd_daemon() {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -407,13 +499,14 @@ async fn cmd_search(
     limit: Option<u32>,
     scope: Option<PathBuf>,
     opts: SearchOptions,
+    db: Option<String>,
     exec: Option<String>,
     out: Output,
 ) {
     // Try the daemon unless --direct; fall back to --direct on failure.
     let results = if !opts.direct {
         warn_if_stale(&default_db());
-        match daemon_search(query, limit, scope.clone(), opts.clone()).await {
+        match daemon_search(query, limit, scope.clone(), opts.clone(), db.clone()).await {
             Ok(r) => Some(r),
             Err(e) => {
                 eprintln!("(daemon unavailable: {e}; falling back to --direct)");
@@ -572,6 +665,7 @@ async fn daemon_search(
     limit: Option<u32>,
     scope: Option<PathBuf>,
     opts: SearchOptions,
+    db: Option<String>,
 ) -> Result<
     (Vec<(String, LiteMeta, MatchKind)>, Vec<LineHit>),
     Box<dyn std::error::Error + Send + Sync>,
@@ -583,6 +677,7 @@ async fn daemon_search(
         scope,
         limit,
         opts,
+        db,
     };
     f.send(encode_request(&req)?).await?;
     let mut out = Vec::new();

@@ -30,6 +30,9 @@ pub struct SearchRequest {
     pub scope: Option<PathBuf>,
     pub limit: Option<u32>,
     pub opts: SearchOptions,
+    /// `--db <name>`: restrict the query to one registered named DB (default: all).
+    #[serde(default)]
+    pub db: Option<String>,
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

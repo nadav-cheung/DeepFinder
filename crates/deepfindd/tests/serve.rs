@@ -43,6 +43,7 @@ async fn serve_query_roundtrip() {
         scope: None,
         limit: None,
         opts: SearchOptions::default(),
+        db: None,
     };
     f.send(encode_request(&req).unwrap()).await.unwrap();
 
@@ -67,6 +68,7 @@ async fn serve_query_roundtrip() {
         scope: None,
         limit: None,
         opts: SearchOptions::default(),
+        db: None,
     };
     f2.send(encode_request(&req2).unwrap()).await.unwrap();
     while let Some(frame) = f2.next().await {
@@ -121,6 +123,7 @@ async fn streamed_in_multiple_batches() {
         scope: None,
         limit: None,
         opts: SearchOptions::default(),
+        db: None,
     };
     let (batches, got) = query_and_collect(&socket, req).await;
     assert!(batches >= 2, "expected streamed multi-batch, got {batches}");
@@ -150,6 +153,7 @@ async fn scope_filters_subtree() {
         scope: Some(tmp.path().join("src")),
         limit: None,
         opts: SearchOptions::default(),
+        db: None,
     };
     let (_batches, got) = query_and_collect(&socket, req).await;
     assert!(got.iter().any(|p| p.ends_with("match_a.txt")));
@@ -190,6 +194,7 @@ async fn combined_filename_and_content_results() {
         scope: None,
         limit: None,
         opts: SearchOptions::default(),
+        db: None,
     };
     f.send(encode_request(&req).unwrap()).await.unwrap();
 
@@ -259,6 +264,7 @@ async fn case_sensitivity_end_to_end() {
             case,
             ..Default::default()
         },
+        db: None,
     };
 
     // Smart-case default, uppercase query ⇒ case-sensitive: only Foo.txt.
@@ -319,6 +325,7 @@ async fn content_regex_matches_grep_e() {
             regex: Some("fn.*main".into()),
             ..Default::default()
         },
+        db: None,
     };
     let (_b, got) = query_and_collect(&socket, req).await;
     assert!(
@@ -388,6 +395,7 @@ async fn content_line_numbers_match_grep_n() {
             line_numbers: true,
             ..Default::default()
         },
+        db: None,
     };
     let hits = query_lines(&socket, req).await;
     let mut nos: Vec<u32> = hits.iter().map(|h| h.line_no).collect();
@@ -442,6 +450,7 @@ async fn layer_select_restricts_layers() {
             },
             ..Default::default()
         },
+        db: None,
     };
     let (_b, got) = query_and_collect(&socket, req).await;
     assert_eq!(basenames(got), vec!["alpha.rs".to_string()]);
@@ -458,6 +467,7 @@ async fn layer_select_restricts_layers() {
             },
             ..Default::default()
         },
+        db: None,
     };
     let (_b, got) = query_and_collect(&socket, req).await;
     assert_eq!(
@@ -501,6 +511,7 @@ async fn basename_mode_matches_only_basename() {
         scope: None,
         limit: None,
         opts: SearchOptions::default(),
+        db: None,
     };
     let (_b, got) = query_and_collect(&socket, req).await;
     assert!(
@@ -518,6 +529,7 @@ async fn basename_mode_matches_only_basename() {
             path_mode: df_ipc::proto::PathMode::Basename,
             ..Default::default()
         },
+        db: None,
     };
     let (_b, got) = query_and_collect(&socket, req).await;
     let bn = basenames(got);
@@ -559,6 +571,7 @@ async fn default_sort_orders_by_kind_then_path() {
         scope: None,
         limit: None,
         opts: SearchOptions::default(),
+        db: None,
     };
     // Collect paths in delivery order (default sort applied server-side).
     let stream = connect_wait(&socket).await;
@@ -585,6 +598,84 @@ async fn default_sort_orders_by_kind_then_path() {
         vec!["zfile.txt", "aneedle.txt"],
         "order: {order:?}"
     );
+
+    server.abort();
+}
+
+/// Multi-DB: the daemon serves the default DB + registered named DBs. A default
+/// search unions both (path-keyed dedup); `--db <name>` restricts to one.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn multi_db_search_unions_and_selects() {
+    let tmp = tempfile::tempdir().unwrap();
+    let data = tmp.path();
+    let db_path = data.join("db/index.dfdb");
+
+    // Default DB: root1 holds "shared.txt".
+    let root1 = data.join("root1");
+    std::fs::create_dir_all(&root1).unwrap();
+    std::fs::write(root1.join("shared.txt"), b"needle").unwrap();
+    build_content_index(
+        &root1,
+        &db_path,
+        &data.join("db/content"),
+        &ContentBuildOptions::default(),
+    )
+    .unwrap();
+
+    // Named DB "proj": root2 also holds "shared.txt" (same basename, different path).
+    let root2 = data.join("root2");
+    std::fs::create_dir_all(&root2).unwrap();
+    std::fs::write(root2.join("shared.txt"), b"needle").unwrap();
+    let proj_db = data.join("db/proj/index.dfdb");
+    build_content_index(
+        &root2,
+        &proj_db,
+        &data.join("db/proj/content"),
+        &ContentBuildOptions::default(),
+    )
+    .unwrap();
+
+    // Register "proj".
+    let mut reg = df_index::Registry::load(data);
+    reg.upsert(df_index::DbRecord {
+        name: "proj".into(),
+        root: root2.clone(),
+        db_path: proj_db.clone(),
+        content_dir: data.join("db/proj/content"),
+    });
+    reg.save().unwrap();
+
+    let socket = data.join("daemon.sock");
+    let sock = socket.clone();
+    let dbp = db_path.clone();
+    let server = tokio::spawn(async move { deepfindd::serve(&sock, &dbp).await });
+
+    // Default search (db: None): both DBs contribute → two distinct paths.
+    let req = SearchRequest {
+        query: "shared".into(),
+        scope: None,
+        limit: None,
+        opts: SearchOptions::default(),
+        db: None,
+    };
+    let (_b, got) = query_and_collect(&socket, req).await;
+    assert_eq!(
+        got.len(),
+        2,
+        "default search should union both DBs: {got:?}"
+    );
+
+    // `--db proj`: only the proj DB → one path (root2/shared.txt).
+    let req = SearchRequest {
+        query: "shared".into(),
+        scope: None,
+        limit: None,
+        opts: SearchOptions::default(),
+        db: Some("proj".into()),
+    };
+    let (_b, got) = query_and_collect(&socket, req).await;
+    assert_eq!(got.len(), 1, "--db proj should select one DB: {got:?}");
+    assert!(got[0].ends_with("root2/shared.txt"), "got: {got:?}");
 
     server.abort();
 }

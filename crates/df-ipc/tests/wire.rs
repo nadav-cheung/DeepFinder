@@ -22,6 +22,7 @@ fn sample_request() -> SearchRequest {
             case: Default::default(),
             ..Default::default()
         },
+        db: None,
     }
 }
 
