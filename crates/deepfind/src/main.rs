@@ -2,6 +2,7 @@
 //! deepfind — thin CLI client. Searches via the daemon; falls back to `--direct`
 //! online scan when the daemon is down.
 
+use std::io::IsTerminal;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -70,6 +71,9 @@ enum Cmd {
         /// Max path depth (separator count from the index root).
         #[arg(short = 'd', long = "max-depth")]
         max_depth: Option<u32>,
+        /// Colorize output: always | never | auto (auto = only on a TTY).
+        #[arg(long, default_value = "auto")]
+        color: String,
         /// Execute a command for each result. `{}` is replaced by the path
         /// (e.g. -x 'wc -l {}'). If set, results are not printed.
         #[arg(short = 'x', long = "exec")]
@@ -114,6 +118,7 @@ async fn main() {
             glob,
             max_depth,
             exec,
+            color,
             long,
             direct,
         } => {
@@ -125,7 +130,7 @@ async fn main() {
                 globs: glob,
                 max_depth,
             };
-            cmd_search(&query, limit, scope, long, opts, exec).await
+            cmd_search(&query, limit, scope, long, opts, exec, color).await
         }
     }
 }
@@ -284,6 +289,7 @@ async fn cmd_search(
     long: bool,
     opts: SearchOptions,
     exec: Option<String>,
+    color: String,
 ) {
     // Try the daemon unless --direct; fall back to --direct on failure.
     let results = if !opts.direct {
@@ -312,7 +318,12 @@ async fn cmd_search(
     if let Some(template) = exec {
         exec_on(&results, &template);
     } else {
-        print_results(results, long);
+        let color_on = match color.as_str() {
+            "always" => true,
+            "never" => false,
+            _ => std::io::stdout().is_terminal(),
+        };
+        print_results(results, long, query, color_on);
     }
 }
 
@@ -332,8 +343,15 @@ fn exec_on(results: &[(String, LiteMeta, MatchKind)], template: &str) {
     }
 }
 
-fn print_results(results: Vec<(String, LiteMeta, MatchKind)>, long: bool) {
+fn print_results(
+    results: Vec<(String, LiteMeta, MatchKind)>,
+    long: bool,
+    query: &str,
+    color: bool,
+) {
+    let q = query.to_lowercase();
     for (path, meta, kind) in results {
+        let shown = highlight(&path, &q, color);
         if long {
             let dir = if meta.is_dir { "/" } else { "" };
             let km = match kind {
@@ -341,10 +359,38 @@ fn print_results(results: Vec<(String, LiteMeta, MatchKind)>, long: bool) {
                 MatchKind::Content => "[c]",
                 MatchKind::Both => "[b]",
             };
-            println!("{km}\t{}\t{}{}", humansize(meta.size), path, dir);
+            println!("{km}\t{}\t{}{}", humansize(meta.size), shown, dir);
         } else {
-            println!("{path}");
+            println!("{shown}");
         }
+    }
+}
+
+const C_MATCH: &str = "\x1b[1;31m"; // bold red
+const C_RESET: &str = "\x1b[0m";
+
+/// Return the path with the first (case-insensitive) query occurrence
+/// highlighted. Byte offsets are only safe when lowercasing is length-preserving
+/// (ASCII and most text); otherwise return the path unchanged.
+fn highlight(path: &str, q_lower: &str, color: bool) -> String {
+    if !color || q_lower.is_empty() {
+        return path.to_string();
+    }
+    let pl = path.to_lowercase();
+    if pl.len() != path.len() {
+        return path.to_string();
+    }
+    match pl.find(q_lower) {
+        Some(i) => {
+            let end = i + q_lower.len();
+            format!(
+                "{}{C_MATCH}{}{C_RESET}{}",
+                &path[..i],
+                &path[i..end],
+                &path[end..]
+            )
+        }
+        None => path.to_string(),
     }
 }
 
