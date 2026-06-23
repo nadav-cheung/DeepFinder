@@ -64,6 +64,10 @@ enum Cmd {
         /// Exclude glob patterns (matched against the full path). Repeatable.
         #[arg(short = 'E', long = "exclude")]
         exclude: Vec<String>,
+        /// Execute a command for each result. `{}` is replaced by the path
+        /// (e.g. -x 'wc -l {}'). If set, results are not printed.
+        #[arg(short = 'x', long = "exec")]
+        exec: Option<String>,
         /// Long listing: show size and a directory marker.
         #[arg(short = 'l', long)]
         long: bool,
@@ -101,6 +105,7 @@ async fn main() {
             extension,
             types,
             exclude,
+            exec,
             long,
             direct,
         } => {
@@ -110,7 +115,7 @@ async fn main() {
                 types,
                 excludes: exclude,
             };
-            cmd_search(&query, limit, scope, long, opts).await
+            cmd_search(&query, limit, scope, long, opts, exec).await
         }
     }
 }
@@ -268,22 +273,51 @@ async fn cmd_search(
     scope: Option<PathBuf>,
     long: bool,
     opts: SearchOptions,
+    exec: Option<String>,
 ) {
-    if !opts.direct {
+    // Try the daemon unless --direct; fall back to --direct on failure.
+    let results = if !opts.direct {
         warn_if_stale(&default_db());
         match daemon_search(query, limit, scope.clone(), opts.clone()).await {
-            Ok(results) => {
-                print_results(results, long);
-                return;
+            Ok(r) => Some(r),
+            Err(e) => {
+                eprintln!("(daemon unavailable: {e}; falling back to --direct)");
+                None
             }
-            Err(e) => eprintln!("(daemon unavailable: {e}; falling back to --direct)"),
         }
+    } else {
+        None
+    };
+    let results = match results {
+        Some(r) => r,
+        None => match direct_scan(query, limit, scope, opts).await {
+            Ok(r) => r,
+            Err(e) => {
+                eprintln!("direct scan failed: {e}");
+                std::process::exit(1);
+            }
+        },
+    };
+
+    if let Some(template) = exec {
+        exec_on(&results, &template);
+    } else {
+        print_results(results, long);
     }
-    match direct_scan(query, limit, scope, opts).await {
-        Ok(results) => print_results(results, long),
-        Err(e) => {
-            eprintln!("direct scan failed: {e}");
-            std::process::exit(1);
+}
+
+/// Run `template` (with `{}` → path) via `sh -c` for each result.
+fn exec_on(results: &[(String, LiteMeta, MatchKind)], template: &str) {
+    for (path, _, _) in results {
+        let cmd = template.replace("{}", path);
+        match std::process::Command::new("sh")
+            .arg("-c")
+            .arg(&cmd)
+            .status()
+        {
+            Ok(s) if !s.success() => eprintln!("deepfind: command failed: {cmd}"),
+            Err(e) => eprintln!("deepfind: could not run {cmd}: {e}"),
+            _ => {}
         }
     }
 }
