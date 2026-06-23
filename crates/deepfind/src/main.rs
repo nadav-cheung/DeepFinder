@@ -25,6 +25,7 @@ struct Output {
     long: bool,
     color: String,
     null: bool,
+    count: bool,
 }
 
 #[derive(Subcommand)]
@@ -94,6 +95,9 @@ enum Cmd {
         /// Print paths NUL-separated (for `xargs -0`); ignores -l/--color.
         #[arg(short = '0', long = "null")]
         null: bool,
+        /// Print only the count of matches (no paths).
+        #[arg(long)]
+        count: bool,
         /// Force online scan (skip the daemon/index).
         #[arg(long)]
         direct: bool,
@@ -135,6 +139,7 @@ async fn main() {
             regex,
             long,
             null,
+            count,
             direct,
         } => {
             let opts = SearchOptions {
@@ -146,7 +151,12 @@ async fn main() {
                 max_depth,
                 regex: regex.then(|| query.clone()),
             };
-            let out = Output { long, color, null };
+            let out = Output {
+                long,
+                color,
+                null,
+                count,
+            };
             cmd_search(&query, limit, scope, opts, exec, out).await
         }
     }
@@ -355,6 +365,10 @@ fn exec_on(results: &[(String, LiteMeta, MatchKind)], template: &str) {
 }
 
 fn print_results(results: &[(String, LiteMeta, MatchKind)], out: &Output, query: &str) {
+    if out.count {
+        println!("{}", results.len());
+        return;
+    }
     if out.null {
         for (path, _, _) in results {
             print!("{path}\0");
