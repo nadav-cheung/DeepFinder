@@ -186,6 +186,7 @@ async fn handle_conn(
     let query_str = req.query.clone();
     let scope: Option<PathBuf> = req.scope.clone();
     let limit = req.limit;
+    let opts = req.opts.clone();
     // When scoping, fetch all matches then filter+cap so `limit` counts in-scope.
     let eff_limit = if scope.is_some() { None } else { limit };
 
@@ -204,10 +205,18 @@ async fn handle_conn(
 
     // Merge filename + content by path. Filename DocIDs resolved in chunks.
     let cap = limit.map(|l| l as usize).unwrap_or(usize::MAX);
+    // With filters active, collect all matches then filter+truncate to `cap`;
+    // without filters, cap the merge early (efficient).
+    let merge_cap =
+        if opts.extensions.is_empty() && opts.types.is_empty() && opts.excludes.is_empty() {
+            cap
+        } else {
+            usize::MAX
+        };
     let mut merged: HashMap<String, (LiteMeta, MatchKind)> = HashMap::new();
 
     for chunk in fn_docids.chunks(STREAM_CHUNK) {
-        if merged.len() >= cap {
+        if merged.len() >= merge_cap {
             break;
         }
         let chunk: Vec<u32> = chunk.to_vec();
@@ -230,16 +239,19 @@ async fn handle_conn(
         })
         .await?;
         for (path, meta) in batch {
-            merge_in(&mut merged, path, meta, MatchKind::Filename, cap);
+            merge_in(&mut merged, path, meta, MatchKind::Filename, merge_cap);
         }
     }
     for (path, meta, kind) in content_matches {
-        merge_in(&mut merged, path, meta, kind, cap);
+        merge_in(&mut merged, path, meta, kind, merge_cap);
     }
 
-    // Stream merged results in chunks.
-    let mut entries: Vec<(String, LiteMeta, MatchKind)> =
-        merged.into_iter().map(|(p, (m, k))| (p, m, k)).collect();
+    // Apply post-query filters (-e/-t/-E), then cap to `limit`.
+    let mut entries: Vec<(String, LiteMeta, MatchKind)> = merged
+        .into_iter()
+        .filter(|(p, _)| df_ipc::filter::passes(p, &opts))
+        .map(|(p, (m, k))| (p, m, k))
+        .collect();
     entries.truncate(cap);
     let mut total: u32 = 0;
     for chunk in entries.chunks(STREAM_CHUNK) {

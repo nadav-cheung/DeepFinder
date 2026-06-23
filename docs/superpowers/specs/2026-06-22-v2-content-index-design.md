@@ -268,7 +268,7 @@ pipeline). All lightweight, well-maintained, Rust-standard.
 | M3 (single-shard content query) | ✅ done | `639f0b4`–`a8d3931` (+ `9ac4ab8`) |
 | **Phase 1 total** | ✅ **70 tests green, clippy/fmt clean** | `584df39^..9ac4ab8` |
 | M4 (streaming full-disk build) | ✅ done | `48f8968`–`bce68d5` (+ `0f35979`) |
-| M5 (daemon ShardSet + combined results) | ⏳ Phase 2 | — |
+| M5 (daemon ShardSet + combined results) | ✅ done | `…8e01fc5` |
 | M6 (CLI flags + `--direct` content grep) | ⏳ Phase 2 | — |
 | M7 (hardening: madvise/bigram/parallelism/1-char cap) | ⏳ Phase 2 | — |
 

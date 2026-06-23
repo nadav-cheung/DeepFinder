@@ -6,6 +6,7 @@
 //! [`framed`]. The daemon sends a sequence of `ResponseFrame`s (Batch* then Done).
 
 pub mod error;
+pub mod filter;
 pub mod paths;
 pub mod proto;
 pub mod wire;

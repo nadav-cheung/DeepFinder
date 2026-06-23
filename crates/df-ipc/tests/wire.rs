@@ -11,7 +11,12 @@ fn sample_request() -> SearchRequest {
         query: "downloads report".into(),
         scope: Some("/Users/x".into()),
         limit: Some(50),
-        opts: SearchOptions { direct: false },
+        opts: SearchOptions {
+            direct: false,
+            extensions: vec![],
+            types: vec![],
+            excludes: vec![],
+        },
     }
 }
 

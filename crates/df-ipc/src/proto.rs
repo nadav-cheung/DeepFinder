@@ -26,7 +26,17 @@ pub struct SearchRequest {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SearchOptions {
     /// Force online `--direct` scan (skip the daemon/index).
+    #[serde(default)]
     pub direct: bool,
+    /// `-e`: keep only these extensions (no leading dot), e.g. ["rs","md"].
+    #[serde(default)]
+    pub extensions: Vec<String>,
+    /// `-t`: keep only these type categories, e.g. ["code","docs"].
+    #[serde(default)]
+    pub types: Vec<String>,
+    /// `-E`: exclude glob patterns (matched against the full path).
+    #[serde(default)]
+    pub excludes: Vec<String>,
 }
 
 /// One frame of the streamed response. The daemon sends `Batch`* then exactly

@@ -54,6 +54,16 @@ enum Cmd {
         /// Restrict matches to a subtree (path prefix).
         #[arg(long)]
         scope: Option<PathBuf>,
+        /// Keep only these extensions (no leading dot). Repeatable. (-e rs -e md)
+        #[arg(short = 'e', long = "extension")]
+        extension: Vec<String>,
+        /// Keep only these type categories: code/docs/config/web/archive/media.
+        /// Repeatable. (-t code -t docs)
+        #[arg(short = 't', long = "type")]
+        types: Vec<String>,
+        /// Exclude glob patterns (matched against the full path). Repeatable.
+        #[arg(short = 'E', long = "exclude")]
+        exclude: Vec<String>,
         /// Long listing: show size and a directory marker.
         #[arg(short = 'l', long)]
         long: bool,
@@ -88,9 +98,20 @@ async fn main() {
             query,
             limit,
             scope,
+            extension,
+            types,
+            exclude,
             long,
             direct,
-        } => cmd_search(&query, limit, scope, long, direct).await,
+        } => {
+            let opts = SearchOptions {
+                direct,
+                extensions: extension,
+                types,
+                excludes: exclude,
+            };
+            cmd_search(&query, limit, scope, long, opts).await
+        }
     }
 }
 
@@ -246,11 +267,11 @@ async fn cmd_search(
     limit: Option<u32>,
     scope: Option<PathBuf>,
     long: bool,
-    direct: bool,
+    opts: SearchOptions,
 ) {
-    if !direct {
+    if !opts.direct {
         warn_if_stale(&default_db());
-        match daemon_search(query, limit, scope.clone()).await {
+        match daemon_search(query, limit, scope.clone(), opts.clone()).await {
             Ok(results) => {
                 print_results(results, long);
                 return;
@@ -258,7 +279,7 @@ async fn cmd_search(
             Err(e) => eprintln!("(daemon unavailable: {e}; falling back to --direct)"),
         }
     }
-    match direct_scan(query, limit, scope).await {
+    match direct_scan(query, limit, scope, opts).await {
         Ok(results) => print_results(results, long),
         Err(e) => {
             eprintln!("direct scan failed: {e}");
@@ -304,6 +325,7 @@ async fn daemon_search(
     query: &str,
     limit: Option<u32>,
     scope: Option<PathBuf>,
+    opts: SearchOptions,
 ) -> Result<Vec<(String, LiteMeta, MatchKind)>, Box<dyn std::error::Error + Send + Sync>> {
     let stream = UnixStream::connect(default_socket()).await?;
     let mut f = framed(stream);
@@ -311,7 +333,7 @@ async fn daemon_search(
         query: query.to_string(),
         scope,
         limit,
-        opts: SearchOptions::default(),
+        opts,
     };
     f.send(encode_request(&req)?).await?;
     let mut out = Vec::new();
@@ -353,6 +375,7 @@ async fn direct_scan(
     query: &str,
     limit: Option<u32>,
     scope: Option<PathBuf>,
+    opts: SearchOptions,
 ) -> Result<Vec<(String, LiteMeta, MatchKind)>, Box<dyn std::error::Error + Send + Sync>> {
     let q = query.to_lowercase();
     let cap = limit.map(|l| l as usize).unwrap_or(usize::MAX);
@@ -364,7 +387,7 @@ async fn direct_scan(
         }
         let entry = result?;
         if let Some(s) = entry.path().to_str() {
-            if s.to_lowercase().contains(q.as_str()) {
+            if s.to_lowercase().contains(q.as_str()) && df_ipc::filter::passes(s, &opts) {
                 let is_dir = entry.file_type().is_some_and(|t| t.is_dir());
                 out.push((
                     s.to_string(),
