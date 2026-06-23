@@ -719,3 +719,91 @@ async fn bfs_expression_filters_results() {
 
     server.abort();
 }
+
+/// df-watch (DEEPFIND_WATCH): mutating a file under a registered DB's root triggers
+/// an incremental rebuild + hot-swap; the daemon then serves the UPDATED result
+/// without restart (equivalent to a fresh rebuild).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn df_watch_serves_incremental_update() {
+    let tmp = tempfile::tempdir().unwrap();
+    let data = tmp.path();
+    let root = data.join("root");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("a.txt"), b"needle here").unwrap();
+
+    let db_path = data.join("db/index.dfdb");
+    // A default DB (so serve() finds one) + the watched named DB "w".
+    build_content_index(
+        &root,
+        &db_path,
+        &data.join("db/content"),
+        &ContentBuildOptions::default(),
+    )
+    .unwrap();
+    let w_db = data.join("db/w/index.dfdb");
+    build_content_index(
+        &root,
+        &w_db,
+        &data.join("db/w/content"),
+        &ContentBuildOptions::default(),
+    )
+    .unwrap();
+    let mut reg = df_index::Registry::load(data);
+    reg.upsert(df_index::DbRecord {
+        name: "w".into(),
+        root: root.clone(),
+        db_path: w_db.clone(),
+        content_dir: data.join("db/w/content"),
+    });
+    reg.save().unwrap();
+
+    let socket = data.join("daemon.sock");
+    std::env::set_var("DEEPFIND_WATCH", "1");
+    let sock = socket.clone();
+    let dbp = db_path.clone();
+    let server = tokio::spawn(async move { deepfindd::serve(&sock, &dbp).await });
+    // Give the watcher a moment to install.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    // Baseline: "needle --db w" finds a.txt.
+    let req = SearchRequest {
+        query: "needle".into(),
+        scope: None,
+        limit: None,
+        opts: SearchOptions::default(),
+        db: Some("w".into()),
+    };
+    let (_b, got) = query_and_collect(&socket, req).await;
+    assert!(
+        got.iter().any(|p| p.ends_with("a.txt")),
+        "baseline: {got:?}"
+    );
+
+    // Mutate: a.txt drops the needle; b.txt gains it.
+    std::fs::write(root.join("a.txt"), b"nothing now").unwrap();
+    std::fs::write(root.join("b.txt"), b"needle now here").unwrap();
+
+    // Poll until the incremental rebuild swaps in (debounce + rebuild + FSEvents).
+    let deadline = std::time::Instant::now() + Duration::from_secs(12);
+    let mut converged = false;
+    while std::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let req = SearchRequest {
+            query: "needle".into(),
+            scope: None,
+            limit: None,
+            opts: SearchOptions::default(),
+            db: Some("w".into()),
+        };
+        let (_b, got) = query_and_collect(&socket, req).await;
+        let has_b = got.iter().any(|p| p.ends_with("b.txt"));
+        let no_a = !got.iter().any(|p| p.ends_with("a.txt"));
+        if has_b && no_a {
+            converged = true;
+            break;
+        }
+    }
+    std::env::remove_var("DEEPFIND_WATCH");
+    server.abort();
+    assert!(converged, "incremental update did not converge");
+}

@@ -55,7 +55,6 @@ async fn shutdown_signal() {
 /// Unix the atomic-rename-over preserves the old inode, so reading through the
 /// old mmap stays valid — no SIGBUS — until the old `Arc` drops.
 struct ContentShards {
-    #[allow(dead_code)] // read by reload(); wired into the F4 watcher.
     content_dir: PathBuf,
     shards: arc_swap::ArcSwap<Vec<Arc<MmapSource>>>,
 }
@@ -101,9 +100,13 @@ impl ContentShards {
         self.shards.load_full()
     }
 
+    /// The content-dir path (used by the df-watch watcher to rebuild).
+    pub(crate) fn content_dir(&self) -> &Path {
+        &self.content_dir
+    }
+
     /// Re-read the shard set from disk and atomically swap it in. Old shards stay
     /// mapped (via any outstanding snapshot `Arc`) until their queries finish.
-    #[allow(dead_code)] // the F4 df-watch watcher is the caller.
     fn reload(&self) {
         self.shards
             .store(Arc::new(load_shard_set(&self.content_dir)));
@@ -244,9 +247,30 @@ impl ContentShards {
     }
 }
 
-/// One loaded DB: the filename reader + its content shards, named.
+/// Rebuild a DB's content index from `root` and atomically hot-swap its shards.
+/// The df-watch watcher calls this on change events; `--force` rebuild uses the
+/// same path. Because it goes through [`ContentShards::reload`] (ArcSwap), the
+/// daemon keeps serving the OLD snapshot while the rebuild runs and until every
+/// in-flight query on it finishes — no offline window, no SIGBUS.
+pub(crate) fn rebuild_and_swap(
+    root: &Path,
+    db_path: &Path,
+    content_dir: &Path,
+    shards: &ContentShards,
+) -> std::io::Result<()> {
+    df_index::build_content_index(root, db_path, content_dir, &Default::default())
+        .map_err(|e| std::io::Error::other(format!("rebuild: {e}")))?;
+    shards.reload();
+    Ok(())
+}
+
+/// One loaded DB: the filename reader + its content shards, named. `root` is the
+/// indexed source (from the registry) — present for registered DBs, used by the
+/// df-watch incremental watcher; `None` for the default DB (no incremental).
 struct DbEntry {
     name: String,
+    root: Option<PathBuf>,
+    db_path: PathBuf,
     db: Arc<DbReader<FileSource>>,
     shards: Arc<ContentShards>,
 }
@@ -266,7 +290,7 @@ impl DbSet {
         let mut entries = Vec::new();
 
         // Default DB.
-        if let Some(e) = open_entry("default", db_path) {
+        if let Some(e) = open_entry("default", db_path, None) {
             entries.push(e);
         }
 
@@ -278,7 +302,7 @@ impl DbSet {
             .unwrap_or_else(|| Path::new("."));
         let reg = df_index::Registry::load(registry_dir);
         for rec in &reg.records {
-            if let Some(e) = open_entry(&rec.name, &rec.db_path) {
+            if let Some(e) = open_entry(&rec.name, &rec.db_path, Some(rec.root.clone())) {
                 entries.push(e);
             }
         }
@@ -306,7 +330,8 @@ impl DbSet {
 
 /// Open one DB entry by its `index.dfdb` path (content shards beside it). `None`
 /// if the DB is missing/unreadable (e.g. registry points at a not-yet-built DB).
-fn open_entry(name: &str, db_path: &Path) -> Option<DbEntry> {
+/// `root` is the indexed source (for the df-watch watcher), if known.
+fn open_entry(name: &str, db_path: &Path, root: Option<PathBuf>) -> Option<DbEntry> {
     let src = FileSource::open(db_path).ok()?;
     let db = DbReader::open(src).ok()?;
     let content_dir = db_path
@@ -316,6 +341,8 @@ fn open_entry(name: &str, db_path: &Path) -> Option<DbEntry> {
     let shards = Arc::new(ContentShards::open(&content_dir));
     Some(DbEntry {
         name: name.to_string(),
+        root,
+        db_path: db_path.to_path_buf(),
         db: Arc::new(db),
         shards,
     })
@@ -415,6 +442,21 @@ pub async fn serve(socket_path: &Path, db_path: &Path) -> std::io::Result<()> {
         dbs = dbset.entries.len(),
         "deepfindd listening"
     );
+
+    // df-watch (env-gated): for each registered DB with a known root, spawn an
+    // incremental watcher that rebuilds + hot-swaps on file changes.
+    if std::env::var("DEEPFIND_WATCH").is_ok() {
+        for e in &dbset.entries {
+            if let Some(root) = &e.root {
+                watch::spawn(
+                    root.clone(),
+                    e.db_path.clone(),
+                    e.shards.content_dir().to_path_buf(),
+                    e.shards.clone(),
+                );
+            }
+        }
+    }
 
     if let Some(dir) = socket_path.parent() {
         tokio::fs::create_dir_all(dir).await?;
@@ -756,6 +798,72 @@ fn combine_kind(a: MatchKind, b: MatchKind) -> MatchKind {
     }
 }
 
+mod watch {
+    //! df-watch: a notify (FSEvents on macOS) watcher that, on file changes under
+    //! a registered DB's root, rebuilds its content index and hot-swaps the shards
+    //! via ArcSwap. The daemon keeps serving the old snapshot during the rebuild.
+
+    use std::path::{Path, PathBuf};
+    use std::sync::mpsc;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use notify::{EventKind, RecursiveMode, Watcher};
+
+    use crate::{rebuild_and_swap, ContentShards};
+
+    /// Coalesce event bursts before rebuilding.
+    const DEBOUNCE: Duration = Duration::from_millis(300);
+
+    /// Spawn a background watcher over `root`. On changes (debounced), rebuild
+    /// (`db_path` / `content_dir`) and hot-swap `shards`. Runs for the daemon's
+    /// lifetime; log-only on errors (the daemon keeps serving the old snapshot).
+    pub fn spawn(
+        root: PathBuf,
+        db_path: PathBuf,
+        content_dir: PathBuf,
+        shards: Arc<ContentShards>,
+    ) {
+        std::thread::spawn(move || run(&root, &db_path, &content_dir, shards));
+    }
+
+    fn run(root: &Path, db_path: &Path, content_dir: &Path, shards: Arc<ContentShards>) {
+        let (tx, rx) = mpsc::channel::<()>();
+        let mut watcher =
+            match notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+                if let Ok(ev) = res {
+                    // Ignore pure-access events (reads); only react to create/modify/remove/move.
+                    if !matches!(ev.kind, EventKind::Access(_)) {
+                        let _ = tx.send(());
+                    }
+                }
+            }) {
+                Ok(w) => w,
+                Err(e) => {
+                    tracing::warn!(error = %e, root = ?root, "df-watch: watcher init failed");
+                    return;
+                }
+            };
+        if let Err(e) = watcher.watch(root, RecursiveMode::Recursive) {
+            tracing::warn!(error = %e, root = ?root, "df-watch: watch failed");
+            return;
+        }
+        tracing::info!(root = ?root, "df-watch: watching");
+        // Debounce + rebuild loop. `watcher` (and the sender it owns) stay alive
+        // for the loop's duration; the loop exits only if the channel closes.
+        while rx.recv().is_ok() {
+            while rx.try_recv().is_ok() {}
+            std::thread::sleep(DEBOUNCE);
+            while rx.try_recv().is_ok() {}
+            tracing::info!(root = ?root, "df-watch: rebuilding");
+            if let Err(e) = rebuild_and_swap(root, db_path, content_dir, &shards) {
+                tracing::warn!(error = %e, root = ?root, "df-watch: rebuild failed");
+            }
+        }
+        drop(watcher);
+    }
+}
+
 #[cfg(test)]
 mod shard_hotswap_tests {
     //! F1: ArcSwap shard hot-swap is SIGBUS-safe. On Unix, `build_content_index`
@@ -792,4 +900,46 @@ mod shard_hotswap_tests {
         // The new snapshot reflects the rebuild (different bytes).
         assert_ne!(snap_old[0].as_slice(), snap_new[0].as_slice());
     }
+}
+
+/// F4: after a rebuild+hot-swap, the daemon serves UPDATED content through the
+/// normal query path (equivalent to a fresh `--force` rebuild — it IS one, just
+/// triggered incrementally and swapped in without restart).
+#[test]
+fn rebuild_and_swap_serves_updated_content() {
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path();
+    let db = root.join("index.dfdb");
+    let content_dir = root.join("content");
+
+    std::fs::write(root.join("a.txt"), b"needle here").unwrap();
+    df_index::build_content_index(root, &db, &content_dir, &Default::default()).unwrap();
+    let cs = ContentShards::open(&content_dir);
+
+    let folded = df_content::fold::fold(b"needle");
+    let before: Vec<String> = cs
+        .query(&folded, b"needle", false, None, None)
+        .into_iter()
+        .map(|(p, _, _)| p)
+        .collect();
+    assert!(before.iter().any(|p| p.ends_with("a.txt")));
+
+    // Mutate: a.txt drops the needle; a new file gains it.
+    std::fs::write(root.join("a.txt"), b"nothing relevant").unwrap();
+    std::fs::write(root.join("b.txt"), b"needle now here").unwrap();
+    rebuild_and_swap(root, &db, &content_dir, &cs).unwrap();
+
+    let after: Vec<String> = cs
+        .query(&folded, b"needle", false, None, None)
+        .into_iter()
+        .map(|(p, _, _)| p)
+        .collect();
+    assert!(
+        after.iter().any(|p| p.ends_with("b.txt")),
+        "after: {after:?}"
+    );
+    assert!(
+        !after.iter().any(|p| p.ends_with("a.txt")),
+        "after: {after:?}"
+    );
 }
