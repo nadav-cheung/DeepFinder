@@ -220,7 +220,6 @@ mod tests {
         let o = opts(&[], &[], &["docs/*"]);
         assert!(!passes("./docs/readme.md", &o));
         assert!(passes("./src/main.rs", &o));
-        let o = opts(&[], &[], &[]); // globs field empty by default in opts() — test inclusive directly
         let o = SearchOptions {
             globs: vec!["src/*".to_string()],
             ..opts(&[], &[], &[])
