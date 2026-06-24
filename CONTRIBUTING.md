@@ -48,7 +48,7 @@ These are load-bearing invariants — violating them causes bugs or false negati
 
 ## Shell
 
-zsh expands unquoted globs — always quote them: `--include='*.rs'`, not `--include=*.rs`.
+zsh expands unquoted globs — always quote them: `--glob='*.rs'`, not `--glob=*.rs`.
 
 ## More
 

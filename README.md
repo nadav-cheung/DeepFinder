@@ -64,11 +64,12 @@ brew install nadav-cheung/tap/deepfind
 curl -LsSf https://github.com/nadav-cheung/DeepFinder/releases/latest/download/deepfind-installer.sh | sh
 ```
 
-**Start the background daemon** (auto-indexes `$HOME`, live-updates on file changes, starts at login):
+**Start the background daemon** (registers `$HOME`; the daemon background-indexes it on start, live-updates on file changes, starts at login):
 ```sh
 deepfind install          # registers $HOME + installs a launchd agent
 deepfind status           # shows index freshness: indexing → fresh
 deepfind search "needle"
+deepfind uninstall        # stops the daemon + removes the launchd agent
 ```
 Update later with `brew upgrade deepfind` — launchd auto-restarts the new binary.
 
