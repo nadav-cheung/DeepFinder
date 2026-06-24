@@ -48,7 +48,7 @@ tool. Filename search is inspired by [Everything](https://www.voidtools.com/) /
 ```sh
 cargo build --workspace --release
 cargo test --workspace
-cargo clippy --workspace --all-targets -D warnings
+cargo clippy --workspace --all-targets -- -D warnings
 cargo fmt --check
 ```
 
