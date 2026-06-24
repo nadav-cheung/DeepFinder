@@ -43,6 +43,7 @@ Ordered by the bench signal above. Each is a standalone commit with a before/aft
 
 1. **Bigram short-query path (D2.2)** — the `short` case (2-byte) is **2.43 ms** because <3-byte queries linear-scan all docs. A 65 k-entry bigram index (folded 2-byte keys → posting) replaces the scan. Expected: `short` drops to the rare-query regime (~µs). **Highest-signal win.**
 2. **2-rarest intersection (D2.1)** — `common` (`src`, 1.05 ms) and the rare-trigram tail are dominated by verifying a large candidate set. Intersecting the 2 rarest postings before verify narrows it. Expected: measurable drop on high-frequency trigram queries.
+   - *Note:* **already tried + reverted** (see `decisions.md` D2.1). For literal-substring candidate generation a query's trigrams are contiguous, so they co-occur in the same documents and the two rarest postings overlap almost entirely — measured `common` stayed at ~1.05 ms (noise). Do **not** re-attempt for the single-term path; it only helps multi-term queries, which route through the boolean AST.
 3. (Lower signal without a large real corpus) ASCII direct-index array, dirTable shard pruning, per-shard parallel query, `madvise` hints — revisit after a real multi-GB corpus is benchmarked.
 
 ### D2 deltas
