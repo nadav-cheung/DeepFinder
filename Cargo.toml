@@ -17,6 +17,7 @@ license = "MIT"
 authors = ["Nadav"]
 repository = "https://github.com/nadav-cheung/DeepFinder"
 description = "Fast local file search for macOS — trigram index + daemon + CLI"
+homepage = "https://github.com/nadav-cheung/DeepFinder"
 
 # Catalog of shared dependency versions. Crates opt in with `{ workspace = true }`.
 [workspace.dependencies]
@@ -53,3 +54,28 @@ notify = "6"
 [profile.release]
 lto = "thin"
 codegen-units = 1
+
+[profile.dist]
+inherits = "release"
+lto = "thin"
+
+# Config for 'dist'
+[workspace.metadata.dist]
+# The preferred dist version to use in CI (Cargo.toml SemVer syntax)
+cargo-dist-version = "0.32.0"
+# CI backends to support
+ci = "github"
+# The installers to generate for each app
+installers = ["shell", "homebrew"]
+# Target platforms to build apps for (Rust target-triple syntax)
+targets = ["aarch64-apple-darwin", "x86_64-apple-darwin"]
+# A GitHub repo to push Homebrew formulas to
+tap = "nadav-cheung/homebrew-tap"
+# Publish jobs to run in CI
+publish-jobs = ["homebrew"]
+# Path that installers should place binaries in
+install-path = "~/.local/bin"
+# Which actions to run on pull requests
+pr-run-mode = "plan"
+# Whether to install an updater program
+install-updater = false
