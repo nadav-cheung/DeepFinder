@@ -808,6 +808,55 @@ async fn df_watch_serves_incremental_update() {
     assert!(converged, "incremental update did not converge");
 }
 
+/// A registered DB whose index is missing gets built in the background on
+/// serve() startup; once built, queries return the indexed content (equivalent
+/// to a full `deepfind index`).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn background_build_populates_missing_index() {
+    let tmp = tempfile::tempdir().unwrap();
+    let data = tmp.path();
+    let root = data.join("root");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("a.txt"), b"needle here").unwrap();
+
+    // Register watched DB "w" with a root, but build NO index for it yet.
+    let w_db = data.join("db/w/index.dfdb");
+    let mut reg = df_index::Registry::load(data);
+    reg.upsert(df_index::DbRecord {
+        name: "w".into(),
+        root: root.clone(),
+        db_path: w_db.clone(),
+        content_dir: data.join("db/w/content"),
+    });
+    reg.save().unwrap();
+
+    let socket = data.join("daemon.sock");
+    let sock = socket.clone();
+    let dbp = data.join("db/index.dfdb"); // default DB path passed to serve (also unbuilt)
+    let server = tokio::spawn(async move { deepfindd::serve(&sock, &dbp).await });
+
+    // Poll until the background build swaps "w" in.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    let mut converged = false;
+    while std::time::Instant::now() < deadline {
+        tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+        let req = SearchRequest {
+            query: "needle".into(),
+            scope: None,
+            limit: None,
+            opts: SearchOptions::default(),
+            db: Some("w".into()),
+        };
+        let (_b, got) = query_and_collect(&socket, req).await;
+        if got.iter().any(|p| p.ends_with("a.txt")) {
+            converged = true;
+            break;
+        }
+    }
+    server.abort();
+    assert!(converged, "background build did not populate the index");
+}
+
 /// With no index present, serve() still binds + answers (empty result), so the
 /// background builder (Task 2.3) can populate it later without a restart.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

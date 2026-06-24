@@ -279,7 +279,7 @@ struct DbEntry {
 /// The set of DBs a daemon serves: the default DB (the one `serve` was handed)
 /// plus every registered named DB. A query loops the selected entries and merges
 /// by path (cross-DB dedup is path-keyed, so no global docid mapping is needed).
-struct DbSet {
+pub(crate) struct DbSet {
     entries: Vec<DbEntry>,
 }
 
@@ -287,7 +287,7 @@ impl DbSet {
     /// Open the default DB at `db_path` plus every DB in the registry beside it.
     /// The registry dir is two levels up from `db_path` (the `data/db/index.dfdb`
     /// layout ⇒ `data/`); absent or unreadable DBs are skipped.
-    fn open(db_path: &Path) -> Self {
+    pub(crate) fn open(db_path: &Path) -> Self {
         let mut entries = Vec::new();
 
         // Default DB.
@@ -459,6 +459,23 @@ pub async fn serve(socket_path: &Path, db_path: &Path) -> std::io::Result<()> {
                 );
             }
         }
+    }
+
+    // Background initial-index for registered DBs that have a root but no index
+    // yet. Driven by the REGISTRY (not `initial.entries`, which by construction
+    // excludes DBs whose index file is missing — the very case we're handling).
+    let registry_dir = db_path
+        .parent()
+        .and_then(Path::parent)
+        .unwrap_or_else(|| Path::new("."));
+    for rec in &df_index::Registry::load(registry_dir).records {
+        index_job::spawn_if_missing(
+            rec.root.clone(),
+            rec.db_path.clone(),
+            rec.content_dir.clone(),
+            dbset.clone(),
+            db_path.to_path_buf(),
+        );
     }
 
     if let Some(dir) = socket_path.parent() {
@@ -804,6 +821,8 @@ fn combine_kind(a: MatchKind, b: MatchKind) -> MatchKind {
         _ => b,
     }
 }
+
+pub mod index_job;
 
 mod watch {
     //! df-watch: a notify (FSEvents on macOS) watcher that, on file changes under
