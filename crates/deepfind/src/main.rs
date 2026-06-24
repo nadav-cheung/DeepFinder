@@ -568,6 +568,18 @@ async fn cmd_status() {
         }
         None => println!("db: {} (missing/unreadable)", db.display()),
     }
+
+    // Per-DB index freshness: the default DB plus every registered DB.
+    println!("db default: {}   ({})", index_state(&db), db.display());
+    let reg = df_index::Registry::load(&data_dir());
+    for r in &reg.records {
+        println!(
+            "db {}: {}   ({})",
+            r.name,
+            index_state(&r.db_path),
+            r.db_path.display()
+        );
+    }
 }
 
 async fn cmd_search(
@@ -853,6 +865,27 @@ fn ensure_default_root(home: &Path) -> Option<(String, PathBuf)> {
     }
 }
 
+/// Per-DB index freshness for `deepfind status`. Returns one of:
+/// `"indexing"` (background build in flight), `"missing"` (no index file),
+/// `"fresh"` (mtime within 24h), or `"stale"` (older).
+fn index_state(db_path: &Path) -> &'static str {
+    if deepfindd::index_job::is_indexing(db_path) {
+        return "indexing";
+    }
+    let Ok(meta) = std::fs::metadata(db_path) else {
+        return "missing";
+    };
+    let Ok(mtime) = meta.modified() else {
+        return "stale";
+    };
+    let age = SystemTime::now().duration_since(mtime).unwrap_or_default();
+    if age < std::time::Duration::from_secs(24 * 60 * 60) {
+        "fresh"
+    } else {
+        "stale"
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -878,5 +911,46 @@ mod tests {
         });
         reg.save().unwrap();
         assert_eq!(ensure_default_root(&home), None);
+    }
+
+    #[test]
+    fn index_state_missing_when_no_file() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert_eq!(index_state(&tmp.path().join("index.dfdb")), "missing");
+    }
+
+    #[test]
+    fn index_state_indexing_when_marker_present() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = tmp.path().join("index.dfdb");
+        std::fs::write(&db, b"x").unwrap();
+        // Matches index_job::marker: db_path.with_extension("indexing").
+        std::fs::write(db.with_extension("indexing"), b"").unwrap();
+        assert_eq!(index_state(&db), "indexing");
+    }
+
+    #[test]
+    fn index_state_fresh_when_recent() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = tmp.path().join("index.dfdb");
+        std::fs::write(&db, b"x").unwrap();
+        assert_eq!(index_state(&db), "fresh");
+    }
+
+    #[test]
+    fn index_state_stale_when_old() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = tmp.path().join("index.dfdb");
+        std::fs::write(&db, b"x").unwrap();
+        // Backdate mtime by >24h via `touch -t` (no extra crate needed).
+        // CCYYMMDDhhmm — 2000-01-01 00:00 is well past the 24h freshness window.
+        let st = std::process::Command::new("touch")
+            .arg("-t")
+            .arg("200001010000")
+            .arg(&db)
+            .status()
+            .unwrap();
+        assert!(st.success(), "touch -t failed");
+        assert_eq!(index_state(&db), "stale");
     }
 }
