@@ -104,3 +104,9 @@
 **Reason:** Without it, a registered DB whose `root` *contains* the data dir (e.g. `db add w ~`, indexing `$HOME` or any ancestor of `~/.deep-finder`) feeds back forever: `rebuild_and_swap` writes shards under the watched root → FSEvents → another rebuild → … . Reproduced: one mutation → ~29 rebuilds in 8 s, never converging (CPU burn + index churn). After the fix: one mutation → one rebuild. The predicate is unit-tested; the existing `df_watch_serves_incremental_update` (sibling root, no overlap) is unchanged.
 
 **Scope note (NOT fixed here):** df-watch only ever watches *registered* DBs (`db add`, `root = Some`); the **default** DB (`index --root`, `root = None`) spawns no watcher, so `deepfind install`'s `DEEPFIND_WATCH=1` is a silent no-op for a default-only setup. Making the default DB watchable needs the root persisted somewhere the daemon can recover — separate work.
+
+## 2026-06-25 — Retired all 19 Swift-era tags for a clean Rust v1.0.0 slate
+
+**Default:** Deleted all 19 pre-rewrite tags — `v0.0.1-beta`, `v0.1.0`–`v0.7.0`, `v1.0.0`–`v1.5.0`, `v2.0.0`–`v2.2.0`, `v3.0.0`, `v3.2.0` — both locally and on the remote. The Rust rewrite (2026-06-22, clean-slate) is treated as a new product versioned from `v1.0.0`; these tags all pointed at the deleted Swift codebase (dated 2026-05-29 → 06-04; `v3.2.0` contained `Package.swift` + `Sources/`) and would have collided with / confused the Rust release lineage.
+
+**Reason:** User decision (OSS release design): Rust = new product, start at 1.0.0, retire old tags. Confirmed the full set of 19 (an earlier check via `git tag | head` had shown only 10 — the complete `git tag -l | sort -V` revealed 19, all Swift-era; user re-confirmed deleting all 19). No Rust docs/CI referenced them.
