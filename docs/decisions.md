@@ -65,17 +65,19 @@
 
 ## 2026-06-23 — bfs language coexists with filter flags as `--expr` (Phase E)
 
-**Default:** The find-style expression (`-name/-path/-size/-newer/-links` + boolean + parens) is an **advanced mode** behind `--expr`, evaluated post-query against `(path, LiteMeta)`. It does **not** replace `-e/-t/-E/-g/-d`. `-newer FILE`'s mtime is resolved (I/O) once in the daemon and passed into the pure evaluator.
+**Default:** The find-style expression (`-name/-path/-size/-newer` + boolean + parens) is an **advanced mode** behind `--expr`, evaluated post-query against `(path, LiteMeta)`. It does **not** replace `-e/-t/-E/-g/-d`. `-newer FILE`'s mtime is resolved (I/O) once in the daemon and passed into the pure evaluator.
 
 **Reason:** Spec mandates coexistence; `--expr` keeps the existing flag surface stable and isolates the richer grammar.
 
 ---
 
-## 2026-06-23 — Incremental ≈ dir-mtime partial rescan + affected-shard rebuild; true posting merge out of scope (Phase F)
+## 2026-06-23 — Incremental = watcher → full-root rescan + ArcSwap hot-swap; dir-mtime partial rescan + posting merge deferred (Phase F)
 
-**Default:** `df-watch` coalesces FSEvents, rescans only changed directories (dir-mtime table, hook at `index.dfdb` header offset 36), and rebuilds **affected shards** into new files, then hot-swaps via `ArcSwap`. Old shards are **rename-aside + drain-then-delete** (never truncate/unlink while mapped → no SIGBUS). Full rebuild is retained as `--force`. Per-file in-place TurboPFor posting merge is **not** implemented (shard rebuild approximates it).
+**Default:** `df-watch` coalesces FSEvents and, on each debounced change event, calls `rebuild_and_swap` — a **full rescan of the changed root** that reuses `build_content_index` to rebuild **all** shards (not just affected ones) into new files, then hot-swaps via `ArcSwap`. Old shards are **rename-aside + drain-then-delete** (never truncate/unlink while mapped → no SIGBUS). Full rebuild is retained as `--force`. This is *correct* (the full rescan is equivalent to `--force`) and SIGBUS-safe, just not minimal-I/O.
 
-**Reason:** True incremental posting merge is high-risk and out of the verified scope; shard-rebuild incremental is correct (proven by equivalence vs full rebuild) and far simpler. New deps: `notify = "6"`, `arc-swap = "1"`.
+**Deferred (correctness-neutral optimizations):** the **dir-mtime partial rescan (F2)** (would let the watcher skip unchanged dirs) and **per-file in-place TurboPFor posting merge** are **not** implemented — full rescan already gives the correct result, so they are pure perf extras only measurable on a large real corpus.
+
+**Reason:** True incremental posting merge is high-risk and out of the verified scope; the full-rescan watcher is provably correct (equivalent to `--force`) and far simpler. See the F2/F3 entry below for the deferred set. New deps: `notify = "6"`, `arc-swap = "1"`.
 
 ## 2026-06-23 — D2 hardening: measured, none justified on the synthetic baseline (Phase D)
 
