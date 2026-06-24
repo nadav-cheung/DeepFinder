@@ -19,3 +19,13 @@ jobs:
         run: cargo clippy --all-targets -- -D warnings
       - name: Test
         run: cargo test --workspace
+
+  msrv:
+    # Verifies the declared MSRV (Cargo.toml `rust-version`) still compiles.
+    # Uses `cargo check` (no tests) — only proves the floor builds.
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.96
+      - name: Check (MSRV 1.96)
+        run: cargo check --workspace --all-targets
