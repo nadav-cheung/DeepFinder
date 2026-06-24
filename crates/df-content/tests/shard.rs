@@ -1,4 +1,4 @@
-// SPDX-License-Identifier-Identifier: MIT
+// SPDX-License-Identifier: MIT
 //! Shard roundtrip: build → open → read paths/meta/content/postings.
 
 use df_content::{ShardBuilder, ShardReader};

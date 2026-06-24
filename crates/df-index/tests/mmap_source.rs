@@ -1,4 +1,4 @@
-// SPDX-License-Identifier-Identifier: MIT
+// SPDX-License-Identifier: MIT
 //! MmapSource: write a shard to disk, mmap it, read it back identically.
 
 use df_content::{ShardBuilder, ShardReader};

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: MIT
 //! Property verifier for the TurboPFor codec.
 //!
 //! Real-world use: sorted-unique u32 DocID lists -> delta -> encode ->
