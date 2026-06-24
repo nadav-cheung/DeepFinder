@@ -320,6 +320,7 @@ dependencies = [
  "df-ipc",
  "futures",
  "ignore",
+ "tempfile",
  "tokio",
  "tracing-subscriber",
 ]

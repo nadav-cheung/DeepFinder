@@ -12,9 +12,11 @@ use df_ipc::proto::{
     CaseControl, LayerMask, LineHit, MatchKind, PathMode, ResponseFrame, SearchOptions,
     SearchRequest, SortMode,
 };
-use df_ipc::{data_dir, decode_frame, default_db, default_socket, encode_request, framed};
+use df_ipc::{data_dir, decode_frame, default_db, default_socket, encode_request, framed, home};
 use futures::{SinkExt, StreamExt};
 use tokio::net::UnixStream;
+
+mod launchd;
 
 #[derive(Parser)]
 #[command(name = "deepfind", version, about = "Fast local file search")]
@@ -70,6 +72,14 @@ enum Cmd {
         #[command(subcommand)]
         action: DbAction,
     },
+    /// Install a user LaunchAgent so the daemon auto-starts at login (macOS).
+    Install {
+        /// Do not enable df-watch incremental hot-swap in the agent.
+        #[arg(long)]
+        no_watch: bool,
+    },
+    /// Uninstall the LaunchAgent (stops the daemon + removes the plist).
+    Uninstall,
     /// Search the index (falls back to --direct if the daemon is down).
     Search {
         query: String,
@@ -198,6 +208,8 @@ async fn main() {
         Cmd::Daemon => cmd_daemon().await,
         Cmd::Status => cmd_status().await,
         Cmd::Db { action } => cmd_db(action),
+        Cmd::Install { no_watch } => cmd_install(!no_watch),
+        Cmd::Uninstall => cmd_uninstall(),
         Cmd::Search {
             query,
             limit,
@@ -460,6 +472,41 @@ fn cmd_db(action: DbAction) {
             }
         }
     }
+}
+
+fn cmd_install(watch: bool) {
+    let exe = match std::env::current_exe() {
+        Ok(p) => p,
+        Err(e) => {
+            eprintln!("install: cannot resolve current executable: {e}");
+            std::process::exit(1);
+        }
+    };
+    if let Err(e) = launchd::install(&home(), &exe, watch, true) {
+        eprintln!("install failed: {e}");
+        std::process::exit(1);
+    }
+    println!(
+        "Installed LaunchAgent {label} (auto-start at login, KeepAlive on).",
+        label = launchd::LABEL
+    );
+    if watch {
+        println!("df-watch incremental hot-swap is enabled in the agent.");
+    }
+    println!();
+    println!("The daemon starts shortly. Index a root once so searches hit the index:");
+    println!("  deepfind index --root <path>");
+    println!();
+    println!("Status: deepfind status");
+    println!("Stop:   deepfind uninstall");
+}
+
+fn cmd_uninstall() {
+    if let Err(e) = launchd::uninstall(&home(), true) {
+        eprintln!("uninstall failed: {e}");
+        std::process::exit(1);
+    }
+    println!("Uninstalled LaunchAgent {label}.", label = launchd::LABEL);
 }
 
 async fn cmd_daemon() {

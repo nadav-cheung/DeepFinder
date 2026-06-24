@@ -1,6 +1,6 @@
 # DeepFinder — System Architecture
 
-> **状态**:2026-06-24 更新,反映 `main` 上**实际建成**的代码(非设计愿景)。本轮「完整实现」(Phase A–F)已全部交付,118 测试绿。
+> **状态**:2026-06-24 更新,反映 `main` 上**实际建成**的代码(非设计愿景)。本轮「完整实现」(Phase A–F)已全部交付,127 测试绿。
 > **一句话**:**plocate 式文件名索引 + zoekt 式内容 shard,套同一个 trigram 候选引擎,由常驻 daemon 经 Unix socket 服务薄 CLI。**
 > 图示为 Mermaid(GitHub / VS Code / GitLab 原生渲染);字节级磁盘布局用 ASCII。
 
@@ -264,6 +264,8 @@ deepfind daemon
 deepfind status
 deepfind db      add <name> <root> [--max-file-size N]
                  remove <name>   |   list
+deepfind install [--no-watch]      # macOS:装用户 LaunchAgent(登录自启 + KeepAlive + 可选 df-watch)
+deepfind uninstall                # 停 daemon + 删 plist
 deepfind search <query>
     # 匹配模式
     [-r/--regex | 默认字面子串]   [-i | -s]   (默认 smart-case)
@@ -286,7 +288,7 @@ deepfind search <query>
 
 ## 10. 当前状态与已知缺口(诚实清单)
 
-**已建成并验证**(Phase A–F 全交付):双层 trigram(pread 文件名 + mmap 内容)× 共享候选引擎 × daemon+CLI 进程模型 × smart-case × boolean AST × **文件名+内容正则** × `-n/-C` 行号上下文 × 层选择/路径模式/隐藏/排序/早退 × bfs `--expr` × **多 DB** × **ArcSwap 无锁热换 + df-watch 增量(rebuild_and_swap)**。118 测试绿,clippy/fmt 干净,daemon+CLI 端到端验证。决策细节见 [decisions.md](decisions.md),基线见 [perf-baseline.md](perf-baseline.md)。
+**已建成并验证**(Phase A–F 全交付):双层 trigram(pread 文件名 + mmap 内容)× 共享候选引擎 × daemon+CLI 进程模型 × smart-case × boolean AST × **文件名+内容正则** × `-n/-C` 行号上下文 × 层选择/路径模式/隐藏/排序/早退 × bfs `--expr` × **多 DB** × **ArcSwap 无锁热换 + df-watch 增量(rebuild_and_swap)**。127 测试绿,clippy/fmt 干净,daemon+CLI 端到端验证。决策细节见 [decisions.md](decisions.md),基线见 [perf-baseline.md](perf-baseline.md)。
 
 **设计写了、代码还没建**(M7 性能硬化层 + 增量未做项——D2 经测量本轮**未留一项**):
 
@@ -316,7 +318,7 @@ deepfind search <query>
 
 ```
 cargo build --workspace
-cargo test --workspace          # 118 tests
+cargo test --workspace          # 127 tests
 cargo clippy --workspace --all-targets -D warnings
 cargo fmt --all -- --check
 ```

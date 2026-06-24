@@ -13,6 +13,6 @@ pub mod proto;
 pub mod wire;
 
 pub use error::{IpcError, Result};
-pub use paths::{data_dir, default_db, default_socket};
+pub use paths::{data_dir, default_db, default_socket, home};
 pub use proto::{MatchKind, ResponseFrame, SearchOptions, SearchRequest};
 pub use wire::{decode_frame, decode_request, encode_frame, encode_request, framed};

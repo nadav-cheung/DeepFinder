@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-fn home() -> PathBuf {
+pub fn home() -> PathBuf {
     PathBuf::from(std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string()))
 }
 
