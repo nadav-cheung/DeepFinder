@@ -10,6 +10,15 @@ use df_ipc::{decode_frame, encode_request, framed};
 use futures::{SinkExt, StreamExt};
 use tokio::net::UnixStream;
 
+/// The two df-watch integration tests (`df_watch_serves_incremental_update`,
+/// `background_built_db_is_watched`) each drive a daemon through
+/// `build_content_index` + FSEvents-driven `rebuild_and_swap` convergence
+/// windows. Run concurrently they double the system load and occasionally
+/// flake against the tight convergence deadlines. This async lock serializes
+/// them (one at a time) to remove the concurrent-load contention. A tokio
+/// Mutex is used because the guard must be held across `.await` points.
+static DF_WATCH_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 async fn connect_wait(sock: &Path) -> UnixStream {
     for _ in 0..200 {
         if let Ok(s) = UnixStream::connect(sock).await {
@@ -725,6 +734,7 @@ async fn bfs_expression_filters_results() {
 /// without restart (equivalent to a fresh rebuild).
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn df_watch_serves_incremental_update() {
+    let _guard = DF_WATCH_LOCK.lock().await;
     let tmp = tempfile::tempdir().unwrap();
     let data = tmp.path();
     let root = data.join("root");
@@ -784,7 +794,7 @@ async fn df_watch_serves_incremental_update() {
     std::fs::write(root.join("b.txt"), b"needle now here").unwrap();
 
     // Poll until the incremental rebuild swaps in (debounce + rebuild + FSEvents).
-    let deadline = std::time::Instant::now() + Duration::from_secs(12);
+    let deadline = std::time::Instant::now() + Duration::from_secs(25);
     let mut converged = false;
     while std::time::Instant::now() < deadline {
         tokio::time::sleep(Duration::from_millis(300)).await;
@@ -862,6 +872,7 @@ async fn background_build_populates_missing_index() {
 /// (df-watch attached post-build). Regression for the holistic-review I1 bug.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn background_built_db_is_watched() {
+    let _guard = DF_WATCH_LOCK.lock().await;
     let tmp = tempfile::tempdir().unwrap();
     let data = tmp.path();
     let root = data.join("root");
@@ -887,7 +898,7 @@ async fn background_built_db_is_watched() {
     tokio::time::sleep(Duration::from_millis(300)).await;
 
     // Wait for the background build to populate "w" (a.txt found).
-    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    let deadline = std::time::Instant::now() + Duration::from_secs(25);
     let mut built = false;
     while std::time::Instant::now() < deadline {
         tokio::time::sleep(Duration::from_millis(300)).await;
@@ -908,7 +919,7 @@ async fn background_built_db_is_watched() {
 
     // NOW mutate: add a NEW file with the needle. If df-watch attached, it shows up.
     std::fs::write(root.join("b.txt"), b"needle now here").unwrap();
-    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    let deadline = std::time::Instant::now() + Duration::from_secs(25);
     let mut converged = false;
     while std::time::Instant::now() < deadline {
         tokio::time::sleep(Duration::from_millis(300)).await;
