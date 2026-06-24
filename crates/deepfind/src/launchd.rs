@@ -19,17 +19,10 @@ pub fn plist_path(home: &Path) -> PathBuf {
         .join(format!("{LABEL}.plist"))
 }
 
-/// Resolve the `deepfindd` binary as a sibling of the running `deepfind` (same
-/// directory — both land in `~/.cargo/bin/` after `cargo install`). `None` if
-/// no such file sits next to `exe`.
-pub fn resolve_daemon_bin(exe: &Path) -> Option<PathBuf> {
-    let candidate = exe.parent()?.join("deepfindd");
-    candidate.is_file().then_some(candidate)
-}
-
-/// Render the LaunchAgent plist XML for a daemon at `bin`, rooted at `home`.
-/// `watch` injects `DEEPFIND_WATCH=1` so df-watch incremental hot-swap is on.
-pub fn render_plist(bin: &Path, home: &Path, watch: bool) -> String {
+/// Render the LaunchAgent plist XML running the `deepfind` binary with a
+/// `daemon` subcommand, rooted at `home`. `watch` injects `DEEPFIND_WATCH=1`
+/// so df-watch incremental hot-swap is on.
+pub fn render_plist(exe: &Path, home: &Path, watch: bool) -> String {
     let out = home.join(".deep-finder/logs/daemon.out.log");
     let err = home.join(".deep-finder/logs/daemon.err.log");
     let env = if watch {
@@ -38,8 +31,8 @@ pub fn render_plist(bin: &Path, home: &Path, watch: bool) -> String {
         ""
     };
     format!(
-        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\">\n<dict>\n\t<key>Label</key>\n\t<string>{LABEL}</string>\n\t<key>ProgramArguments</key>\n\t<array>\n\t\t<string>{bin}</string>\n\t</array>\n\t<key>RunAtLoad</key>\n\t<true/>\n\t<key>KeepAlive</key>\n\t<true/>\n\t<key>ProcessType</key>\n\t<string>Background</string>\n{env}\t<key>StandardOutPath</key>\n\t<string>{out}</string>\n\t<key>StandardErrorPath</key>\n\t<string>{err}</string>\n</dict>\n</plist>\n",
-        bin = bin.display(),
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE plist PUBLIC \"-//Apple//DTD PLIST 1.0//EN\" \"http://www.apple.com/DTDs/PropertyList-1.0.dtd\">\n<plist version=\"1.0\">\n<dict>\n\t<key>Label</key>\n\t<string>{LABEL}</string>\n\t<key>ProgramArguments</key>\n\t<array>\n\t\t<string>{exe}</string>\n\t\t<string>daemon</string>\n\t</array>\n\t<key>RunAtLoad</key>\n\t<true/>\n\t<key>KeepAlive</key>\n\t<true/>\n\t<key>ProcessType</key>\n\t<string>Background</string>\n{env}\t<key>StandardOutPath</key>\n\t<string>{out}</string>\n\t<key>StandardErrorPath</key>\n\t<string>{err}</string>\n</dict>\n</plist>\n",
+        exe = exe.display(),
         out = out.display(),
         err = err.display(),
     )
@@ -48,14 +41,12 @@ pub fn render_plist(bin: &Path, home: &Path, watch: bool) -> String {
 /// Write the plist (creating `~/Library/LaunchAgents/` and the log dir) and,
 /// when `load`, register it with launchd. `load = false` is for tests.
 pub fn install(home: &Path, exe: &Path, watch: bool, load: bool) -> Result<(), String> {
-    let bin = resolve_daemon_bin(exe)
-        .ok_or_else(|| format!("deepfindd not found next to {}", exe.display()))?;
     let path = plist_path(home);
     fs::create_dir_all(path.parent().unwrap_or(home))
         .map_err(|e| format!("create LaunchAgents dir: {e}"))?;
     fs::create_dir_all(home.join(".deep-finder/logs"))
         .map_err(|e| format!("create log dir: {e}"))?;
-    fs::write(&path, render_plist(&bin, home, watch)).map_err(|e| format!("write plist: {e}"))?;
+    fs::write(&path, render_plist(exe, home, watch)).map_err(|e| format!("write plist: {e}"))?;
     if load {
         let status = Command::new("launchctl")
             .args(["load", &path.to_string_lossy()])
@@ -99,103 +90,37 @@ mod tests {
     }
 
     #[test]
-    fn resolve_daemon_bin_finds_sibling() {
-        let tmp = tempdir().unwrap();
-        let exe = tmp.path().join("deepfind");
-        fs::write(&exe, b"#!/bin/sh\n").unwrap();
-        fs::write(tmp.path().join("deepfindd"), b"#!/bin/sh\n").unwrap();
-        assert_eq!(resolve_daemon_bin(&exe), Some(tmp.path().join("deepfindd")));
-    }
-
-    #[test]
-    fn resolve_daemon_bin_none_when_missing() {
-        let tmp = tempdir().unwrap();
-        let exe = tmp.path().join("deepfind");
-        fs::write(&exe, b"#!/bin/sh\n").unwrap();
-        assert_eq!(resolve_daemon_bin(&exe), None);
-    }
-
-    #[test]
-    fn render_plist_contains_bin_label_keepalive_and_logs_without_watch() {
+    fn render_plist_runs_deepfind_daemon_subcommand() {
         let home = PathBuf::from("/Users/example");
-        let bin = PathBuf::from("/Users/example/.cargo/bin/deepfindd");
-        let xml = render_plist(&bin, &home, false);
-        assert!(
-            xml.contains("<string>cn.com.nadav.deepfind</string>"),
-            "missing label"
-        );
-        assert!(
-            xml.contains(&format!("<string>{}</string>", bin.display())),
-            "missing absolute bin path"
-        );
-        assert!(xml.contains("<key>RunAtLoad</key>"), "missing RunAtLoad");
-        assert!(xml.contains("<true/>"), "missing <true/>");
-        assert!(xml.contains("<key>KeepAlive</key>"), "missing KeepAlive");
-        assert!(
-            xml.contains("/Users/example/.deep-finder/logs/daemon.out.log"),
-            "missing out log"
-        );
-        assert!(
-            xml.contains("/Users/example/.deep-finder/logs/daemon.err.log"),
-            "missing err log"
-        );
-        assert!(
-            !xml.contains("DEEPFIND_WATCH"),
-            "watch env must be absent when watch=false"
-        );
+        let exe = PathBuf::from("/Users/example/.cargo/bin/deepfind");
+        let xml = render_plist(&exe, &home, false);
+        assert!(xml.contains("<string>/Users/example/.cargo/bin/deepfind</string>"));
+        assert!(xml.contains("<string>daemon</string>"));
+        assert!(xml.contains("<key>RunAtLoad</key>"));
+        assert!(xml.contains("<key>KeepAlive</key>"));
+        assert!(xml.contains("/Users/example/.deep-finder/logs/daemon.out.log"));
+        assert!(!xml.contains("DEEPFIND_WATCH"));
     }
 
     #[test]
     fn render_plist_with_watch_includes_env() {
         let home = PathBuf::from("/Users/example");
-        let bin = PathBuf::from("/Users/example/.cargo/bin/deepfindd");
-        let xml = render_plist(&bin, &home, true);
-        assert!(xml.contains("DEEPFIND_WATCH"), "watch env must be present");
-        assert!(xml.contains("<string>1</string>"), "watch value must be 1");
+        let exe = PathBuf::from("/Users/example/.cargo/bin/deepfind");
+        let xml = render_plist(&exe, &home, true);
+        assert!(xml.contains("DEEPFIND_WATCH"));
     }
 
     #[test]
-    fn install_writes_plist_referencing_sibling_daemon_and_creates_log_dir() {
+    fn install_writes_plist_running_deepfind_daemon() {
         let tmp = tempdir().unwrap();
         let home = tmp.path().to_path_buf();
-        let exe = home.join(".cargo/bin/deepfind");
+        let exe = home.join(".cargo/bin/deepfind"); // NO sibling deepfindd needed anymore
         fs::create_dir_all(exe.parent().unwrap()).unwrap();
         fs::write(&exe, b"x").unwrap();
-        fs::write(home.join(".cargo/bin/deepfindd"), b"x").unwrap();
-
         install(&home, &exe, true, false).unwrap();
-
         let content = fs::read_to_string(plist_path(&home)).unwrap();
-        assert!(
-            content.contains("cn.com.nadav.deepfind"),
-            "plist missing label"
-        );
-        let daemon = home.join(".cargo/bin/deepfindd");
-        assert!(
-            content.contains(&format!("<string>{}</string>", daemon.display())),
-            "plist must reference the resolved deepfindd path"
-        );
-        assert!(
-            content.contains("DEEPFIND_WATCH"),
-            "watch=true should be in plist"
-        );
-        assert!(
-            home.join(".deep-finder/logs").is_dir(),
-            "log dir should be created"
-        );
-    }
-
-    #[test]
-    fn install_errors_when_daemon_binary_missing() {
-        let tmp = tempdir().unwrap();
-        let home = tmp.path().to_path_buf();
-        let exe = home.join("deepfind");
-        fs::write(&exe, b"x").unwrap(); // no deepfindd sibling
-        let err = install(&home, &exe, true, false).unwrap_err();
-        assert!(
-            err.contains("deepfindd"),
-            "error should mention deepfindd: {err}"
-        );
+        assert!(content.contains("/deepfind</string>"));
+        assert!(content.contains("<string>daemon</string>"));
     }
 
     #[test]
