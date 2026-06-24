@@ -96,3 +96,11 @@
 - **F3 MANIFEST signature** — drift/tamper detection before swapping. The watcher rebuilds from its own `build_content_index` output, so the on-disk shards always match by construction.
 
 **Reason:** Both are perf/hardening extras; the spec's F correctness gates (incremental ≡ full rebuild, SIGBUS-safe hot-swap, no offline window, `--force` retained) are met without them. Revisit when benchmarking incremental latency on a large corpus.
+
+## 2026-06-24 — df-watch ignores its own writes under the data dir (feedback-loop fix, post-A–F)
+
+**Default:** The df-watch watcher ignores any event whose path is inside `~/.deep-finder` (the index data dir — shards, `index.dfdb`, `daemon.sock`, `logs/`, `dbs.toml`), via a new pure predicate `is_self_write(paths, data_dir)`. The data dir is canonicalized so the prefix match survives a symlinked `$HOME`.
+
+**Reason:** Without it, a registered DB whose `root` *contains* the data dir (e.g. `db add w ~`, indexing `$HOME` or any ancestor of `~/.deep-finder`) feeds back forever: `rebuild_and_swap` writes shards under the watched root → FSEvents → another rebuild → … . Reproduced: one mutation → ~29 rebuilds in 8 s, never converging (CPU burn + index churn). After the fix: one mutation → one rebuild. The predicate is unit-tested; the existing `df_watch_serves_incremental_update` (sibling root, no overlap) is unchanged.
+
+**Scope note (NOT fixed here):** df-watch only ever watches *registered* DBs (`db add`, `root = Some`); the **default** DB (`index --root`, `root = None`) spawns no watcher, so `deepfind install`'s `DEEPFIND_WATCH=1` is a silent no-op for a default-only setup. Making the default DB watchable needs the root persisted somewhere the daemon can recover — separate work.

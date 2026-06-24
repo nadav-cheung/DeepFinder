@@ -829,11 +829,22 @@ mod watch {
 
     fn run(root: &Path, db_path: &Path, content_dir: &Path, shards: Arc<ContentShards>) {
         let (tx, rx) = mpsc::channel::<()>();
+        // The index's own writes live under `~/.deep-finder`. Canonicalize so the
+        // prefix match is robust against a symlinked `$HOME`; fall back to the
+        // lexical path if canonicalization fails.
+        let data_dir = df_ipc::data_dir()
+            .canonicalize()
+            .unwrap_or_else(|_| df_ipc::data_dir());
         let mut watcher =
             match notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
                 if let Ok(ev) = res {
-                    // Ignore pure-access events (reads); only react to create/modify/remove/move.
-                    if !matches!(ev.kind, EventKind::Access(_)) {
+                    // React only to real user changes: ignore pure reads, and ignore
+                    // the daemon's own writes under the data dir — otherwise a watched
+                    // root that contains `~/.deep-finder` feeds back forever
+                    // (rebuild → shard write → event → rebuild → …).
+                    if !matches!(ev.kind, EventKind::Access(_))
+                        && !is_self_write(&ev.paths, &data_dir)
+                    {
                         let _ = tx.send(());
                     }
                 }
@@ -861,6 +872,56 @@ mod watch {
             }
         }
         drop(watcher);
+    }
+
+    /// True if any event path is inside the index data dir (`~/.deep-finder`) —
+    /// the daemon's own rebuild/log/socket writes. Such events must NOT trigger a
+    /// rebuild: a watched root that *contains* the data dir would otherwise feed
+    /// back into itself (rebuild writes shards → event → rebuild → …), looping
+    /// forever (reproduced: ~one mutation → tens of rebuilds, never converging).
+    fn is_self_write(paths: &[PathBuf], data_dir: &Path) -> bool {
+        paths.iter().any(|p| p.starts_with(data_dir))
+    }
+
+    #[cfg(test)]
+    mod is_self_write_tests {
+        use super::*;
+
+        #[test]
+        fn ignores_paths_inside_data_dir() {
+            let data_dir = PathBuf::from("/root/.deep-finder");
+            let shard = data_dir.join("db/w/content/shard-00000.dfcs");
+            let dir_itself = PathBuf::from("/root/.deep-finder");
+            assert!(is_self_write(&[shard], &data_dir));
+            assert!(is_self_write(&[dir_itself], &data_dir)); // the dir itself counts
+        }
+
+        #[test]
+        fn keeps_user_files_outside_data_dir() {
+            // root contains the data dir, but the changed file is a real user file.
+            let data_dir = PathBuf::from("/root/.deep-finder");
+            assert!(!is_self_write(
+                &[PathBuf::from("/root/trip.txt")],
+                &data_dir
+            ));
+        }
+
+        #[test]
+        fn any_path_inside_flags_it() {
+            let data_dir = PathBuf::from("/root/.deep-finder");
+            assert!(is_self_write(
+                &[
+                    PathBuf::from("/root/a.txt"),
+                    data_dir.join("logs/daemon.err.log")
+                ],
+                &data_dir,
+            ));
+        }
+
+        #[test]
+        fn empty_is_not_self_write() {
+            assert!(!is_self_write(&[], Path::new("/root/.deep-finder")));
+        }
     }
 }
 

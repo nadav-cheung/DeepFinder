@@ -9,7 +9,7 @@ tool. Filename search is inspired by [Everything](https://www.voidtools.com/) /
 > **Status: Rust rewrite shipped.** Dual-layer trigram index — plocate-style
 > filename layer (pread) + zoekt-style content shards (mmap) — behind one shared
 > candidate engine, served by a resident daemon over a Unix socket to a thin CLI.
-> The non-UI scope is feature-complete (Phases A–F delivered, 127 tests green).
+> The non-UI scope is feature-complete (Phases A–F delivered, 131 tests green).
 > GUI / interactive TUI are deferred.
 >
 > Full architecture: [`docs/architecture.md`](docs/architecture.md);
