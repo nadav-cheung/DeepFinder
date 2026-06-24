@@ -1,10 +1,12 @@
-# Dependabot keeps GitHub Actions versions current. DeepFinder has zero
-# third-party Swift package dependencies (pure Swift + Apple frameworks), so
-# the only ecosystem worth tracking here is `github-actions` — the actions used
-# in .github/workflows/.
+# Dependabot keeps GitHub Actions versions current. DeepFinder is a Rust
+# workspace; the only ecosystem tracked here is `github-actions` — the actions
+# used in .github/workflows/.
 #
-# Swift (Package.swift) updates are intentionally omitted: there is no
-# Package.resolved and no external packages to bump.
+# Cargo dependencies are intentionally NOT auto-bumped by dependabot: the
+# workspace pins versions via Cargo.toml and records exact versions in
+# Cargo.lock, which is reviewed/committed manually. Dependabot's `cargo`
+# ecosystem would open one PR per crate bump for a small solo project, which
+# is more noise than signal.
 version: 2
 
 updates:

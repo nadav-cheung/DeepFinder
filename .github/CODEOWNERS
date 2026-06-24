@@ -1,19 +1,15 @@
 # DeepFinder Code Owners
-# Each Source module is owned by nadav.
+# Default owner for the whole Rust workspace.
 
-Sources/AI/          @nadav
-Sources/CLI/         @nadav
-Sources/Daemon/      @nadav
-Sources/FS/          @nadav
-Sources/GUI/         @nadav
-Sources/Index/       @nadav
-Sources/Media/       @nadav
-Sources/Persist/     @nadav
-Sources/Search/      @nadav
-Sources/Services/    @nadav
+*  @nadav-cheung
 
-# Critical config and doc files
-/docs/               @nadav
-/VERSION             @nadav
-/PRODUCT.toml        @nadav
-/Package.swift       @nadav
+# Per-crate granularity.
+/crates/df-core/       @nadav-cheung
+/crates/df-content/    @nadav-cheung
+/crates/df-index/      @nadav-cheung
+/crates/df-ipc/        @nadav-cheung
+/crates/deepfindd/     @nadav-cheung
+/crates/deepfind/      @nadav-cheung
+
+# Root workspace manifest.
+/Cargo.toml            @nadav-cheung

@@ -10,7 +10,7 @@ assignees: ''
 A clear description of what the bug is.
 
 ## Steps to Reproduce
-1. Start daemon with `deepfinder daemon:start`
+1. Start daemon with `deepfind daemon`
 2. Run query `...`
 3. Observe `...`
 
@@ -21,7 +21,7 @@ What you expected to happen.
 What actually happened.
 
 ## Environment
-- **DeepFinder version**: (run `deepfinder --version`)
+- **DeepFinder version**: (run `deepfind --version`)
 - **macOS version**: 
 - **Hardware**: (e.g., MacBook Pro M4)
 

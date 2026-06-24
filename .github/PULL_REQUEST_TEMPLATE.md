@@ -9,8 +9,9 @@ Brief description of changes.
 - [ ] Test
 
 ## Checklist
-- [ ] Build passes (`swift build`)
-- [ ] Tests pass (`./scripts/run-tests.sh`)
+- [ ] `cargo fmt --check` passes
+- [ ] `cargo clippy --workspace --all-targets -- -D warnings` passes
+- [ ] `cargo test --workspace` passes
 - [ ] No external dependencies added
 - [ ] Public APIs have `///` doc comments
 - [ ] Spec / requirement docs updated (if behavior changed)
