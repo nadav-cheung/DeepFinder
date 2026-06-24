@@ -436,10 +436,7 @@ pub async fn serve(socket_path: &Path, db_path: &Path) -> std::io::Result<()> {
     let dbset: Arc<ArcSwap<DbSet>> = Arc::new(ArcSwap::from_pointee(DbSet::open(db_path)));
     let initial = dbset.load_full();
     if initial.entries.is_empty() {
-        return Err(std::io::Error::other(format!(
-            "no index DB found at {} (run 'deepfind index')",
-            db_path.display()
-        )));
+        tracing::warn!(db = ?db_path, "no index yet; serving empty until a background build swaps one in");
     }
 
     tracing::info!(

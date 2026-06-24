@@ -807,3 +807,27 @@ async fn df_watch_serves_incremental_update() {
     server.abort();
     assert!(converged, "incremental update did not converge");
 }
+
+/// With no index present, serve() still binds + answers (empty result), so the
+/// background builder (Task 2.3) can populate it later without a restart.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn serve_starts_with_no_index() {
+    let tmp = tempfile::tempdir().unwrap();
+    let socket = tmp.path().join("daemon.sock");
+    let db = tmp.path().join("db/index.dfdb"); // intentionally NOT built
+    let sock = socket.clone();
+    let dbp = db.clone();
+    let server = tokio::spawn(async move { deepfindd::serve(&sock, &dbp).await });
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+
+    let req = SearchRequest {
+        query: "x".into(),
+        scope: None,
+        limit: None,
+        opts: SearchOptions::default(),
+        db: None,
+    };
+    let (_b, got) = query_and_collect(&socket, req).await; // must NOT error / hang
+    assert!(got.is_empty());
+    server.abort();
+}
