@@ -12,6 +12,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use arc_swap::ArcSwap;
 use bytes::Bytes;
 use df_content::ShardReader;
 use df_core::candidate::candidates;
@@ -428,8 +429,13 @@ fn query_entry(
 /// Open `db_path` (+ the content shard set beside it), bind `socket_path`, serve
 /// until a shutdown signal, then drain + remove the socket.
 pub async fn serve(socket_path: &Path, db_path: &Path) -> std::io::Result<()> {
-    let dbset = Arc::new(DbSet::open(db_path));
-    if dbset.entries.is_empty() {
+    // The DbSet lives behind an ArcSwap so it can be atomically replaced later
+    // (background index builds → hot-swap, P2.2/P2.3). Connections take a
+    // per-request snapshot via `load_full()`; here we take one for the startup
+    // empty-check and df-watch spawn block.
+    let dbset: Arc<ArcSwap<DbSet>> = Arc::new(ArcSwap::from_pointee(DbSet::open(db_path)));
+    let initial = dbset.load_full();
+    if initial.entries.is_empty() {
         return Err(std::io::Error::other(format!(
             "no index DB found at {} (run 'deepfind index')",
             db_path.display()
@@ -439,14 +445,14 @@ pub async fn serve(socket_path: &Path, db_path: &Path) -> std::io::Result<()> {
     tracing::info!(
         socket = ?socket_path,
         db = ?db_path,
-        dbs = dbset.entries.len(),
+        dbs = initial.entries.len(),
         "deepfindd listening"
     );
 
     // df-watch (env-gated): for each registered DB with a known root, spawn an
     // incremental watcher that rebuilds + hot-swaps on file changes.
     if std::env::var("DEEPFIND_WATCH").is_ok() {
-        for e in &dbset.entries {
+        for e in &initial.entries {
             if let Some(root) = &e.root {
                 watch::spawn(
                     root.clone(),
@@ -508,8 +514,12 @@ pub async fn serve(socket_path: &Path, db_path: &Path) -> std::io::Result<()> {
 
 async fn handle_conn(
     stream: UnixStream,
-    dbset: Arc<DbSet>,
+    dbset: Arc<ArcSwap<DbSet>>,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    // Snapshot the current DbSet once per connection. The rest of the function
+    // operates on this `Arc<DbSet>` exactly as before — a hot-swap that lands
+    // mid-connection does not affect this snapshot.
+    let dbset: Arc<DbSet> = dbset.load_full();
     let mut f = framed(stream);
 
     // Read exactly one request frame.
