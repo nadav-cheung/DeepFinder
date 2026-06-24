@@ -271,9 +271,9 @@ pub(crate) fn rebuild_and_swap(
 struct DbEntry {
     name: String,
     root: Option<PathBuf>,
-    db_path: PathBuf,
+    pub(crate) db_path: PathBuf,
     db: Arc<DbReader<FileSource>>,
-    shards: Arc<ContentShards>,
+    pub(crate) shards: Arc<ContentShards>,
 }
 
 /// The set of DBs a daemon serves: the default DB (the one `serve` was handed)
@@ -824,7 +824,7 @@ fn combine_kind(a: MatchKind, b: MatchKind) -> MatchKind {
 
 pub mod index_job;
 
-mod watch {
+pub(crate) mod watch {
     //! df-watch: a notify (FSEvents on macOS) watcher that, on file changes under
     //! a registered DB's root, rebuilds its content index and hot-swaps the shards
     //! via ArcSwap. The daemon keeps serving the old snapshot during the rebuild.

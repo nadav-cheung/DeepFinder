@@ -857,6 +857,82 @@ async fn background_build_populates_missing_index() {
     assert!(converged, "background build did not populate the index");
 }
 
+/// A registered DB with no index gets background-built AND watched: after the
+/// build swaps in, mutating a file under the root is reflected in queries
+/// (df-watch attached post-build). Regression for the holistic-review I1 bug.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn background_built_db_is_watched() {
+    let tmp = tempfile::tempdir().unwrap();
+    let data = tmp.path();
+    let root = data.join("root");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("a.txt"), b"needle here").unwrap();
+
+    // Register watched DB "w" with a root but NO index yet.
+    let w_db = data.join("db/w/index.dfdb");
+    let mut reg = df_index::Registry::load(data);
+    reg.upsert(df_index::DbRecord {
+        name: "w".into(),
+        root: root.clone(),
+        db_path: w_db.clone(),
+        content_dir: data.join("db/w/content"),
+    });
+    reg.save().unwrap();
+
+    let socket = data.join("daemon.sock");
+    let sock = socket.clone();
+    let dbp = data.join("db/index.dfdb");
+    std::env::set_var("DEEPFIND_WATCH", "1");
+    let server = tokio::spawn(async move { deepfindd::serve(&sock, &dbp).await });
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    // Wait for the background build to populate "w" (a.txt found).
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    let mut built = false;
+    while std::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let req = SearchRequest {
+            query: "needle".into(),
+            scope: None,
+            limit: None,
+            opts: SearchOptions::default(),
+            db: Some("w".into()),
+        };
+        let (_b, got) = query_and_collect(&socket, req).await;
+        if got.iter().any(|p| p.ends_with("a.txt")) {
+            built = true;
+            break;
+        }
+    }
+    assert!(built, "background build did not populate");
+
+    // NOW mutate: add a NEW file with the needle. If df-watch attached, it shows up.
+    std::fs::write(root.join("b.txt"), b"needle now here").unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    let mut converged = false;
+    while std::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let req = SearchRequest {
+            query: "needle".into(),
+            scope: None,
+            limit: None,
+            opts: SearchOptions::default(),
+            db: Some("w".into()),
+        };
+        let (_b, got) = query_and_collect(&socket, req).await;
+        if got.iter().any(|p| p.ends_with("b.txt")) {
+            converged = true;
+            break;
+        }
+    }
+    std::env::remove_var("DEEPFIND_WATCH");
+    server.abort();
+    assert!(
+        converged,
+        "df-watch did not attach to the background-built DB (I1 regression)"
+    );
+}
+
 /// With no index present, serve() still binds + answers (empty result), so the
 /// background builder (Task 2.3) can populate it later without a restart.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
