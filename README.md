@@ -52,16 +52,25 @@ cargo clippy --workspace --all-targets -D warnings
 cargo fmt --check
 ```
 
-## Run
+## Install (macOS)
 
+**Homebrew** (installs to the standard path `/opt/homebrew/bin`):
 ```sh
-deepfind index --root <path>      # build the index (filename + content)
-deepfind daemon                   # start the resident daemon (background)
-deepfind search <query>           # query via daemon (auto --direct if daemon down)
+brew install nadav-cheung/tap/deepfind
 ```
 
-`deepfind search --help` lists every flag; `docs/architecture.md` §9 has the full
-CLI surface.
+**Or one-line script:**
+```sh
+curl -LsSf https://github.com/nadav-cheung/DeepFinder/releases/latest/download/deepfind-installer.sh | sh
+```
+
+**Start the background daemon** (auto-indexes `$HOME`, live-updates on file changes, starts at login):
+```sh
+deepfind install          # registers $HOME + installs a launchd agent
+deepfind status           # shows index freshness: indexing → fresh
+deepfind search "needle"
+```
+Update later with `brew upgrade deepfind` — launchd auto-restarts the new binary.
 
 ## License
 
