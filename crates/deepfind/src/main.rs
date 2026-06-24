@@ -482,7 +482,31 @@ fn cmd_install(watch: bool) {
             std::process::exit(1);
         }
     };
-    if let Err(e) = launchd::install(&home(), &exe, watch, true) {
+    // If no DB is registered yet, auto-register $HOME as a watched DB named
+    // "home". We do NOT build here — the daemon's background-build job (P2.3)
+    // indexes it on start. db_path/content_dir mirror `db add`'s convention.
+    let home = home();
+    if let Some((name, root)) = ensure_default_root(&home) {
+        let data = data_dir();
+        let db_dir = data.join("db").join(&name);
+        let db_path = db_dir.join("index.dfdb");
+        let content_dir = db_dir.join("content");
+        let mut reg = df_index::Registry::load(&data);
+        reg.upsert(df_index::DbRecord {
+            name: name.clone(),
+            root: root.clone(),
+            db_path: db_path.clone(),
+            content_dir: content_dir.clone(),
+        });
+        if let Err(e) = reg.save() {
+            eprintln!("warning: could not save registry: {e}");
+        }
+        println!(
+            "No DB registered — auto-registered '{name}' → {} (the daemon will index it on start).",
+            root.display()
+        );
+    }
+    if let Err(e) = launchd::install(&home, &exe, watch, true) {
         eprintln!("install failed: {e}");
         std::process::exit(1);
     }
@@ -815,4 +839,44 @@ async fn direct_scan(
         }
     }
     Ok((out, Vec::new()))
+}
+
+/// If no DB is registered yet, suggest registering `$HOME` as a watched DB
+/// named "home" so the daemon's background-build job (P2.3) indexes it on
+/// start. Returns `None` once any DB exists.
+fn ensure_default_root(home: &Path) -> Option<(String, PathBuf)> {
+    let reg = df_index::Registry::load(&home.join(".deep-finder"));
+    if reg.records.is_empty() {
+        Some(("home".into(), home.to_path_buf()))
+    } else {
+        None
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn ensure_default_root_home_when_no_dbs() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().to_path_buf();
+        // No dbs.toml yet → suggest registering $HOME.
+        assert_eq!(
+            ensure_default_root(&home),
+            Some(("home".into(), home.clone()))
+        );
+        // After registering one DB, it returns None.
+        let data = home.join(".deep-finder");
+        std::fs::create_dir_all(&data).unwrap();
+        let mut reg = df_index::Registry::load(&data);
+        reg.upsert(df_index::DbRecord {
+            name: "x".into(),
+            root: home.clone(),
+            db_path: home.join("x.dfdb"),
+            content_dir: home.join("xc"),
+        });
+        reg.save().unwrap();
+        assert_eq!(ensure_default_root(&home), None);
+    }
 }
