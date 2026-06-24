@@ -9,10 +9,6 @@ license.workspace = true
 name = "deepfindd"
 path = "src/lib.rs"
 
-[[bin]]
-name = "deepfindd"
-path = "src/main.rs"
-
 [dependencies]
 df-core = { workspace = true }
 df-content = { workspace = true }
