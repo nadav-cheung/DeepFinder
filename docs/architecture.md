@@ -1,6 +1,6 @@
 # DeepFinder — System Architecture
 
-> **状态**:2026-06-23 快照,反映 `main` 上**实际建成**的代码(非设计愿景)。
+> **状态**:2026-06-24 更新,反映 `main` 上**实际建成**的代码(非设计愿景)。本轮「完整实现」(Phase A–F)已全部交付,118 测试绿。
 > **一句话**:**plocate 式文件名索引 + zoekt 式内容 shard,套同一个 trigram 候选引擎,由常驻 daemon 经 Unix socket 服务薄 CLI。**
 > 图示为 Mermaid(GitHub / VS Code / GitLab 原生渲染);字节级磁盘布局用 ASCII。
 
@@ -178,7 +178,7 @@ flowchart TD
 
 - **文本门控**(zoekt DocChecker + trigrep 思路):二进制/超尺寸文件**只入文件名层**,不入内容层。
 - **原子写** = `tmp → fsync → rename`,绝不留半截库。
-- **全量重建模型**(v2.0):无增量;增量更新(`df-watch` / FSEvents)明确留作 v2.1。
+- **增量已落地**(v2.1):`df-watch`(notify 抽象 FSEvents)监听变化 → `rebuild_and_swap` 全根重扫 + ArcSwap 热换;全量重建保留作 `--force` 兜底。每文件 posting 合并 + dir-mtime 增量(F2)+ MANIFEST 签名(F3)未做(正确性中性,见 [decisions.md](decisions.md))。
 
 ---
 
@@ -209,7 +209,7 @@ sequenceDiagram
     HC-->>CLI: ResponseFrame::Done{total}
 ```
 
-**regex 模式**(`--regex`):query 作正则,取其最长字面 atom 驱动候选生成,`regex.is_match` 做权威校验;`(?i)` 由 smart-case 条件化;内容层在 regex 模式下跳过。
+**regex 模式**(`-r/--regex`):query 作正则,**文件名与内容两层都跑**(镜像字面模式)。取最长字面 atom 驱动候选生成(case-insensitive 超集),`regex.is_match`(文件名 windows / 内容 mmap 字节)做权威校验;`(?i)` 由 smart-case 条件化。
 
 **候选生成 `candidates()`(两层共享)**:
 1. 抽 query 的字节 trigram(folded,匹配 folded 索引)→ 永远是合法超集,不受 case 模式影响;
@@ -258,41 +258,49 @@ SearchRequest {                  ResponseFrame::Batch { paths, meta, kind }
 ## 9. CLI 能力面(当前)
 
 ```
-deepfind index   [--root] [--force] [--skip …] [--max-file-size N]
-                 [--no-content] [--one-file-system]
+deepfind index   [--root] [--force] [--skip NAME…] [--max-file-size N]
+                 [--no-content] [--one-file-system] [-H/--hidden]
 deepfind daemon
 deepfind status
+deepfind db      add <name> <root> [--max-file-size N]
+                 remove <name>   |   list
 deepfind search <query>
     # 匹配模式
-    [--regex | 默认字面子串]   [-i | -s]   (默认 smart-case)
+    [-r/--regex | 默认字面子串]   [-i | -s]   (默认 smart-case)
+    [-p/--full-path | -b/--basename]
     # 过滤
-    [-e EXT] [-t TYPE] [-E EXCLUDE] [-g GLOB] [-d N]
-    [--scope PATH] [--limit N]
+    [-e EXT] [-t TYPE(code|docs|config|web|archive|media)] [-E EXCLUDE]
+    [-g GLOB] [-d N]   [--scope PATH] [--limit N] [--max-results N]
+    [--sort default|path|kind|none]   [--expr EXPR]   [--db NAME]
+    # 内容
+    [-n/--line-number] [-C N]   [--content | --filename]
     # 输出
     [-l] [--color always|never|auto] [-0/--null] [--count]
-    # 层 / 兜底 / 动作
-    [--direct]   [-x CMD]
+    # 兜底 / 动作
+    [--direct]   [-x CMD]   [-H/--hidden]
 ```
+
+**`--expr`** 是 bfs/find 式高级表达式(`-name/-path/-size/-newer` + 布尔 + 括号),查询后对 `(path, LiteMeta)` 求值,**与 `-e/-t/-E/-g/-d` 并存**不替换。`-n/-C` 输出走独立 `ResponseFrame::Lines` 流(`path:line:text`,grep 对齐)。
 
 ---
 
 ## 10. 当前状态与已知缺口(诚实清单)
 
-**已建成并验证**:双层 trigram(pread 文件名 + mmap 内容)× 共享候选引擎 × daemon+CLI 进程模型。89 测试绿,clippy/fmt 干净,daemon+CLI 端到端验证。
+**已建成并验证**(Phase A–F 全交付):双层 trigram(pread 文件名 + mmap 内容)× 共享候选引擎 × daemon+CLI 进程模型 × smart-case × boolean AST × **文件名+内容正则** × `-n/-C` 行号上下文 × 层选择/路径模式/隐藏/排序/早退 × bfs `--expr` × **多 DB** × **ArcSwap 无锁热换 + df-watch 增量(rebuild_and_swap)**。118 测试绿,clippy/fmt 干净,daemon+CLI 端到端验证。决策细节见 [decisions.md](decisions.md),基线见 [perf-baseline.md](perf-baseline.md)。
 
-**设计写了、代码还没建**(v2 spec 的 **M7 硬化层**,标 Phase 2 未做):
+**设计写了、代码还没建**(M7 性能硬化层 + 增量未做项——D2 经测量本轮**未留一项**):
 
-| 缺口 | 影响 |
+| 缺口 | 影响 / 现状 |
 |---|---|
-| 内容 trigram 仅 Robin Hood,**无 ASCII 直索引数组**(spec §6 零哈希快路径) | 所有内容 trigram 查询都要 hash |
-| 候选生成只取**单条最稀有** trigram(无 2-rarest 交集) | `the`/`com`/`src` 等高频 trigram 退化 |
-| <3 字节 query **线性扫全库**(无 bigram 索引) | 2 字符查询慢 |
+| 内容 trigram 仅 Robin Hood,**无 ASCII 直索引数组**(spec §6 零哈希快路径) | 所有内容 trigram 查询都要 hash;需大语料才显效 |
+| 候选生成只取**单条最稀有** trigram | **2-rarest 已实现+基准后回退**——字面子串的 trigram 连续共现,交集几乎不收窄(decisions.md D2.1) |
+| <3 字节 query **线性扫全库**(无 bigram 索引) | 2 字符查询慢;需改 DB 格式,基线不值得 |
 | **无 dirTable** → `--scope` 是查后路径过滤,非 shard 级剪枝 | scope 查询不能跳过整个 shard |
-| `ContentShards` 是普通 `Arc`(无 ArcSwap 锁-free swap、无 rename-aside drain) | 重建期间不能无停机换 shard 集 |
 | 内容查询**顺序循环**(无 per-shard 并行) | 大 shard 数时延迟线性增长 |
 | 无 `madvise` 提示 / RLIMIT_NOFILE 提升 / `.git`-sentinel 子树剪枝 | 大规模调优欠佳 |
+| 增量是**全根重扫** `rebuild_and_swap`,非每文件 posting 合并 | 每文件增量合并高风险未做;dir-mtime 增量(F2)、MANIFEST 签名(F3)延后——正确性中性 |
 
-**明确未来**(非缺口,是路线图):增量更新(`df-watch`)、内容正则、`-n/-c` 行号上下文、结果排序、多 DB、GUI。
+**明确未来**(非缺口,是路线图):GUI / 交互式 TUI、位置 trigram / 短语搜索、pinyin/jieba、SIMD 解码。
 
 ---
 
@@ -308,7 +316,7 @@ deepfind search <query>
 
 ```
 cargo build --workspace
-cargo test --workspace          # 89 tests
+cargo test --workspace          # 118 tests
 cargo clippy --workspace --all-targets -D warnings
 cargo fmt --all -- --check
 ```

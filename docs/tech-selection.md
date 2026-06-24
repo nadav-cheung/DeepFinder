@@ -1,6 +1,6 @@
 # DeepFinder — 终局模型技术选型
 
-> **状态**:2026-06-23,基于两份锁定设计 spec(`docs/superpowers/specs/2026-06-22-rust-search-index-cli-design.md`、`…-v2-content-index-design.md`)推导的**终局(end-state)目标**。
+> **状态**:2026-06-24 更新。本表为**终局(end-state)目标**;2026-06-23 的「完整实现」(Phase A–F)已交付其中若干项(见 ✅ 标注),其余 ⏳ 仍待实现。基于两份锁定设计 spec(`docs/superpowers/specs/2026-06-22-rust-search-index-cli-design.md`、`…-v2-content-index-design.md`)推导。
 > **一句话**:**终局 = 已建成基线 + v2.1 增量层 + M7 硬化层**;全量重建只是 v2.0 里程碑,不是终态。
 > **配套文档**:[architecture.md](architecture.md)(已建成架构图,反映 `main` 实际代码)。
 
@@ -36,7 +36,7 @@
 | 内容语料 | **raw bytes**(zoekt 式,~1× 磁盘预算) | ✅ | verify 最快;磁盘预算换速度(已接受,1 MB/文件上限封顶) |
 | 文件名压缩 | zstd + **训练字典** + 块索引 | ✅ | 路径高度冗余,字典压缩比远超通用 zstd;块索引支持随机解压 |
 | docid 模型 | 全局 u32 + `base_docid` 映射 | ✅ | 两层结果可直接按**路径键 union 去重**,无需跨层 join |
-| **shard 集** | `ArcSwap<Vec<Arc<Shard>>>` **无锁原子快照** | ⏳ | 重建期无停机换 shard;旧 `Arc` drain 后落 |
+| **shard 集** | `ArcSwap<Vec<Arc<Shard>>>` **无锁原子快照** | ✅ | 重建期无停机换 shard;旧 `Arc` drain 后落(F1 交付,实测 rename-over 保 inode 防 SIGBUS) |
 | **scope 剪枝** | `dirTable` + 每文档 `u16 dir_id` → shard 级跳过 | ⏳ | 现 `--scope` 是查后路径过滤;终局能跳过整个 shard |
 
 ---
@@ -71,12 +71,12 @@ key = (a << 16) | (b << 8) | c        // 三字节 a,b,c 滑动窗口 → u32
 
 | 维度 | 终局选型 | 状态 | 为什么选这个 |
 |---|---|---|---|
-| **更新模型** | **增量:`df-watch`(`notify`/FSEvents watcher)+ 每文件 posting 增量合并** | ⏳ **v2.1** | 长重建由"daemon 重建期继续服务旧 shard(原子热换)"对冲;终局把全量重建升级成实时增量(reflex 假增量的真补) |
+| **更新模型** | **增量:`df-watch`(`notify`/FSEvents watcher)→ `rebuild_and_swap` + ArcSwap 热换** | ✅(部分) | watcher + 无停机热换**已交付**(F4);但每次变更是**全根重扫**,非每文件 posting 合并(高风险,未做) |
 | 全量重建 | v2.0 基线(留存) | ✅ | 简单可靠;保留作 `--force` 兜底 |
-| 增量挂钩 | dir-mtime 表(readdir 复用)+ MANIFEST 签名 | ⏳(**预留**) | 架构**不堵死**增量——钩子已在 `crates/df-core/src/db.rs`(dirmtime_off 注释预留)+ MANIFEST 留好 |
-| 重建换 shard | 写新文件 → `ArcSwap::store` → drain 后删旧(旧 shard 先 **rename-aside**) | ⏳ | 无离线窗口;rename-aside(非直接 unlink)防 mmap SIGBUS |
+| 增量挂钩 | dir-mtime 表(F2)+ MANIFEST 签名(F3) | ⏳(延后) | 正确性中性——全根重扫与全量重建等价;钩子在 `crates/df-core/src/db.rs`(dirmtime_off 预留)。需大语料基准才值得 |
+| 重建换 shard | 写新文件 → `ArcSwap::store` → drain 后删旧(旧 shard 先 **rename-aside**) | ✅ | 无离线窗口;rename-aside(非直接 unlink)防 mmap SIGBUS(F1 实测) |
 
-> **设计锁定结论**(spec):v2.0 = full rebuild(user-locked);incremental = v2.1。终局目标是增量,但**架构故意预留钩子**使其不被堵死——所以"终局=增量"与"v2.0 final=全量重建"两者并存,前者是 end-state,后者是当前里程碑。
+> **设计锁定结论**(spec):v2.0 = full rebuild(user-locked);incremental = v2.1。终局目标是增量,但**架构故意预留钩子**使其不被堵死。**现状(2026-06-24)**:v2.1 的 watcher 增量(rebuild_and_swap + ArcSwap 热换)已交付;真正的每文件 posting 合并仍留作更后。
 
 ---
 
@@ -109,15 +109,15 @@ key = (a << 16) | (b << 8) | c        // 三字节 a,b,c 滑动窗口 → u32
 | 层 | ✅ 已建 | ⏳ 终局未建 |
 |---|---|---|
 | 语言/工程 | 3/3 | — |
-| 存储 | 7/9 | ArcSwap shard 集、dirTable 剪枝 |
-| 引擎 | 8/11 | ASCII 直数组、2-rarest 交集、bigram |
-| 更新模型 | 1/4(全量重建) | df-watch 增量、增量挂钩落地、热换 shard |
+| 存储 | 8/9 | dirTable 剪枝 |
+| 引擎 | 8/11 | ASCII 直数组、2-rarest(实测回退)、bigram |
+| 更新模型 | watcher+热换+全量重建 ✅;每文件合并未做 | dir-mtime(F2)、MANIFEST 签名(F3)、每文件 posting 合并 |
 | 进程/IPC/mmap | 4/6 | madvise、per-shard 并行 |
 
-**判定**:核心引擎 + 进程模型 + 双层存储**已建成且正确**;终局剩余工作集中在两块——**(1) 增量更新层(v2.1)**、**(2) 性能硬化层(M7)**。两者都是**已锁定设计、架构不堵死**,只待实现。
+**判定**:核心引擎 + 进程模型 + 双层存储**已建成且正确**;增量更新的 watcher+热换层亦已交付。终局剩余工作集中在两块——**(1) 真增量(每文件合并 / dir-mtime / 签名)**、**(2) 性能硬化层(M7)**。两者都是**已锁定设计、架构不堵死**,只待实现(D2 经测量本轮未留一项,需大真实语料重评)。
 
 ---
 
 ## 收敛(一句话)
 
-> **终局 = 「增量(df-watch/FSEvents)+ 无锁 shard 热换」把今天的「全量重建」升级成实时;M7 硬化(ASCII 直数组 / 2-rarest / bigram / dirTable / ArcSwap / madvise / per-shard 并行)把「正确但非最快」的引擎基线推到性能目标。** 所有 ⏳ 项都靠 `db.rs` 已留的 dir-mtime 钩子 + MANIFEST 签名保证架构**不堵死**,只差实现。
+> **进度(2026-06-24)**:无锁 shard 热换(ArcSwap,F1)+ df-watch 增量(watcher→`rebuild_and_swap`,F4)**已交付**,把「全量重建」升级为「变更触发重扫 + 热换」。**仍待实现**:每文件 posting 合并、dir-mtime 增量(F2)、MANIFEST 签名(F3),以及 M7 硬化(ASCII 直数组 / 2-rarest 已实测回退 / bigram / dirTable / madvise / per-shard 并行)——D2 经测量本轮未留一项,需大真实语料重评。架构靠 `db.rs` 预留钩子**不堵死**,只差实现。

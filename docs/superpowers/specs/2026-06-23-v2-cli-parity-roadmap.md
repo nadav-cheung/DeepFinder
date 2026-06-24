@@ -5,6 +5,14 @@
 
 **Goal (user directive 2026-06-23):** make DeepFinder's CLI feature-complete by integrating the strengths of each reference project. GUI is deferred until explicit user confirmation.
 
+> **UPDATE (2026-06-24):** Every item flagged "Remaining" in the STATUS paragraph
+> below — **content-regex** (Phase A1), **`-n`/`-C`** line-number/context (A2),
+> **result sorting** (B2), **multi-DB** (C), and the **bfs expression language**
+> (E) — was **delivered** in the complete-implementation run (Phase A–F). See
+> [`../../decisions.md`](../../decisions.md) and
+> [`../../architecture.md`](../../architecture.md) §9–10 for the current CLI
+> surface. The backlog tables below stay as the original 2026-06-23 plan.
+
 **STATUS (2026-06-23) — done this round:** `-e/--extension`, `-t/--type`, `-E/--exclude`, `-g/--glob`, `-d/--max-depth`, `-x/--exec`, `--color` (match highlight), `--regex` (filename-regex via longest-literal-atom candidate gen), `-0/--null`, `--count` — all live + integration-tested (one real bug, the `./`-prefix glob match, caught + fixed). Combined filename∪content results with `MatchKind` (M5). **Smart-case done:** default smart-case (uppercase in query ⇒ case-sensitive) + `-i/--ignore-case` + `-s/--case-sensitive`, threaded through `cs_verify`/`candidates`/`query_docids`/`boolquery` (filename + content layers) + the daemon (incl. conditional regex `(?i)`) + CLI (`--direct` + highlight honor it); 5 new tests (89 green). Remaining P0: **content-regex** (engine-level: content-byte `regex.is_match`). Remaining P1: `-n/-c` context, ranking, multi-DB, bfs expression language.
 
 ---

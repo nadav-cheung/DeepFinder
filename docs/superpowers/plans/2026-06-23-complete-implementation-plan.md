@@ -1,5 +1,9 @@
 # DeepFinder Complete Implementation Plan (excl. UI)
 
+> **Status (2026-06-24): EXECUTED — all A–F tasks complete & merged to `main`**
+> (118 tests green; outcome in [`../../decisions.md`](../../decisions.md)). The
+> steps below are the executed task checklist, kept as the audit trail.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Implement the full non-UI scope of `docs/superpowers/specs/2026-06-23-complete-implementation-design.md` — content regex + line numbers (A), CLI flags + sorting (B), multi-DB (C), perf baseline + hardening (D), bfs expression language (E), incremental update v2.1 (F).

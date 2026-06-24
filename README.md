@@ -1,28 +1,67 @@
 # DeepFinder
 
-A fast local file search engine for macOS, inspired by [Everything](https://www.voidtools.com/) on Windows.
+A fast local file search engine for macOS — **filename + content** search in one
+tool. Filename search is inspired by [Everything](https://www.voidtools.com/) /
+[plocate](https://plocate.sesse.net/); content search by
+[ripgrep](https://github.com/BurntSushi/ripgrep) /
+[zoekt](https://github.com/sourcegraph/zoekt).
 
-> **Status: Rust rewrite in progress.** The search + index + CLI are being rebuilt
-> from scratch in Rust (clean slate). Design spec:
-> [`docs/superpowers/specs/2026-06-22-rust-search-index-cli-design.md`](docs/superpowers/specs/2026-06-22-rust-search-index-cli-design.md).
+> **Status: Rust rewrite shipped.** Dual-layer trigram index — plocate-style
+> filename layer (pread) + zoekt-style content shards (mmap) — behind one shared
+> candidate engine, served by a resident daemon over a Unix socket to a thin CLI.
+> The non-UI scope is feature-complete (Phases A–F delivered, 118 tests green).
+> GUI / interactive TUI are deferred.
+>
+> Full architecture: [`docs/architecture.md`](docs/architecture.md);
+> end-state choices: [`docs/tech-selection.md`](docs/tech-selection.md).
 
-## Architecture (v1)
+## What it does
 
-- **`df-core`** — trigram index DB format + TurboPFor codec + query algorithm (pure library, no I/O)
-- **`df-index`** — indexer: `ignore` parallel traversal → single-file DB (atomic write)
-- **`df-ipc`** — Unix socket protocol (length-framed, streamed results)
-- **`deepfindd`** — resident daemon (pread, low-RSS query)
-- **`deepfind`** — thin CLI (daemon client + `--direct` online fallback)
+- **Filename + content in one query** — results merged and de-duped by path.
+- **Match modes** — literal substring (default), `--regex`, smart-case (default)
+  with `-i`/`-s`.
+- **Filters** — `-t/--type` (code/docs/config/web/archive/media), `-e/--extension`,
+  `-E/--exclude`, `-g/--glob`, `-d/--max-depth`, `--scope`, `--limit`,
+  `--max-results`, `--sort {default|path|kind|none}`.
+- **Content** — `-n/--line-number` + `-C/--context` (grep parity), `--content` /
+  `--filename` layer select.
+- **Expression language** — `--expr` (`-name/-path/-size/-newer` + boolean + parens).
+- **Multi-DB** — `deepfind db add/remove/list`; `search --db <name>`.
+- **Process model** — resident daemon + thin CLI; daemon down → CLI auto-falls
+  back to `--direct` online scan.
+- **Incremental** — `df-watch` (notify/FSEvents watcher) hot-swaps shards live
+  (env `DEEPFIND_WATCH`).
 
-File-level trigram index, plocate-style single-file DB, TurboPFor-compressed posting
-lists, Robin Hood trigram table, boolean (AND/OR/NOT) queries.
+## Architecture (6-crate workspace, acyclic)
 
-## Build
+- **`df-core`** — trigram index DB format + TurboPFor codec + query engine
+  (pure library, **zero I/O**)
+- **`df-content`** — zoekt-style content shard builder/reader + ASCII fold
+- **`df-index`** — `ignore` parallel traversal → atomic single-file DB + shards;
+  multi-DB registry; `df-watch` watcher
+- **`df-ipc`** — Unix socket protocol (length-framed, streamed) + filters + bfs parser
+- **`deepfindd`** — resident daemon (pread filename + mmap content, ArcSwap hot-swap)
+- **`deepfind`** — thin CLI (daemon client + `--direct` fallback + exec/highlight)
+
+## Build gates (all green before commit)
 
 ```sh
-cargo build --release
-cargo test --all
+cargo build --workspace --release
+cargo test --workspace
+cargo clippy --workspace --all-targets -D warnings
+cargo fmt --check
 ```
+
+## Run
+
+```sh
+deepfind index --root <path>      # build the index (filename + content)
+deepfind daemon                   # start the resident daemon (background)
+deepfind search <query>           # query via daemon (auto --direct if daemon down)
+```
+
+`deepfind search --help` lists every flag; `docs/architecture.md` §9 has the full
+CLI surface.
 
 ## License
 
