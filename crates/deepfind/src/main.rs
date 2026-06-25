@@ -625,9 +625,9 @@ async fn cmd_status() {
 fn cmd_doctor() {
     let state = df_index::fda_state();
     match state {
-        df_index::FdaState::Granted => println!("✅ Full Disk Access: granted"),
+        df_index::FdaState::Granted => println!("✅ Full Disk Access: {}", fda_status_word(state)),
         df_index::FdaState::Denied => {
-            println!("❌ Full Disk Access: missing");
+            println!("❌ Full Disk Access: {}", fda_status_word(state));
             println!();
             println!(
                 "Without it, protected dirs (~/Library/Mail, Messages, Safari, …) are skipped."
@@ -649,7 +649,7 @@ fn cmd_doctor() {
             println!("    launchctl kickstart -k gui/$(id -u)/{}", launchd::LABEL);
         }
         df_index::FdaState::Unknown => {
-            println!("❓ Full Disk Access: unknown (no protected dir could be probed).");
+            println!("❓ Full Disk Access: {}", fda_status_word(state));
             println!("If searches miss files under ~/Library, grant Full Disk Access.");
         }
     }
