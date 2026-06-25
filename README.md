@@ -75,4 +75,4 @@ Update later with `brew upgrade deepfind` — launchd auto-restarts the new bina
 
 ## License
 
-MIT.
+Licensed under the [MIT License](LICENSE).

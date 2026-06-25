@@ -6,7 +6,7 @@ DeepFinder is a community-supported open source project. Here is where to get he
 
 ### Documentation
 
-Start with the [project README](README.md) and the architecture spec in [`docs/superpowers/specs/`](docs/superpowers/specs/).
+Start with the [project README](README.md) and the system architecture in [`docs/architecture.md`](docs/architecture.md).
 
 ### GitHub Discussions
 
@@ -16,7 +16,7 @@ For questions, usage help, configuration guidance, and general discussion, use *
 
 GitHub Issues are for **actionable, concrete items** only:
 
-- **Bug reports**: Something is broken or not working as documented. Include: DeepFinder version (`deepfinder --version`), macOS version, steps to reproduce, expected vs. actual behavior, and relevant logs.
+- **Bug reports**: Something is broken or not working as documented. Include: DeepFinder version (`deepfind --version`), macOS version, steps to reproduce, expected vs. actual behavior, and relevant logs.
 - **Feature requests**: A specific, well-scoped enhancement with clear motivation. Explain the problem you are trying to solve before proposing the solution.
 
 Issues that are usage questions or lack sufficient detail will be redirected to Discussions.
@@ -33,11 +33,11 @@ For commercial support, custom development, or priority response, contact nadav.
 
 - **Be patient.** Maintainers and community members are volunteers. Responses may not be immediate.
 - **Be thorough.** Include relevant details: version, OS, reproduction steps, what you have already tried.
-- **Be kind.** Respect the [Contributor Covenant Code of Conduct](https://www.contributor-covenant.org/version/2/1/code_of_conduct/).
+- **Be kind.** Respect the project's [Code of Conduct](CODE_OF_CONDUCT.md) (Contributor Covenant 2.1).
 
 ## Before You Ask
 
 1. Search existing Issues and Discussions.
 2. Read the relevant documentation.
-3. Try `deepfinder :help` in the REPL for built-in command reference.
+3. Run `deepfind --help` (or `deepfind help`) for the built-in command reference.
 4. If reporting a bug, reproduce it on the latest release first.

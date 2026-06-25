@@ -30,4 +30,5 @@ First public release of the Rust rewrite. Pre-1.0: usable, but the CLI/behavior 
 ### Changed
 - N/A (first Rust release).
 
+[0.1.1]: https://github.com/nadav-cheung/DeepFinder/releases/tag/v0.1.1
 [0.1.0]: https://github.com/nadav-cheung/DeepFinder/releases/tag/v0.1.0
