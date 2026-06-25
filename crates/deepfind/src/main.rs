@@ -82,6 +82,7 @@ enum Cmd {
     Uninstall,
     /// Search the index (falls back to --direct if the daemon is down).
     Search {
+        /// Search query (required; --expr, if given, acts as an additional post-filter).
         query: String,
         #[arg(long)]
         limit: Option<u32>,
@@ -150,8 +151,11 @@ enum Cmd {
         /// Sort order: default | path | kind | none.
         #[arg(long, value_name = "MODE")]
         sort: Option<String>,
-        /// bfs/find-style expression, e.g. `-name '*.rs' -size +100c`.
-        #[arg(long = "expr", value_name = "EXPR")]
+        /// bfs/find-style expression, e.g. `--expr='-name *.rs -size +1k'`.
+        /// Supports: -name PAT, -path PAT, -size [+|-]N[unit], -newer FILE,
+        /// ! / -not / -a / -o / parens. Use `=` (--expr='...') to keep the
+        /// expression as a single argument across shell word-splitting.
+        #[arg(long = "expr", value_name = "EXPR", verbatim_doc_comment)]
         expr: Option<String>,
         /// Restrict the query to one registered named DB.
         #[arg(long, value_name = "NAME")]
@@ -591,14 +595,26 @@ async fn cmd_search(
     exec: Option<String>,
     out: Output,
 ) {
-    // Try the daemon unless --direct; fall back to --direct on failure.
+    // Try the daemon unless --direct. If the daemon is down (connection
+    // refused / socket missing) fall back to --direct. Application errors
+    // (bad regex, unknown --db name, etc.) are fatal — falling back to
+    // --direct would silently ignore the --db flag and other daemon-only opts.
     let results = if !opts.direct {
         warn_if_stale(&default_db());
         match daemon_search(query, limit, scope.clone(), opts.clone(), db.clone()).await {
             Ok(r) => Some(r),
             Err(e) => {
-                eprintln!("(daemon unavailable: {e}; falling back to --direct)");
-                None
+                let msg = e.to_string();
+                if msg.contains("Connection refused")
+                    || msg.contains("No such file")
+                    || msg.contains("connect")
+                {
+                    eprintln!("(daemon unavailable: {e}; falling back to --direct)");
+                    None
+                } else {
+                    eprintln!("error: {e}");
+                    std::process::exit(1);
+                }
             }
         }
     } else {

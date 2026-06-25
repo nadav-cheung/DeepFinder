@@ -967,3 +967,98 @@ async fn serve_starts_with_no_index() {
     assert!(got.is_empty());
     server.abort();
 }
+
+/// `--db nonexistent` returns an Error frame (not silently empty).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn error_on_nonexistent_db() {
+    let tmp = tempfile::tempdir().unwrap();
+    std::fs::write(tmp.path().join("a.txt"), b"needle").unwrap();
+    let db_path = tmp.path().join("index.dfdb");
+    build_index(tmp.path(), &db_path).unwrap();
+    let socket = tmp.path().join("daemon.sock");
+    let sock = socket.clone();
+    let db = db_path.clone();
+    let server = tokio::spawn(async move { deepfindd::serve(&sock, &db).await });
+
+    let req = SearchRequest {
+        query: "needle".into(),
+        scope: None,
+        limit: None,
+        opts: SearchOptions::default(),
+        db: Some("nonexistent".into()),
+    };
+    let stream = connect_wait(&socket).await;
+    let mut f = framed(stream);
+    f.send(encode_request(&req).unwrap()).await.unwrap();
+    let mut err = None;
+    while let Some(frame) = f.next().await {
+        match decode_frame(&frame.unwrap()) {
+            Ok(ResponseFrame::Error { message }) => {
+                err = Some(message);
+                break;
+            }
+            Ok(ResponseFrame::Batch { .. }) | Ok(ResponseFrame::Lines { .. }) => {}
+            Ok(ResponseFrame::Done { .. }) => break,
+            Err(e) => panic!("decode: {e}"),
+        }
+    }
+    let msg = err.expect("should receive an Error frame for nonexistent DB");
+    assert!(
+        msg.contains("nonexistent"),
+        "error should mention the DB name: {msg}"
+    );
+
+    server.abort();
+}
+
+/// `--limit 3` returns exactly 3 results.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn limit_caps_results() {
+    let tmp = tempfile::tempdir().unwrap();
+    for i in 0..10 {
+        std::fs::write(tmp.path().join(format!("match_{i}.txt")), b"needle").unwrap();
+    }
+    let db_path = tmp.path().join("index.dfdb");
+    let content_dir = tmp.path().join("content");
+    build_content_index(
+        tmp.path(),
+        &db_path,
+        &content_dir,
+        &ContentBuildOptions::default(),
+    )
+    .unwrap();
+    let socket = tmp.path().join("daemon.sock");
+    let sock = socket.clone();
+    let db = db_path.clone();
+    let server = tokio::spawn(async move { deepfindd::serve(&sock, &db).await });
+
+    // Unlimited: all 10.
+    let (_b, got) = query_and_collect(
+        &socket,
+        SearchRequest {
+            query: "needle".into(),
+            scope: None,
+            limit: None,
+            opts: SearchOptions::default(),
+            db: None,
+        },
+    )
+    .await;
+    assert_eq!(got.len(), 10, "unlimited should return all: {got:?}");
+
+    // Limit: exactly 3.
+    let (_b, got) = query_and_collect(
+        &socket,
+        SearchRequest {
+            query: "needle".into(),
+            scope: None,
+            limit: Some(3),
+            opts: SearchOptions::default(),
+            db: None,
+        },
+    )
+    .await;
+    assert_eq!(got.len(), 3, "limit 3 should return 3: {got:?}");
+
+    server.abort();
+}

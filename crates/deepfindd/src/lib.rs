@@ -478,6 +478,14 @@ pub async fn serve(socket_path: &Path, db_path: &Path) -> std::io::Result<()> {
         );
     }
 
+    // Registry watcher: reloads the DbSet when dbs.toml changes (e.g. `db add`),
+    // so newly registered DBs are served without a daemon restart.
+    registry_watcher::spawn(
+        dbset.clone(),
+        db_path.to_path_buf(),
+        registry_dir.to_path_buf(),
+    );
+
     if let Some(dir) = socket_path.parent() {
         tokio::fs::create_dir_all(dir).await?;
     }
@@ -533,7 +541,7 @@ async fn handle_conn(
     // Snapshot the current DbSet once per connection. The rest of the function
     // operates on this `Arc<DbSet>` exactly as before — a hot-swap that lands
     // mid-connection does not affect this snapshot.
-    let dbset: Arc<DbSet> = dbset.load_full();
+    let snapshot: Arc<DbSet> = dbset.load_full();
     let mut f = framed(stream);
 
     // Read exactly one request frame.
@@ -604,11 +612,31 @@ async fn handle_conn(
     let want_ct = opts.layers.content;
 
     // Select the DB entry/entries to query (`--db <name>` or all).
-    let selected: Vec<String> = dbset
+    let selected: Vec<String> = snapshot
         .select(req.db.as_deref())
         .into_iter()
         .map(|e| e.name.clone())
         .collect();
+
+    // If --db was specified but no registered DB matched, return an error
+    // instead of silently producing empty results.
+    if let Some(ref name) = req.db {
+        if selected.is_empty() {
+            let available: Vec<&str> = snapshot.entries.iter().map(|e| e.name.as_str()).collect();
+            let msg = if available.is_empty() {
+                "no registered DBs found; run 'deepfind db add <name> <root>' first".to_string()
+            } else {
+                format!(
+                    "no registered DB named '{}'; available: {}",
+                    name,
+                    available.join(", ")
+                )
+            };
+            f.send(encode_frame(&ResponseFrame::Error { message: msg })?)
+                .await?;
+            return Ok(());
+        }
+    }
 
     // Line-number / context mode (`-n` / `-C`): render content matches as
     // grep-style line hits and stream them as `Lines` frames, then return.
@@ -618,7 +646,7 @@ async fn handle_conn(
         let scope_l = scope.clone();
         let re_l = re_content.clone();
         let ctx = opts.context;
-        let dbset_l = dbset.clone();
+        let dbset_l = snapshot.clone();
         let selected_l = selected.clone();
         let hits = tokio::task::spawn_blocking(move || {
             let mut all = Vec::new();
@@ -669,7 +697,7 @@ async fn handle_conn(
     let scope_q = scope.clone();
     let re_content_q = re_content.clone();
     let path_mode_q = opts.path_mode;
-    let dbset_q = dbset.clone();
+    let dbset_q = snapshot.clone();
     let selected_q = selected.clone();
     let merged = tokio::task::spawn_blocking(move || {
         let ctx = QueryCtx {
@@ -948,6 +976,102 @@ pub(crate) mod watch {
         fn empty_is_not_self_write() {
             assert!(!is_self_write(&[], Path::new("/root/.deep-finder")));
         }
+    }
+}
+
+pub(crate) mod registry_watcher {
+    //! Watches `dbs.toml` for changes. When the registry is modified (e.g. via
+    //! `db add`), the watcher reloads the full DbSet from disk and atomically
+    //! swaps it — no daemon restart needed. Newly registered DBs whose index is
+    //! missing get a background build via `index_job::spawn_if_missing`.
+
+    use std::path::PathBuf;
+    use std::sync::mpsc;
+    use std::sync::Arc;
+    use std::time::Duration;
+
+    use arc_swap::ArcSwap;
+    use notify::{EventKind, RecursiveMode, Watcher};
+
+    use crate::{index_job, DbSet};
+
+    const DEBOUNCE: Duration = Duration::from_millis(300);
+
+    /// Spawn a background watcher on `<data_dir>/dbs.toml`. When the file changes
+    /// (debounced), re-opens the full DbSet and atomically swaps it, then triggers
+    /// background builds for any newly registered DBs that lack an index.
+    pub fn spawn(dbset: Arc<ArcSwap<DbSet>>, default_db_path: PathBuf, data_dir: PathBuf) {
+        std::thread::spawn(move || run(dbset, default_db_path, data_dir));
+    }
+
+    fn run(dbset: Arc<ArcSwap<DbSet>>, default_db_path: PathBuf, data_dir: PathBuf) {
+        let dbs_toml = data_dir.join("dbs.toml");
+
+        let (tx, rx) = mpsc::channel::<()>();
+        let mut watcher =
+            match notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
+                if let Ok(ev) = res {
+                    if !matches!(ev.kind, EventKind::Access(_)) {
+                        let _ = tx.send(());
+                    }
+                }
+            }) {
+                Ok(w) => w,
+                Err(e) => {
+                    tracing::warn!(error = %e, "registry-watch: watcher init failed");
+                    return;
+                }
+            };
+
+        // Watch the containing directory (not the file directly) because editors
+        // and `atomic_write` often replace the file via rename, which FSEvents
+        // reports as a directory-level event.
+        if let Err(e) = watcher.watch(&data_dir, RecursiveMode::NonRecursive) {
+            tracing::warn!(error = %e, "registry-watch: watch failed");
+            return;
+        }
+        tracing::info!(dir = ?data_dir, "registry-watch: watching dbs.toml");
+
+        let mut last_mtime = None;
+        while rx.recv().is_ok() {
+            // Debounce: drain the burst, then wait.
+            while rx.try_recv().is_ok() {}
+            std::thread::sleep(DEBOUNCE);
+            while rx.try_recv().is_ok() {}
+
+            // Only react if dbs.toml exists — directory watcher fires for every
+            // file in the data dir (socket, logs, etc.), not just dbs.toml.
+            if !dbs_toml.exists() {
+                continue;
+            }
+
+            // Skip if the mtime hasn't changed since last reload.
+            let Ok(meta) = std::fs::metadata(&dbs_toml) else {
+                continue;
+            };
+            let Ok(modified) = meta.modified() else {
+                continue;
+            };
+            if last_mtime == Some(modified) {
+                continue;
+            }
+            last_mtime = Some(modified);
+
+            tracing::info!("registry-watch: reloading DbSet");
+            let fresh = DbSet::open(&default_db_path);
+            // Spawn background builds for any registered DBs still missing an index.
+            for rec in &df_index::Registry::load(&data_dir).records {
+                index_job::spawn_if_missing(
+                    rec.root.clone(),
+                    rec.db_path.clone(),
+                    rec.content_dir.clone(),
+                    dbset.clone(),
+                    default_db_path.clone(),
+                );
+            }
+            dbset.store(Arc::new(fresh));
+        }
+        drop(watcher);
     }
 }
 
