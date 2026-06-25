@@ -23,7 +23,10 @@ pub mod mmap_source;
 pub mod permissions;
 pub mod registry;
 
-pub use content_build::{build_content_index, ContentBuildOptions, ContentReport};
+pub use content_build::{
+    build_content_index, build_content_index_with_progress, ContentBuildOptions, ContentReport,
+    IndexProgress, Snapshot,
+};
 pub use error::{IndexError, Result};
 pub use manifest::{Manifest, ShardEntry};
 pub use mmap_source::MmapSource;
