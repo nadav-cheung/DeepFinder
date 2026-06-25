@@ -4,6 +4,11 @@ All notable changes to DeepFinder (Rust edition) are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.1.2] - 2026-06-25
+
+### Added
+- Full Disk Access detection: `deepfind doctor` runs an FDA self-check (✅ / ❌ / ❓), prints the exact binary path + `launchctl kickstart` restart command, and — on a TTY — auto-opens System Settings → Full Disk Access. `deepfind status` now reports the FDA state; the daemon warns once at startup if FDA is missing (protected `~/Library` dirs would otherwise be skipped silently).
+
 ## [0.1.1] - 2026-06-25
 
 ### Fixed
@@ -30,5 +35,6 @@ First public release of the Rust rewrite. Pre-1.0: usable, but the CLI/behavior 
 ### Changed
 - N/A (first Rust release).
 
+[0.1.2]: https://github.com/nadav-cheung/DeepFinder/releases/tag/v0.1.2
 [0.1.1]: https://github.com/nadav-cheung/DeepFinder/releases/tag/v0.1.1
 [0.1.0]: https://github.com/nadav-cheung/DeepFinder/releases/tag/v0.1.0
