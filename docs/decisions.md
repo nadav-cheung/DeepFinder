@@ -27,6 +27,7 @@
 | 0013 | Retired all 19 Swift-era tags for a clean Rust v1.0.0 slate | 2026-06-25 | Superseded by 0014 |
 | 0014 | First public version is 0.1.0, not 1.0.0 | 2026-06-25 | Accepted |
 | 0015 | Full Disk Access: heuristic probe + guidance, no programmatic grant | 2026-06-25 | Accepted |
+| 0016 | Index build = daemon background task submitted over the socket; progress via status | 2026-06-26 | Accepted |
 
 ---
 
@@ -221,3 +222,19 @@ Revisit when benchmarking incremental latency on a large corpus.
 - **Three exit surfaces, distinct behavior:** `status` reports the verdict word only; `doctor` is the human self-check (TTY ⇒ auto-`open` the FDA pane + print `current_exe()` + the `launchctl kickstart -k` restart command; non-TTY ⇒ guidance only, so scripts/CI don't pop a GUI); daemon startup emits one `tracing::warn!` if `Denied` and never opens a GUI.
 
 **Consequences.** FDA state is now surfaced proactively at three places instead of only reactively at end-of-index. The probe is heuristic (community-standard, not a TCC API call) — authoritative for the `deepfind` binary, but macOS version drift could make a candidate readable without FDA, so candidates are tried in order and the list exhausts to `Unknown` rather than false-`Denied`. macOS-only pieces (`open`, candidate paths, `launchctl`) are `#[cfg(target_os = "macos")]`-gated; non-mac returns `Unknown`.
+
+---
+
+## ADR-0016 — Index build is a daemon background task submitted over the socket; progress via status
+
+**Date:** 2026-06-26 · **Status:** Accepted
+
+**Context.** Before P2.3, `deepfind index` built the index in-process in the foreground (a blocking walk + dual-layer write). The daemon already background-built *missing* registered DBs at startup (`index_job::spawn_if_missing`) and hot-swapped via `ArcSwap`; df-watch already did change-triggered `rebuild_and_swap` + hot-swap. But the user-facing `index` command did not use that path, so a manual rebuild blocked the terminal and gave no progress.
+
+**Decision.** `deepfind index` now sends an `IndexRequest` over the socket; the daemon's `index_job::spawn_build` runs the build off the hot path and hot-swaps the `DbSet`, exactly like the startup path. The CLI returns immediately with the `IndexAck` and the user polls `deepfind status` for progress. Progress numbers come from `IndexProgress` atomics (files / bytes / shards) bumped inside `build_content_index_with_progress` and snapshotted to the `.indexing` marker by a reporter thread; `status` reads them cross-crate via `index_job::read_progress`.
+
+- **Concurrency guard:** `spawn_build` uses `create_new` on the marker as an atomic guard — two concurrent builds of the same DB never interleave shard writes; a second submit returns `accepted = false` ("already indexing").
+- **Fallback:** `--foreground` (and `--no-content`, which the background path doesn't serve) build in-process; the CLI also falls back to in-process automatically when the daemon is unreachable — mirroring `deepfind search`'s `--direct`, so the user is never blocked.
+- **No new swap path:** on-demand builds reuse the existing `dbset.store` + rename-aside retirement, so in-flight queries (which pin an `Arc<DbSet>` snapshot per connection) are never interrupted — there is no second SIGBUS-safety story to get right.
+
+**Consequences.** The foreground blocking build is gone from the default path (still reachable via `--foreground` for scripts / tests / no-daemon). The wire gained a tagged `enum Request { Search, Index }`; since CLI and daemon are the same binary, version skew is not a concern. `IndexProgress` lives in `df-index` (the I/O layer), preserving the `df-core` zero-I/O hard constraint.

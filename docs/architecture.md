@@ -239,15 +239,18 @@ sequenceDiagram
 Unix domain socket (`~/.deep-finder/daemon.sock`), `LengthDelimitedCodec` (4-byte length prefix), messages `serde` + `bincode`.
 
 ```
-Request                          Response frames (daemon → CLI, streaming)
-─────────────                    ─────────────────────────────────────
-SearchRequest {                  ResponseFrame::Batch { paths, meta, kind }
-  query: String,                 ResponseFrame::Done   { total: u32 }
-  scope: Option<PathBuf>,        ResponseFrame::Error  { message: String }
-  limit: Option<u32>,
-  opts: SearchOptions            SearchOptions:
-}                                  direct, extensions, types, excludes,
-                                   globs, max_depth, regex, case(CaseControl)
+enum Request {                   Response frames (daemon → CLI, streaming)
+  Search(SearchRequest),         ─────────────────────────────────────
+  Index(IndexRequest),           ResponseFrame::Batch    { paths, meta, kind }
+}                                ResponseFrame::Lines    { hits }   (-n / -C)
+                                 ResponseFrame::Done     { total }
+SearchRequest {                  ResponseFrame::Error    { message }
+  query, scope, limit, opts, db  ResponseFrame::IndexAck { accepted, message }
+}                                SearchOptions:
+IndexRequest (P2.3) {              direct, extensions, types, excludes,
+  root, skip, max_file_size,       globs, max_depth, regex, case(CaseControl)
+  one_file_system, hidden, db
+}
 ```
 - Results return as a **batched stream** (512 paths per batch); large result sets arrive incrementally and the CLI prints as it receives.
 - `SearchOptions` fields are all `#[serde(default)]` → old/new ends interoperate.
@@ -333,7 +336,7 @@ flowchart LR
 
 | Scenario | Path |
 |---|---|
-| **Index (cold)** | `deepfind index` → df-index streaming build → both layers written atomically (no daemon needed) |
+| **Index (submit, P2.3)** | `deepfind index` → `IndexRequest` over socket → daemon background build (off hot path) → ArcSwap hot-swap; progress via `deepfind status`. `--foreground` / daemon-down ⇒ in-process build |
 | **Query (hot)** | CLI → socket → daemon `handle_conn` → filename ∥ content → merge-dedup → streamed back |
 | **Fallback** | daemon unavailable / socket error → CLI `--direct` (`ignore` walk + online substring) |
 
