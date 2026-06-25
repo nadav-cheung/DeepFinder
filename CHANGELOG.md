@@ -4,9 +4,9 @@ All notable changes to DeepFinder (Rust edition) are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [1.0.0] - 2026-06-25
+## [0.1.0] - 2026-06-25
 
-First public release of the Rust rewrite.
+First public release of the Rust rewrite. Pre-1.0: usable, but the CLI/behavior may still change.
 
 ### Added
 - Hybrid search engine: plocate-style filename index (pread) + zoekt-style content shards (mmap) behind one trigram candidate engine.
@@ -23,4 +23,4 @@ First public release of the Rust rewrite.
 ### Changed
 - N/A (first Rust release).
 
-[1.0.0]: https://github.com/nadav-cheung/DeepFinder/releases/tag/v1.0.0
+[0.1.0]: https://github.com/nadav-cheung/DeepFinder/releases/tag/v0.1.0

@@ -112,3 +112,9 @@
 **Default:** Deleted all 19 pre-rewrite tags — `v0.0.1-beta`, `v0.1.0`–`v0.7.0`, `v1.0.0`–`v1.5.0`, `v2.0.0`–`v2.2.0`, `v3.0.0`, `v3.2.0` — both locally and on the remote. The Rust rewrite (2026-06-22, clean-slate) is treated as a new product versioned from `v1.0.0`; these tags all pointed at the deleted Swift codebase (dated 2026-05-29 → 06-04; `v3.2.0` contained `Package.swift` + `Sources/`) and would have collided with / confused the Rust release lineage.
 
 **Reason:** User decision (OSS release design): Rust = new product, start at 1.0.0, retire old tags. Confirmed the full set of 19 (an earlier check via `git tag | head` had shown only 10 — the complete `git tag -l | sort -V` revealed 19, all Swift-era; user re-confirmed deleting all 19). No Rust docs/CI referenced them.
+
+## 2026-06-25 — First public version is 0.1.0, not 1.0.0
+
+**Default:** The first public Rust release is versioned **0.1.0** (tag `v0.1.0`), revising the earlier 1.0.0 plan. `Cargo.toml` workspace `version`, `CHANGELOG.md` (`## [0.1.0]`), the release tag, and `dist plan` all reflect 0.1.0. (The dated design spec/plan still say 1.0.0 — left as historical snapshots.)
+
+**Reason:** For a brand-new open-source project's first release, 0.1.0 is the conventional choice (ripgrep/fd/bat all started at 0.x): it signals "usable, but pre-1.0 — CLI/behavior may still change," avoiding the SemVer stability commitments that 1.0.0 implies for a solo project still iterating. 0.0.1 was rejected as too conservative (rarely used for a real distributable release). User picked 0.1.0 over the originally-planned 1.0.0 at release time.
