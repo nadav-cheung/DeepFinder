@@ -1,67 +1,67 @@
 # DeepFinder — System Architecture
 
-> **状态**:2026-06-24 更新,反映 `main` 上**实际建成**的代码(非设计愿景)。本轮「完整实现」(Phase A–F)已全部交付,136 测试绿。
-> **一句话**:**plocate 式文件名索引 + zoekt 式内容 shard,套同一个 trigram 候选引擎,由常驻 daemon 经 Unix socket 服务薄 CLI。**
-> 图示为 Mermaid(GitHub / VS Code / GitLab 原生渲染);字节级磁盘布局用 ASCII。
+> **Status:** Updated 2026-06-24 to reflect the code **actually built** on `main` (not a design vision). The "complete implementation" round (Phases A–F) is fully delivered; 136 tests green.
+> **In one sentence:** a plocate-style filename index + zoekt-style content shards, behind a single shared trigram candidate engine, served by a resident daemon over a Unix socket to a thin CLI.
+> Diagrams are Mermaid (rendered natively by GitHub / VS Code / GitLab); byte-level on-disk layouts use ASCII.
 
 ---
 
-## 1. 概述
+## 1. Overview
 
-DeepFinder 是 macOS 上的本地文件搜索工具,目标是**全盘文件名 + 内容**的快速子串搜索。架构是"混合"的——从多个开源项目各取一技,拼成一个统一引擎:
+DeepFinder is a local file-search tool for macOS, targeting fast substring search over **whole-disk filenames + content**. The architecture is a "hybrid" — it borrows one technique from each of several open-source projects and assembles them into a single engine:
 
-| 来源 | 借鉴的技术 | 落地点 |
+| Source | Technique borrowed | Where it lands |
 |---|---|---|
-| **plocate** | 文件级 trigram + pread 低 RSS | 文件名层整个范式 |
-| **zoekt** | tagged-TOC shard 格式、boolean、合并去重 | `.dfcs` 内容 shard、AST、结果合并 |
-| **trigrep** | trigram 加速的子串校验 | 共享 `candidates()` 候选 + verify |
-| **lolcate-rs** | mmap + 流式 bounded 构建 | `MmapSource`、crossbeam 背压通道 |
-| **fd / bfs** | find UX + 鲁棒全盘遍历 | CLI flag 集、`same_file_system`、权限错误分类 |
-| **reflex** | mmap 快速复查询 | daemon 常驻 mmap(增量留作未来) |
+| **plocate** | file-level trigram + pread low RSS | the entire filename-layer paradigm |
+| **zoekt** | tagged-TOC shard format, boolean, merge-dedup | `.dfcs` content shard, AST, result merging |
+| **trigrep** | trigram-accelerated substring verification | shared `candidates()` candidate-gen + verify |
+| **lolcate-rs** | mmap + streaming bounded build | `MmapSource`, crossbeam backpressure channel |
+| **fd / bfs** | find UX + robust full-disk traversal | CLI flag set, `same_file_system`, permission-error classification |
+| **reflex** | mmap fast repeated queries | daemon-resident mmap (incremental left for later) |
 
-**核心设计原则**
+**Core design principles**
 
-- **双层存储,一个引擎**:文件名层(pread,低延迟)与内容层(mmap,GB 级)独立存储,但经 `CandidateSource` trait 共享同一套"最稀有 trigram 候选 + 子串校验"算法。
-- **df-core 零 I/O**:所有引擎/codec 逻辑对一个 caller 实现的小 trait(`DbSource`)操作,可脱离真实 DB 单测 + bench。
-- **常驻 daemon + 薄 CLI**:daemon 持索引句柄,CLI 经 socket 查询;daemon 挂掉时 CLI 自动落 `--direct` 在线直扫,用户永不阻塞。
+- **Two storage layers, one engine:** the filename layer (pread, low latency) and the content layer (mmap, GB-scale) are stored independently, but share a single "rarest-trigram candidate + substring verify" algorithm through the `CandidateSource` trait.
+- **df-core is zero-I/O:** all engine/codec logic operates on a small trait (`DbSource`) implemented by one caller, so it can be unit-tested and benchmarked without a real DB.
+- **Resident daemon + thin CLI:** the daemon holds the index handles; the CLI queries over a socket. If the daemon is down, the CLI automatically falls back to `--direct` online scanning, so the user is never blocked.
 
 ---
 
-## 2. 高层架构
+## 2. High-level architecture
 
 ```mermaid
 flowchart LR
-    subgraph User["用户"]
-        C["deepfind<br/>(薄 CLI)"]
+    subgraph User["User"]
+        C["deepfind<br/>(thin CLI)"]
     end
-    subgraph Daemon["常驻进程"]
-        D["deepfindd<br/>socket server<br/>+ 合并/流式"]
-        ENG["df-core 引擎<br/>trigram 候选 + verify<br/>TurboPFor · Robin Hood · boolean"]
+    subgraph Daemon["Resident process"]
+        D["deepfindd<br/>socket server<br/>+ merge / streaming"]
+        ENG["df-core engine<br/>trigram candidate + verify<br/>TurboPFor · Robin Hood · boolean"]
     end
-    subgraph Store["~/.deep-finder/ (磁盘)"]
-        FN[("index.dfdb<br/>文件名层 · pread")]
-        SH[("shard-*.dfcs<br/>内容层 · mmap")]
+    subgraph Store["~/.deep-finder/ (disk)"]
+        FN[("index.dfdb<br/>filename layer · pread")]
+        SH[("shard-*.dfcs<br/>content layer · mmap")]
     end
     C -->|"SearchRequest<br/>(Unix socket · bincode)"| D
     D --> ENG
     ENG -->|"pread"| FN
     ENG -->|"mmap"| SH
     D -->|"Batch* · Done"| C
-    C -.->|"daemon 挂? → --direct<br/>在线 ignore 遍历"| FS["filesystem"]
+    C -.->|"daemon down? → --direct<br/>online ignore walk"| FS["filesystem"]
 ```
 
 ---
 
-## 3. Crate 分层(6 crate,单向无环)
+## 3. Crate layering (6 crates, single-directional, acyclic)
 
 ```mermaid
 flowchart BT
-    core["<b>df-core</b><br/>纯库:DB 格式 + TurboPFor<br/>+ Robin Hood + 查询引擎<br/>+ CandidateSource trait"]
-    content["<b>df-content</b><br/>ShardBuilder/Reader<br/>+ ASCII fold + 内容校验"]
-    index["<b>df-index</b><br/>ignore 遍历 + FileSource(pread)<br/>+ MmapSource(mmap) + 原子写 + MANIFEST"]
-    ipc["<b>df-ipc</b><br/>proto + wire(bincode+长度帧)<br/>+ filter + paths"]
-    daemon["<b>deepfindd</b><br/>常驻 daemon"]
-    cli["<b>deepfind</b><br/>薄 CLI + --direct 兜底"]
+    core["<b>df-core</b><br/>pure lib: DB format + TurboPFor<br/>+ Robin Hood + query engine<br/>+ CandidateSource trait"]
+    content["<b>df-content</b><br/>ShardBuilder/Reader<br/>+ ASCII fold + content verify"]
+    index["<b>df-index</b><br/>ignore walk + FileSource(pread)<br/>+ MmapSource(mmap) + atomic write + MANIFEST"]
+    ipc["<b>df-ipc</b><br/>proto + wire(bincode+length frame)<br/>+ filter + paths"]
+    daemon["<b>deepfindd</b><br/>resident daemon"]
+    cli["<b>deepfind</b><br/>thin CLI + --direct fallback"]
 
     content --> core
     index --> core
@@ -76,30 +76,30 @@ flowchart BT
     cli --> ipc
 ```
 
-| crate | 职责 | 关键约束 |
+| crate | responsibility | key constraint |
 |---|---|---|
-| **df-core** | DB 格式、TurboPFor codec、Robin Hood 哈希、查询引擎、`CandidateSource` trait | **纯库,零 I/O**(对 `DbSource` trait 操作) |
-| **df-content** | `ShardBuilder` / `ShardReader`、ASCII fold、内容子串校验 | 依赖 df-core |
-| **df-index** | `ignore` 并行遍历、文本门控、`FileSource`(pread)、`MmapSource`(mmap)、原子写、MANIFEST | 依赖 df-core + df-content |
-| **df-ipc** | `SearchRequest`/`ResponseFrame` proto、bincode+长度帧、路径过滤、默认路径 | 依赖 df-core |
-| **deepfindd** | 常驻 daemon:载 DB+shard、socket server、合并去重、流式输出 | 依赖全部 |
-| **deepfind** | 薄 CLI:IPC 客户端 + `--direct` 在线兜底 + 高亮/exec | 依赖 df-core/df-index/df-ipc |
+| **df-core** | DB format, TurboPFor codec, Robin Hood hash, query engine, `CandidateSource` trait | **pure lib, zero I/O** (operates on the `DbSource` trait) |
+| **df-content** | `ShardBuilder` / `ShardReader`, ASCII fold, content substring verify | depends on df-core |
+| **df-index** | `ignore` parallel walk, text gating, `FileSource` (pread), `MmapSource` (mmap), atomic write, MANIFEST | depends on df-core + df-content |
+| **df-ipc** | `SearchRequest` / `ResponseFrame` proto, bincode + length frame, path filter, default paths | depends on df-core |
+| **deepfindd** | resident daemon: load DB + shards, socket server, merge-dedup, streaming output | depends on all |
+| **deepfind** | thin CLI: IPC client + `--direct` online fallback + highlight/exec | depends on df-core/df-index/df-ipc |
 
 ---
 
-## 4. 双层存储模型
+## 4. Dual-layer storage model
 
-`~/.deep-finder/` 下两个**完全独立**的文件族,一次遍历同时喂养两个 builder:
+Two **fully independent** file families live under `~/.deep-finder/`, fed simultaneously by a single walk:
 
 ```mermaid
 flowchart LR
     subgraph home["~/.deep-finder/"]
         SOCK["daemon.sock<br/>(Unix domain socket)"]
         subgraph dbdir["db/"]
-            FN["index.dfdb<br/>① 文件名层 · 单文件 · pread"]
+            FN["index.dfdb<br/>① filename layer · single file · pread"]
             subgraph cdir["content/"]
-                MAN["MANIFEST<br/>shard 列表 + base_docid + build_time"]
-                S1["shard-00000.dfcs<br/>② 内容层 · mmap"]
+                MAN["MANIFEST<br/>shard list + base_docid + build_time"]
+                S1["shard-00000.dfcs<br/>② content layer · mmap"]
                 S2["shard-00001.dfcs"]
                 SN["..."]
             end
@@ -108,138 +108,138 @@ flowchart LR
     end
 ```
 
-**为什么是两层而非一层**:文件名要低延迟、低 RSS → pread 单文件,daemon 不整库驻留;内容要 GB 级 → mmap 多 shard,每 shard ~128 MB contentCorpus 触发切分。两层用**同一套候选算法**统一,但存储/访问策略完全不同。
+**Why two layers instead of one:** filenames want low latency, low RSS → a single pread file, the daemon never holds the whole DB resident; content wants GB-scale → mmap'd multi-shard, splitting when a shard's `contentCorpus` reaches ~128 MB. The two layers are unified by **the same candidate algorithm**, but their storage / access strategies are entirely different.
 
-### 4.1 文件名 DB `index.dfdb` — plocate 式,全 pread
+### 4.1 Filename DB `index.dfdb` — plocate-style, fully pread
 
 ```
 ┌─ Header 64B ──────────────────────────────────────────────────┐
 │ magic "DFDB" | version=2 | num_docs | build_time              │
-│ + 6×u64 section offsets: docs / meta / dirmtime(预留) /       │
-│                          try(hash表) / post / slots_log2      │
+│ + 6×u64 section offsets: docs / meta / dirmtime(reserved) /   │
+│                          try(hash table) / post / slots_log2  │
 ├───────────────────────────────────────────────────────────────┤
-│ DOCS    zstd 训练字典 + 块索引 + zstd 压缩文件名块(每块 N 条) │
+│ DOCS    zstd trained dictionary + block index + zstd-compressed filename blocks (N per block) │
 │ META    num_docs × 17B  (is_dir:u8 | size:i64 | mtime:i64)    │
-│ HASH    Robin Hood 开放寻址表 · 20B/槽 (key|count|off|len)    │
-│ POST    TurboPFor (PFor delta · block=128) 编码的 docid       │
+│ HASH    Robin Hood open-addressing table · 20B/slot (key|count|off|len) │
+│ POST    TurboPFor (PFor delta · block=128) encoded docids     │
 └───────────────────────────────────────────────────────────────┘
 ```
-查询走 `pread`——常驻内存仅 = 字典 + 块索引 + 当前命中的 posting,其余按需读取。
+Queries go through `pread` — the resident footprint is just the dictionary + block index + currently-hit postings; everything else is read on demand.
 
-### 4.2 内容 shard `shard-NNNNN.dfcs` — zoekt 式 tagged-TOC,全 mmap
+### 4.2 Content shard `shard-NNNNN.dfcs` — zoekt-style tagged-TOC, fully mmap'd
 
 ```
-┌─ body(各 section 背靠背)──────────────────────────────────────┐
-│ metaData       version | build_time | base_docid | num_docs …  │
-│ fileNames      长度前缀路径                                    │
-│ fileMeta       每文档 17B(同 v1 LiteMeta)                    │
-│ contentOffsets 每文档 u64 偏移 + u32 长度 → 指向 corpus        │
-│ contentCorpus  原始文件字节,按 docid 拼接(~1× 磁盘预算)     │
-│ ctHash         Robin Hood 表(复用 v1 原语 · 20B/槽)          │
-│ ctPostings     TurboPFor delta 编码的 local docid             │
+┌─ body (sections back-to-back) ───────────────────────────────┐
+│ metaData       version | build_time | base_docid | num_docs … │
+│ fileNames      length-prefixed paths                          │
+│ fileMeta       17B per doc (same as v1 LiteMeta)              │
+│ contentOffsets per-doc u64 offset + u32 length → into corpus  │
+│ contentCorpus  raw file bytes, concatenated by docid (~1× disk budget) │
+│ ctHash         Robin Hood table (reuses v1 primitives · 20B/slot) │
+│ ctPostings     TurboPFor delta-encoded local docids           │
 ├─ TOC ─────────────────────────────────────────────────────────┤
-│ varint tag 长度 + tag + kind + (off, sz)   ← 未知 tag 跳过    │
+│ varint tag length + tag + kind + (off, sz)   ← unknown tag skipped │
 ├─ FOOTER 8B ───────────────────────────────────────────────────┤
-│ toc_off | toc_sz        ← 读文件先读末 8 字节定位            │
+│ toc_off | toc_sz        ← read last 8 bytes first to locate   │
 └───────────────────────────────────────────────────────────────┘
 ```
-`memmap2` MAP_SHARED PROT_READ 打开;`metaData.base_docid` 把 local docid 映射进全局命名空间。
+Opened with `memmap2` `MAP_SHARED PROT_READ`; `metaData.base_docid` maps a local docid into the global namespace.
 
-### 4.3 合并的 docid 模型
+### 4.3 The merged docid model
 
-单一全局 `u32` docid 命名空间横跨两层:文件名 docid `0..N_name`;内容 shard docid 是 local,经 `base_docid + local` 映射到全局。**去重 = 路径键集合 union**(两层从同一次遍历产生相同规范绝对路径),不是跨层字符串 join。
+A single global `u32` docid namespace spans both layers: filename docids are `0..N_name`; content shard docids are local, mapped into the global space via `base_docid + local`. **Dedup = path-keyed set union** (both layers are produced from the same walk, so they share the same canonical absolute paths), not a cross-layer string join.
 
 ---
 
-## 5. 索引管线(流式,bounded RSS)
+## 5. Indexing pipeline (streaming, bounded RSS)
 
-`deepfind index [--root] [--force] [--skip …] [--max-file-size 1MB] [--no-content] [--one-file-system]` → `build_content_index`,**单次遍历同时建两层**:
+`deepfind index [--root] [--force] [--skip …] [--max-file-size 1MB] [--no-content] [--one-file-system]` → `build_content_index`, which builds **both layers in a single walk**:
 
 ```mermaid
 flowchart TD
-    W["ignore::WalkParallel<br/>(多线程 · gitignore+hidden+skip-list<br/>· same_file_system)"] --> TX
+    W["ignore::WalkParallel<br/>(multi-threaded · gitignore+hidden+skip-list<br/>· same_file_system)"] --> TX
 
-    TX{"bounded crossbeam channel<br/>cap = 64  (背压防 OOM)"} --> G
+    TX{"bounded crossbeam channel<br/>cap = 64  (backpressure prevents OOM)"} --> G
 
-    G["文本门控 classify()<br/>· NUL 在前 8KB → Binary<br/>· distinct trigram > 20000 → Binary<br/>· > max_file_size → TooLarge"]
+    G["text gate classify()<br/>· NUL in first 8KB → Binary<br/>· distinct trigrams > 20000 → Binary<br/>· > max_file_size → TooLarge"]
 
-    G -->|"Text(bytes)"| BOTH["消费线程(单线程,持双 builder)"]
-    G -->|"Binary / TooLarge / Unreadable"| FNONLY["只入文件名层"]
+    G -->|"Text(bytes)"| BOTH["consumer thread (single thread, holds both builders)"]
+    G -->|"Binary / TooLarge / Unreadable"| FNONLY["filename layer only"]
 
-    BOTH --> FNB["DbBuilder(文件名)"]
-    BOTH --> STB["ShardBuilder(内容)"]
+    BOTH --> FNB["DbBuilder (filename)"]
+    BOTH --> STB["ShardBuilder (content)"]
     FNONLY --> FNB
 
-    STB -->|contentCorpus ≥ 128MB| FLUSH["shard finish<br/>→ atomic_write<br/>→ 切新 shard"]
+    STB -->|contentCorpus ≥ 128MB| FLUSH["shard finish<br/>→ atomic_write<br/>→ split new shard"]
     FLUSH --> STB
     FNB --> FNOUT["index.dfdb<br/>(atomic_write)"]
     FLUSH --> MANOUT["MANIFEST<br/>(atomic_write)"]
 ```
 
-- **文本门控**(zoekt DocChecker + trigrep 思路):二进制/超尺寸文件**只入文件名层**,不入内容层。
-- **原子写** = `tmp → fsync → rename`,绝不留半截库。
-- **增量已落地**(v2.1):`df-watch`(notify 抽象 FSEvents)监听变化 → `rebuild_and_swap` 全根重扫 + ArcSwap 热换;全量重建保留作 `--force` 兜底。每文件 posting 合并 + dir-mtime 增量(F2)+ MANIFEST 签名(F3)未做(正确性中性,见 [decisions.md](decisions.md))。
+- **Text gate** (zoekt DocChecker + trigrep idea): binary / oversized files enter **only the filename layer**, never the content layer.
+- **Atomic write** = `tmp → fsync → rename`; a half-written DB is never left behind.
+- **Incremental is landed** (v2.1): `df-watch` (a notify abstraction over FSEvents) watches for changes → `rebuild_and_swap` does a full-root rescan + an ArcSwap hot-swap; full rebuild is retained as the `--force` fallback. Per-file posting merge + dir-mtime incremental (F2) + MANIFEST signature (F3) are **not** done (correctness-neutral; see [decisions.md](decisions.md)).
 
 ---
 
-## 6. 查询热路径(daemon)
+## 6. Query hot path (daemon)
 
 ```mermaid
 sequenceDiagram
     autonumber
     participant CLI as deepfind (CLI)
     participant HC as handle_conn
-    participant FN as 文件名层<br/>DbReader (pread)
-    participant CT as 内容层<br/>ShardReader (mmap)
+    participant FN as filename layer<br/>DbReader (pread)
+    participant CT as content layer<br/>ShardReader (mmap)
 
     CLI->>HC: SearchRequest{query, scope, limit, opts}
-    HC->>HC: 解析 smart-case (opts.case.sensitive(query))<br/>+ regex 模式判定
+    HC->>HC: parse smart-case (opts.case.sensitive(query))<br/>+ regex-mode decision
     par spawn_blocking
         HC->>FN: query_docids(needle, case, limit)
-        Note over FN: 单 term → single_docids<br/>含 AND/OR/NOT → boolean_docids
+        Note over FN: single term → single_docids<br/>with AND/OR/NOT → boolean_docids
         FN-->>HC: filename DocIDs
     and
-        HC->>CT: 逐 shard candidates(folded, original, case)
-        Note over CT: 最稀有 trigram → posting → 子串校验
+        HC->>CT: per-shard candidates(folded, original, case)
+        Note over CT: rarest trigram → posting → substring verify
         CT-->>HC: content matches
     end
-    HC->>HC: 合并去重 by path (MatchKind: f/c/b)
-    HC->>HC: 后置过滤 passes() [-e/-t/-E/-g/-d]
-    HC-->>CLI: ResponseFrame::Batch × N (512/帧)
+    HC->>HC: merge-dedup by path (MatchKind: f/c/b)
+    HC->>HC: post-filter passes() [-e/-t/-E/-g/-d]
+    HC-->>CLI: ResponseFrame::Batch × N (512/frame)
     HC-->>CLI: ResponseFrame::Done{total}
 ```
 
-**regex 模式**(`-r/--regex`):query 作正则,**文件名与内容两层都跑**(镜像字面模式)。取最长字面 atom 驱动候选生成(case-insensitive 超集),`regex.is_match`(文件名 windows / 内容 mmap 字节)做权威校验;`(?i)` 由 smart-case 条件化。
+**Regex mode** (`-r/--regex`): the query is treated as a regex and run over **both the filename and content layers** (mirroring literal mode). The longest literal atom drives candidate generation (a case-insensitive superset); `regex.is_match` (over filename windows / mmap'd content bytes) is the authoritative verify; `(?i)` is conditioned by smart-case.
 
-**候选生成 `candidates()`(两层共享)**:
-1. 抽 query 的字节 trigram(folded,匹配 folded 索引)→ 永远是合法超集,不受 case 模式影响;
-2. 选 posting 最短的那条 trigram → 候选 docid 集;
-3. 逐候选 verify 子串(case-sensitive ⇒ 原始字节;否则 folded 字节);
-4. <3 字节 query 退化为线性扫全库。
+**Candidate generation `candidates()` (shared by both layers):**
+1. Extract the query's byte trigrams (folded, matched against the folded index) → always a legal superset, unaffected by case mode;
+2. Pick the trigram with the shortest posting → the candidate docid set;
+3. Verify each candidate by substring (case-sensitive ⇒ original bytes; otherwise folded bytes);
+4. <3-byte queries degrade to a linear scan of the whole DB.
 
 ---
 
-## 7. 引擎核心算法(df-core)
+## 7. Engine core algorithms (df-core)
 
-| 算法 | 实现 | 来源 |
+| Algorithm | Implementation | Source |
 |---|---|---|
-| **字节 trigram 键** | `(a<<16\|b<<8\|c)` 双射 u32,小写化字节滑动窗口 | plocate · CJK 原生 |
-| **最稀有 trigram 候选** | 取 posting 最短的 trigram → 候选集 | plocate / trigrep |
-| **子串校验** | `memchr::memmem`(content)/ `windows==`(filename) | trigrep |
-| **TurboPFor** | **自写**,标量 PFor delta,block=128,自描述帧 | TurboPFor 论文 |
-| **Robin Hood 哈希** | splitmix32 式,开放寻址,20B 槽 | v1 自建 |
-| **boolean AST** | `AND/OR/NOT` + 括号 + 隐式 AND | zoekt 风格 |
-| **ASCII fold** | A-Z→a-z(content);filename 用 `to_lowercase()` | — |
-| **CandidateSource trait** | `cs_posting / cs_verify / cs_num_docs` 统一两层 | 本项目抽象 |
+| **byte-trigram key** | `(a<<16\|b<<8\|c)` bijective u32, lowercased byte sliding window | plocate · native CJK |
+| **rarest-trigram candidate** | take the trigram with the shortest posting → candidate set | plocate / trigrep |
+| **substring verify** | `memchr::memmem` (content) / `windows==` (filename) | trigrep |
+| **TurboPFor** | **self-written**, scalar PFor delta, block=128, self-describing frame | TurboPFor paper |
+| **Robin Hood hash** | splitmix32-style, open addressing, 20B/slot | v1 in-house |
+| **boolean AST** | `AND/OR/NOT` + parens + implicit AND | zoekt-style |
+| **ASCII fold** | A-Z→a-z (content); filename uses `to_lowercase()` | — |
+| **CandidateSource trait** | `cs_posting / cs_verify / cs_num_docs` unifies both layers | this project's abstraction |
 
 ---
 
-## 8. IPC 协议(df-ipc)
+## 8. IPC protocol (df-ipc)
 
-Unix domain socket(`~/.deep-finder/daemon.sock`),`LengthDelimitedCodec`(4 字节长度前缀),消息 `serde` + `bincode`。
+Unix domain socket (`~/.deep-finder/daemon.sock`), `LengthDelimitedCodec` (4-byte length prefix), messages `serde` + `bincode`.
 
 ```
-Request                          Response frames (daemon → CLI,流式)
+Request                          Response frames (daemon → CLI, streaming)
 ─────────────                    ─────────────────────────────────────
 SearchRequest {                  ResponseFrame::Batch { paths, meta, kind }
   query: String,                 ResponseFrame::Done   { total: u32 }
@@ -249,13 +249,13 @@ SearchRequest {                  ResponseFrame::Batch { paths, meta, kind }
 }                                  direct, extensions, types, excludes,
                                    globs, max_depth, regex, case(CaseControl)
 ```
-- 结果以 **batched stream**(每批 512 路径)返回,大批结果增量到达,CLI 边收边打印。
-- `SearchOptions` 字段全 `#[serde(default)]` → 新旧端互通。
-- `MatchKind`: `Filename` / `Content` / `Both`(同路径命中两层)。
+- Results return as a **batched stream** (512 paths per batch); large result sets arrive incrementally and the CLI prints as it receives.
+- `SearchOptions` fields are all `#[serde(default)]` → old/new ends interoperate.
+- `MatchKind`: `Filename` / `Content` / `Both` (same path hit in both layers).
 
 ---
 
-## 9. CLI 能力面(当前)
+## 9. CLI surface (current)
 
 ```
 deepfind index   [--root] [--force] [--skip NAME…] [--max-file-size N]
@@ -265,57 +265,57 @@ deepfind status
 deepfind doctor                 # self-diagnostic: Full Disk Access check + guidance
 deepfind db      add <name> <root> [--max-file-size N]
                  remove <name>   |   list
-deepfind install [--no-watch]      # macOS:装用户 LaunchAgent(登录自启 + KeepAlive + 可选 df-watch)
-deepfind uninstall                # 停 daemon + 删 plist
+deepfind install [--no-watch]      # macOS: install user LaunchAgent (login auto-start + KeepAlive + optional df-watch)
+deepfind uninstall                # stop daemon + delete plist
 deepfind search <query>
-    # 匹配模式
-    [-r/--regex | 默认字面子串]   [-i | -s]   (默认 smart-case)
+    # match modes
+    [-r/--regex | default literal substring]   [-i | -s]   (default smart-case)
     [-p/--full-path | -b/--basename]
-    # 过滤
+    # filters
     [-e EXT] [-t TYPE(code|docs|config|web|archive|media)] [-E EXCLUDE]
     [-g GLOB] [-d N]   [--scope PATH] [--limit N] [--max-results N]
     [--sort default|path|kind|none]   [--expr EXPR]   [--db NAME]
-    # 内容
+    # content
     [-n/--line-number] [-C N]   [--content | --filename]
-    # 输出
+    # output
     [-l] [--color always|never|auto] [-0/--null] [--count]
-    # 兜底 / 动作
+    # fallback / actions
     [--direct]   [-x CMD]   [-H/--hidden]
 ```
 
-**`--expr`** 是 bfs/find 式高级表达式(`-name/-path/-size/-newer` + 布尔 + 括号),查询后对 `(path, LiteMeta)` 求值,**与 `-e/-t/-E/-g/-d` 并存**不替换。`-n/-C` 输出走独立 `ResponseFrame::Lines` 流(`path:line:text`,grep 对齐)。
+**`--expr`** is a bfs/find-style advanced expression (`-name/-path/-size/-newer` + boolean + parens), evaluated post-query against `(path, LiteMeta)`; it **coexists with** `-e/-t/-E/-g/-d`, it does not replace them. `-n/-C` output goes over a separate `ResponseFrame::Lines` stream (`path:line:text`, grep-aligned).
 
 ---
 
-## 10. 当前状态与已知缺口(诚实清单)
+## 10. Current status and known gaps (honest inventory)
 
-**已建成并验证**(Phase A–F 全交付):双层 trigram(pread 文件名 + mmap 内容)× 共享候选引擎 × daemon+CLI 进程模型 × smart-case × boolean AST × **文件名+内容正则** × `-n/-C` 行号上下文 × 层选择/路径模式/隐藏/排序/早退 × bfs `--expr` × **多 DB** × **ArcSwap 无锁热换 + df-watch 增量(rebuild_and_swap)**。136 测试绿,clippy/fmt 干净,daemon+CLI 端到端验证。决策细节见 [decisions.md](decisions.md),基线见 [perf-baseline.md](perf-baseline.md)。
+**Built and verified** (Phases A–F all delivered): dual-layer trigram (pread filename + mmap content) × shared candidate engine × daemon + CLI process model × smart-case × boolean AST × **filename + content regex** × `-n/-C` line-number context × layer-selection / path-mode / hidden / sort / early-exit × bfs `--expr` × **multi-DB** × **lockless ArcSwap hot-swap + df-watch incremental (rebuild_and_swap)**. 136 tests green, clippy/fmt clean, daemon + CLI verified end-to-end. Decision detail in [decisions.md](decisions.md); baselines in [perf-baseline.md](perf-baseline.md).
 
-**设计写了、代码还没建**(M7 性能硬化层 + 增量未做项——D2 经测量本轮**未留一项**):
+**Designed but not yet built** (the M7 performance-hardening layer + unbuilt incremental items — D2 left **none** in place after measurement this round):
 
-| 缺口 | 影响 / 现状 |
+| Gap | Impact / current state |
 |---|---|
-| 内容 trigram 仅 Robin Hood,**无 ASCII 直索引数组**(spec §6 零哈希快路径) | 所有内容 trigram 查询都要 hash;需大语料才显效 |
-| 候选生成只取**单条最稀有** trigram | **2-rarest 已实现+基准后回退**——字面子串的 trigram 连续共现,交集几乎不收窄(decisions.md D2.1) |
-| <3 字节 query **线性扫全库**(无 bigram 索引) | 2 字符查询慢;需改 DB 格式,基线不值得 |
-| **无 dirTable** → `--scope` 是查后路径过滤,非 shard 级剪枝 | scope 查询不能跳过整个 shard |
-| 内容查询**顺序循环**(无 per-shard 并行) | 大 shard 数时延迟线性增长 |
-| 无 `madvise` 提示 / RLIMIT_NOFILE 提升 / `.git`-sentinel 子树剪枝 | 大规模调优欠佳 |
-| 增量是**全根重扫** `rebuild_and_swap`,非每文件 posting 合并 | 每文件增量合并高风险未做;dir-mtime 增量(F2)、MANIFEST 签名(F3)延后——正确性中性 |
+| Content trigram is Robin Hood only, **no ASCII direct-index array** (spec §6 zero-hash fast path) | every content trigram query pays a hash; only pays off on a large corpus |
+| Candidate generation takes only the **single rarest** trigram | **2-rarest was implemented + benchmarked, then reverted** — for literal substrings the trigrams co-occur contiguously, so intersecting barely narrows the set (decisions.md D2.1) |
+| <3-byte query does a **linear scan of the whole DB** (no bigram index) | 2-character queries are slow; fixing needs a DB format change, not worth it at baseline scale |
+| **No dirTable** → `--scope` is a post-query path filter, not shard-level pruning | a scope query cannot skip an entire shard |
+| Content query is a **sequential loop** (no per-shard parallelism) | latency grows linearly with shard count |
+| No `madvise` hints / RLIMIT_NOFILE bump / `.git`-sentinel subtree pruning | large-scale tuning is weak |
+| Incremental is a **full-root rescan** `rebuild_and_swap`, not a per-file posting merge | per-file incremental merge is high-risk and not done; dir-mtime incremental (F2), MANIFEST signature (F3) deferred — correctness-neutral |
 
-**明确未来**(非缺口,是路线图):GUI / 交互式 TUI、位置 trigram / 短语搜索、pinyin/jieba、SIMD 解码。
+**Explicitly future** (not gaps, a roadmap): GUI / interactive TUI, positional trigram / phrase search, pinyin/jieba, SIMD decode.
 
 ---
 
-## 附录 A:数据流总览
+## Appendix A: Data-flow overview
 
-| 场景 | 路径 |
+| Scenario | Path |
 |---|---|
-| **索引(冷)** | `deepfind index` → df-index 流式构建 → 两层原子写盘(无需 daemon) |
-| **查询(热)** | CLI → socket → daemon `handle_conn` → 文件名 ∥ 内容 → 合并去重 → 流式回 |
-| **兜底** | daemon 不可用/socket 错 → CLI `--direct`(`ignore` 遍历 + 在线子串) |
+| **Index (cold)** | `deepfind index` → df-index streaming build → both layers written atomically (no daemon needed) |
+| **Query (hot)** | CLI → socket → daemon `handle_conn` → filename ∥ content → merge-dedup → streamed back |
+| **Fallback** | daemon unavailable / socket error → CLI `--direct` (`ignore` walk + online substring) |
 
-## 附录 B:构建与验证
+## Appendix B: Build and verify
 
 ```
 cargo build --workspace
@@ -324,17 +324,17 @@ cargo clippy --workspace --all-targets -D warnings
 cargo fmt --all -- --check
 ```
 
-## 附录 C:关键文件索引
+## Appendix C: Key file index
 
-| 关注点 | 位置 |
+| Concern | Location |
 |---|---|
-| 候选生成 + verify | `crates/df-core/src/candidate.rs` |
-| 文件名 DB 格式 / DbReader | `crates/df-core/src/db.rs` |
-| 查询分发 + boolean | `crates/df-core/src/query.rs`、`boolquery.rs` |
-| TurboPFor / Robin Hood | `crates/df-core/src/turbopfor.rs`、`db.rs` |
-| 内容 shard 格式 / 校验 | `crates/df-content/src/shard.rs`、`fold.rs` |
-| 流式构建 + 文本门控 | `crates/df-index/src/content_build.rs` |
-| pread/mmap source | `crates/df-index/src/lib.rs`、`mmap_source.rs` |
+| candidate-gen + verify | `crates/df-core/src/candidate.rs` |
+| filename DB format / DbReader | `crates/df-core/src/db.rs` |
+| query dispatch + boolean | `crates/df-core/src/query.rs`, `boolquery.rs` |
+| TurboPFor / Robin Hood | `crates/df-core/src/turbopfor.rs`, `db.rs` |
+| content shard format / verify | `crates/df-content/src/shard.rs`, `fold.rs` |
+| streaming build + text gate | `crates/df-index/src/content_build.rs` |
+| pread/mmap source | `crates/df-index/src/lib.rs`, `mmap_source.rs` |
 | IPC proto / wire / filter | `crates/df-ipc/src/{proto,wire,filter,paths}.rs` |
-| daemon 查询合并 / 流式 | `crates/deepfindd/src/lib.rs` |
+| daemon query merge / streaming | `crates/deepfindd/src/lib.rs` |
 | CLI | `crates/deepfind/src/main.rs` |
