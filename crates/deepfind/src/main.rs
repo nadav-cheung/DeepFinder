@@ -550,12 +550,29 @@ async fn cmd_daemon() {
     }
 }
 
+/// One-word FDA status for the `status` line.
+fn fda_status_word(state: df_index::FdaState) -> &'static str {
+    match state {
+        df_index::FdaState::Granted => "granted",
+        df_index::FdaState::Denied => "missing",
+        df_index::FdaState::Unknown => "unknown",
+    }
+}
+
+/// Whether `doctor` should auto-open the Full Disk Access settings pane — only
+/// when FDA is missing AND stdout is an interactive terminal (don't pop System
+/// Settings from scripts/CI).
+fn should_open_panel(state: df_index::FdaState, is_tty: bool) -> bool {
+    matches!(state, df_index::FdaState::Denied) && is_tty
+}
+
 async fn cmd_status() {
     let sock = default_socket();
     match UnixStream::connect(&sock).await {
         Ok(_) => println!("daemon: reachable ({})", sock.display()),
         Err(_) => println!("daemon: NOT reachable ({})", sock.display()),
     }
+    println!("full disk access: {}", fda_status_word(df_index::fda_state()));
     let db = default_db();
     match open_reader(&db) {
         Some(r) => {
@@ -968,5 +985,20 @@ mod tests {
             .unwrap();
         assert!(st.success(), "touch -t failed");
         assert_eq!(index_state(&db), "stale");
+    }
+
+    #[test]
+    fn fda_status_word_maps_states() {
+        assert_eq!(fda_status_word(df_index::FdaState::Granted), "granted");
+        assert_eq!(fda_status_word(df_index::FdaState::Denied), "missing");
+        assert_eq!(fda_status_word(df_index::FdaState::Unknown), "unknown");
+    }
+
+    #[test]
+    fn should_open_panel_only_when_denied_and_tty() {
+        assert!(should_open_panel(df_index::FdaState::Denied, true));
+        assert!(!should_open_panel(df_index::FdaState::Denied, false));
+        assert!(!should_open_panel(df_index::FdaState::Granted, true));
+        assert!(!should_open_panel(df_index::FdaState::Unknown, true));
     }
 }
