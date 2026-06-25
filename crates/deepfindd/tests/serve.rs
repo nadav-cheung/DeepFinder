@@ -63,6 +63,7 @@ async fn serve_query_roundtrip() {
             Ok(ResponseFrame::Lines { .. }) => {}
             Ok(ResponseFrame::Done { .. }) => break,
             Ok(ResponseFrame::Error { message }) => panic!("error frame: {message}"),
+            Ok(ResponseFrame::IndexAck { .. }) => panic!("unexpected IndexAck"),
             Err(e) => panic!("decode: {e}"),
         }
     }
@@ -107,6 +108,7 @@ async fn query_and_collect(socket: &Path, req: SearchRequest) -> (usize, Vec<Str
             Ok(ResponseFrame::Lines { .. }) => {}
             Ok(ResponseFrame::Done { .. }) => break,
             Ok(ResponseFrame::Error { message }) => panic!("error frame: {message}"),
+            Ok(ResponseFrame::IndexAck { .. }) => panic!("unexpected IndexAck"),
             Err(e) => panic!("decode: {e}"),
         }
     }
@@ -218,6 +220,7 @@ async fn combined_filename_and_content_results() {
             Ok(ResponseFrame::Lines { .. }) => {}
             Ok(ResponseFrame::Done { .. }) => break,
             Ok(ResponseFrame::Error { message }) => panic!("error frame: {message}"),
+            Ok(ResponseFrame::IndexAck { .. }) => panic!("unexpected IndexAck"),
             Err(e) => panic!("decode: {e}"),
         }
     }
@@ -365,6 +368,7 @@ async fn query_lines(socket: &Path, req: SearchRequest) -> Vec<LineHit> {
             Ok(ResponseFrame::Batch { .. }) => {}
             Ok(ResponseFrame::Done { .. }) => break,
             Ok(ResponseFrame::Error { message }) => panic!("error frame: {message}"),
+            Ok(ResponseFrame::IndexAck { .. }) => panic!("unexpected IndexAck"),
             Err(e) => panic!("decode: {e}"),
         }
     }
@@ -593,6 +597,7 @@ async fn default_sort_orders_by_kind_then_path() {
             Ok(ResponseFrame::Lines { .. }) => {}
             Ok(ResponseFrame::Done { .. }) => break,
             Ok(ResponseFrame::Error { message }) => panic!("error frame: {message}"),
+            Ok(ResponseFrame::IndexAck { .. }) => panic!("unexpected IndexAck"),
             Err(e) => panic!("decode: {e}"),
         }
     }
@@ -999,6 +1004,7 @@ async fn error_on_nonexistent_db() {
             }
             Ok(ResponseFrame::Batch { .. }) | Ok(ResponseFrame::Lines { .. }) => {}
             Ok(ResponseFrame::Done { .. }) => break,
+            Ok(ResponseFrame::IndexAck { .. }) => panic!("unexpected IndexAck"),
             Err(e) => panic!("decode: {e}"),
         }
     }
@@ -1061,4 +1067,68 @@ async fn limit_caps_results() {
     assert_eq!(got.len(), 3, "limit 3 should return 3: {got:?}");
 
     server.abort();
+}
+
+/// P2.3: `deepfind index` over the socket submits a background build; the daemon
+/// hot-swaps the index, after which queries see the freshly-indexed content.
+/// Mirrors `background_build_populates_missing_index` but the build is triggered
+/// by an `IndexRequest`, not startup. (No df-watch / FSEvents ⇒ not subject to
+/// the DF_WATCH_LOCK concurrency flake.)
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn submit_index_request_builds_in_background() {
+    let tmp = tempfile::tempdir().unwrap();
+    let data = tmp.path();
+    let root = data.join("root");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("a.txt"), b"needle here").unwrap();
+
+    let socket = data.join("daemon.sock");
+    let dbp = data.join("db/index.dfdb"); // does not exist yet
+    let sock = socket.clone();
+    let server = tokio::spawn(async move { deepfindd::serve(&sock, &dbp).await });
+
+    // Wait for the listener to bind, then submit an IndexRequest and read the ack.
+    {
+        let stream = connect_wait(&socket).await;
+        let mut f = framed(stream);
+        let req = df_ipc::proto::IndexRequest {
+            root: Some(root.clone()),
+            ..Default::default()
+        };
+        f.send(df_ipc::encode_index_request(&req).unwrap())
+            .await
+            .unwrap();
+        let frame = f.next().await.expect("ack frame");
+        match decode_frame(&frame.unwrap()) {
+            Ok(ResponseFrame::IndexAck { accepted, .. }) => {
+                assert!(accepted, "build not accepted")
+            }
+            Ok(other) => panic!("expected IndexAck, got {other:?}"),
+            Err(e) => panic!("decode: {e}"),
+        }
+    }
+
+    // Poll until the background build swaps the index in.
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    let mut converged = false;
+    while std::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let req = SearchRequest {
+            query: "needle".into(),
+            scope: None,
+            limit: None,
+            opts: SearchOptions::default(),
+            db: None,
+        };
+        let (_n, got) = query_and_collect(&socket, req).await;
+        if got.iter().any(|p| p.ends_with("a.txt")) {
+            converged = true;
+            break;
+        }
+    }
+    server.abort();
+    assert!(
+        converged,
+        "submitted index build did not populate the index"
+    );
 }

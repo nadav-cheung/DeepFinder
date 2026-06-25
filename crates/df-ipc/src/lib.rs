@@ -14,5 +14,7 @@ pub mod wire;
 
 pub use error::{IpcError, Result};
 pub use paths::{data_dir, default_db, default_socket, home};
-pub use proto::{MatchKind, ResponseFrame, SearchOptions, SearchRequest};
-pub use wire::{decode_frame, decode_request, encode_frame, encode_request, framed};
+pub use proto::{IndexRequest, MatchKind, Request, ResponseFrame, SearchOptions, SearchRequest};
+pub use wire::{
+    decode_frame, decode_request, encode_frame, encode_index_request, encode_request, framed,
+};

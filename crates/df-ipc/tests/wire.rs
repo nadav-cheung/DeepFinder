@@ -2,8 +2,12 @@
 //! Wire tests: bincode message round-trips + LengthDelimitedCodec framing.
 
 use bytes::{Bytes, BytesMut};
-use df_ipc::proto::{MatchKind, ResponseFrame, SearchOptions, SearchRequest};
-use df_ipc::wire::{decode_frame, decode_request, encode_frame, encode_request};
+use df_ipc::proto::{
+    IndexRequest, MatchKind, Request, ResponseFrame, SearchOptions, SearchRequest,
+};
+use df_ipc::wire::{
+    decode_frame, decode_request, encode_frame, encode_index_request, encode_request,
+};
 use tokio_util::codec::{Decoder, Encoder, LengthDelimitedCodec};
 
 fn sample_request() -> SearchRequest {
@@ -30,11 +34,36 @@ fn sample_request() -> SearchRequest {
 fn request_roundtrip() {
     let req = sample_request();
     let buf = encode_request(&req).unwrap();
-    let back = decode_request(&buf).unwrap();
+    let back = match decode_request(&buf).unwrap() {
+        Request::Search(s) => s,
+        Request::Index(_) => panic!("expected Search, got Index"),
+    };
     assert_eq!(back.query, req.query);
     assert_eq!(back.scope, req.scope);
     assert_eq!(back.limit, req.limit);
     assert!(!back.opts.direct);
+}
+
+#[test]
+fn index_request_roundtrip() {
+    let req = IndexRequest {
+        root: Some("/tmp/x".into()),
+        skip: vec!["node_modules".into()],
+        max_file_size: 0,
+        one_file_system: true,
+        hidden: false,
+        db: Some("home".into()),
+    };
+    let buf = encode_index_request(&req).unwrap();
+    match decode_request(&buf).unwrap() {
+        Request::Index(back) => {
+            assert_eq!(back.root, req.root);
+            assert_eq!(back.skip, req.skip);
+            assert_eq!(back.db, req.db);
+            assert!(back.one_file_system);
+        }
+        Request::Search(_) => panic!("expected Index, got Search"),
+    }
 }
 
 #[test]

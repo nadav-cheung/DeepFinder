@@ -19,7 +19,7 @@ use df_core::candidate::candidates;
 use df_core::db::DbReader;
 use df_core::{in_scope, query_docids, LiteMeta};
 use df_index::{FileSource, MmapSource};
-use df_ipc::proto::{LineHit, MatchKind, ResponseFrame, SearchRequest};
+use df_ipc::proto::{IndexRequest, LineHit, MatchKind, Request, ResponseFrame};
 use df_ipc::{decode_request, encode_frame, framed};
 use futures::{SinkExt, StreamExt};
 use tokio::net::{UnixListener, UnixStream};
@@ -512,8 +512,9 @@ pub async fn serve(socket_path: &Path, db_path: &Path) -> std::io::Result<()> {
                     }
                 };
                 let dbset = dbset.clone();
+                let default_db_path = db_path.to_path_buf();
                 join_set.spawn(async move {
-                    if let Err(e) = handle_conn(stream, dbset).await {
+                    if let Err(e) = handle_conn(stream, dbset, default_db_path).await {
                         tracing::warn!("connection error: {e}");
                     }
                 });
@@ -534,9 +535,63 @@ pub async fn serve(socket_path: &Path, db_path: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Resolve an [`IndexRequest`] to a `(root, db_path, content_dir)` and kick off
+/// a background build via [`index_job::spawn_build`]. Returns `(accepted,
+/// message)`: `accepted = false` means a build was already in flight, or the
+/// named DB is unknown. Pure resolve + spawn — all socket I/O stays in
+/// [`handle_conn`].
+fn handle_index_request(
+    req: IndexRequest,
+    dbset: &Arc<ArcSwap<DbSet>>,
+    default_db_path: &Path,
+) -> (bool, String) {
+    let reg = df_index::Registry::load(&df_ipc::data_dir());
+    let (root, db_path, content_dir): (PathBuf, PathBuf, PathBuf) = match req.db.as_deref() {
+        Some(name) => match reg.records.iter().find(|r| r.name == name) {
+            Some(r) => (r.root.clone(), r.db_path.clone(), r.content_dir.clone()),
+            None => return (false, format!("no registered DB named '{name}'")),
+        },
+        None => {
+            let root = req.root.unwrap_or_else(df_ipc::home);
+            let db_path = default_db_path.to_path_buf();
+            let content_dir = default_db_path
+                .parent()
+                .unwrap_or_else(|| Path::new("."))
+                .join("content");
+            (root, db_path, content_dir)
+        }
+    };
+    let max_file_size = if req.max_file_size == 0 {
+        df_index::ContentBuildOptions::default().max_file_size
+    } else {
+        req.max_file_size
+    };
+    let opts = df_index::ContentBuildOptions {
+        max_file_size,
+        extra_skip: req.skip,
+        one_file_system: req.one_file_system,
+        hidden: req.hidden,
+    };
+    let accepted = index_job::spawn_build(
+        root,
+        db_path,
+        content_dir,
+        opts,
+        dbset.clone(),
+        default_db_path.to_path_buf(),
+    );
+    let message = if accepted {
+        "indexing in background; run 'deepfind status' for progress".to_string()
+    } else {
+        "already indexing".to_string()
+    };
+    (accepted, message)
+}
+
 async fn handle_conn(
     stream: UnixStream,
     dbset: Arc<ArcSwap<DbSet>>,
+    default_db_path: PathBuf,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // Snapshot the current DbSet once per connection. The rest of the function
     // operates on this `Arc<DbSet>` exactly as before — a hot-swap that lands
@@ -549,7 +604,19 @@ async fn handle_conn(
         Some(Ok(b)) => b.freeze(),
         _ => return Ok(()),
     };
-    let req: SearchRequest = decode_request(&req_bytes)?;
+    let req: Request = decode_request(&req_bytes)?;
+    let req = match req {
+        Request::Search(s) => s,
+        Request::Index(ir) => {
+            let (accepted, message) = handle_index_request(ir, &dbset, &default_db_path);
+            f.send(encode_frame(&ResponseFrame::IndexAck {
+                accepted,
+                message,
+            })?)
+            .await?;
+            return Ok(());
+        }
+    };
 
     let query_str = req.query.clone();
     let scope: Option<PathBuf> = req.scope.clone();

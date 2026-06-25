@@ -35,6 +35,39 @@ pub struct SearchRequest {
     pub db: Option<String>,
 }
 
+/// `deepfind index` over the socket (P2.3): ask the daemon to rebuild an index
+/// in the background. The daemon's `index_job::spawn_build` runs it off the hot
+/// path and hot-swaps; the CLI returns immediately and polls `deepfind status`.
+/// `--no-content` / `--force` are resolved client-side (foreground in-process),
+/// so they are absent here: a submitted build is always a full content rebuild.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct IndexRequest {
+    /// Root to index. `None` ⇒ the default DB's root (typically `$HOME`).
+    #[serde(default)]
+    pub root: Option<PathBuf>,
+    #[serde(default)]
+    pub skip: Vec<String>,
+    /// Per-file content size cap; `0` ⇒ the daemon uses its default (1 MB).
+    #[serde(default)]
+    pub max_file_size: u64,
+    #[serde(default)]
+    pub one_file_system: bool,
+    #[serde(default)]
+    pub hidden: bool,
+    /// `--db <name>`: rebuild a registered named DB instead of the default.
+    #[serde(default)]
+    pub db: Option<String>,
+}
+
+/// A client→daemon request. `Search` is the historical request; `Index` was
+/// added by P2.3 for background index builds. Both ends ship as one binary, so
+/// the wire type can evolve without a compat shim.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum Request {
+    Search(SearchRequest),
+    Index(IndexRequest),
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct SearchOptions {
     /// Force online `--direct` scan (skip the daemon/index).
@@ -176,6 +209,12 @@ pub enum ResponseFrame {
         total: u32,
     },
     Error {
+        message: String,
+    },
+    /// Ack for an `IndexRequest`. `accepted = false` means a build was already
+    /// in flight (the daemon did not start a second); `message` is human-readable.
+    IndexAck {
+        accepted: bool,
         message: String,
     },
 }
