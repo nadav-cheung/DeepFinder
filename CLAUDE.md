@@ -6,7 +6,8 @@ macOS local file search (filename + content). Rust workspace; hybrid plocate-sty
 `cargo fmt --check` · `cargo clippy --workspace --all-targets -D warnings` · `cargo test --workspace`
 
 ## Workflow
-- Trunk-based solo repo — **commit directly to `main`** (don't branch). Conventional commits: `feat(cli):`, `docs:`, `test(filter):`, `fix(filter):`.
+- Trunk-based solo development — **commit directly to `main`** (don't branch). Conventional commits: `feat(cli):`, `docs:`, `test(filter):`, `fix(filter):`.
+- External contributors: fork → branch → PR to `main`. Review before merge.
 - TDD: write the failing test first, watch it fail, then implement.
 
 ## Hard constraints
