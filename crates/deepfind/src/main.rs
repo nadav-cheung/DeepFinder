@@ -67,6 +67,8 @@ enum Cmd {
     Daemon,
     /// Daemon health + DB stats.
     Status,
+    /// Self-diagnostic (Full Disk Access check + guidance).
+    Doctor,
     /// Manage named DBs (build/remove/list named roots).
     Db {
         #[command(subcommand)]
@@ -211,6 +213,7 @@ async fn main() {
         ),
         Cmd::Daemon => cmd_daemon().await,
         Cmd::Status => cmd_status().await,
+        Cmd::Doctor => cmd_doctor(),
         Cmd::Db { action } => cmd_db(action),
         Cmd::Install { no_watch } => cmd_install(!no_watch),
         Cmd::Uninstall => cmd_uninstall(),
@@ -600,6 +603,40 @@ async fn cmd_status() {
             index_state(&r.db_path),
             r.db_path.display()
         );
+    }
+}
+
+/// Self-diagnostic. Today: Full Disk Access probe + guidance.
+fn cmd_doctor() {
+    let state = df_index::fda_state();
+    match state {
+        df_index::FdaState::Granted => println!("✅ Full Disk Access: granted"),
+        df_index::FdaState::Denied => {
+            println!("❌ Full Disk Access: missing");
+            println!();
+            println!(
+                "Without it, protected dirs (~/Library/Mail, Messages, Safari, …) are skipped."
+            );
+            let exe = std::env::current_exe()
+                .map(|p| p.display().to_string())
+                .unwrap_or_else(|_| "deepfind (run `which deepfind` to locate)".to_string());
+            println!("Binary to authorize: {exe}");
+            if should_open_panel(state, std::io::stdout().is_terminal()) {
+                println!("Opening Full Disk Access settings…");
+                let _ = std::process::Command::new("open")
+                    .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")
+                    .status();
+            } else {
+                println!("Open: System Settings → Privacy & Security → Full Disk Access");
+            }
+            println!();
+            println!("After granting, restart the daemon:");
+            println!("    launchctl kickstart -k gui/$(id -u)/{}", launchd::LABEL);
+        }
+        df_index::FdaState::Unknown => {
+            println!("❓ Full Disk Access: unknown (no protected dir could be probed).");
+            println!("If searches miss files under ~/Library, grant Full Disk Access.");
+        }
     }
 }
 
