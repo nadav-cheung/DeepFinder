@@ -645,13 +645,13 @@ async fn cmd_status() {
     }
 
     // Per-DB index freshness: the default DB plus every registered DB.
-    println!("db default: {}   ({})", index_state(&db), db.display());
+    println!("db default: {}   ({})", db_state_line(&db), db.display());
     let reg = df_index::Registry::load(&data_dir());
     for r in &reg.records {
         println!(
             "db {}: {}   ({})",
             r.name,
-            index_state(&r.db_path),
+            db_state_line(&r.db_path),
             r.db_path.display()
         );
     }
@@ -1045,6 +1045,19 @@ fn index_state(db_path: &Path) -> &'static str {
     }
 }
 
+/// `deepfind status` per-DB line: the [`index_state`], but when a build is in
+/// flight it appends the live progress (files / MB / shards) that the daemon's
+/// reporter writes to the `.indexing` marker.
+fn db_state_line(db_path: &Path) -> String {
+    match index_state(db_path) {
+        "indexing" => match deepfindd::index_job::read_progress(db_path) {
+            Some(p) => format!("indexing: {p}"),
+            None => "indexing".to_string(),
+        },
+        other => other.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1089,6 +1102,27 @@ mod tests {
         // Application errors are NOT unreachable ⇒ no fallback (fatal instead).
         assert!(!is_daemon_unreachable("bad regex: *"));
         assert!(!is_daemon_unreachable("unexpected IndexAck"));
+    }
+
+    #[test]
+    fn db_state_line_shows_progress_when_marker_has_content() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = tmp.path().join("index.dfdb");
+        // Matches index_job::marker: db_path.with_extension("indexing").
+        std::fs::write(
+            db.with_extension("indexing"),
+            b"42 files \xc2\xb7 0.1 MB \xc2\xb7 1 shards",
+        )
+        .unwrap();
+        assert_eq!(db_state_line(&db), "indexing: 42 files · 0.1 MB · 1 shards");
+    }
+
+    #[test]
+    fn db_state_line_bare_indexing_when_marker_empty() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = tmp.path().join("index.dfdb");
+        std::fs::write(db.with_extension("indexing"), b"").unwrap();
+        assert_eq!(db_state_line(&db), "indexing");
     }
 
     #[test]
