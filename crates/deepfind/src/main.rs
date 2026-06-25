@@ -9,10 +9,13 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use clap::{Parser, Subcommand};
 use df_core::LiteMeta;
 use df_ipc::proto::{
-    CaseControl, LayerMask, LineHit, MatchKind, PathMode, ResponseFrame, SearchOptions,
-    SearchRequest, SortMode,
+    CaseControl, IndexRequest, LayerMask, LineHit, MatchKind, PathMode, ResponseFrame,
+    SearchOptions, SearchRequest, SortMode,
 };
-use df_ipc::{data_dir, decode_frame, default_db, default_socket, encode_request, framed, home};
+use df_ipc::{
+    data_dir, decode_frame, default_db, default_socket, encode_index_request, encode_request,
+    framed, home,
+};
 use futures::{SinkExt, StreamExt};
 use tokio::net::UnixStream;
 
@@ -62,6 +65,10 @@ enum Cmd {
         /// Index hidden files (dotfiles) too. Off by default.
         #[arg(short = 'H', long)]
         hidden: bool,
+        /// Build in-process in the foreground instead of submitting a background
+        /// build to the daemon (also implied by --no-content). Default: submit.
+        #[arg(long)]
+        foreground: bool,
     },
     /// Run the resident daemon.
     Daemon,
@@ -202,15 +209,20 @@ async fn main() {
             no_content,
             one_file_system,
             hidden,
-        } => cmd_index(
-            &root,
-            force,
-            skip,
-            max_file_size,
-            no_content,
-            one_file_system,
-            hidden,
-        ),
+            foreground,
+        } => {
+            cmd_index(
+                &root,
+                force,
+                skip,
+                max_file_size,
+                no_content,
+                one_file_system,
+                hidden,
+                foreground,
+            )
+            .await
+        }
         Cmd::Daemon => cmd_daemon().await,
         Cmd::Status => cmd_status().await,
         Cmd::Doctor => cmd_doctor(),
@@ -310,7 +322,8 @@ const FRESH_THRESHOLD_SECS: u64 = 60;
 /// silently out of date (REVIEW §6.2).
 const STALE_THRESHOLD_SECS: u64 = 7 * 86_400;
 
-fn cmd_index(
+#[allow(clippy::too_many_arguments)] // 8 fields passed straight off the clap Cmd::Index destructure.
+async fn cmd_index(
     root: &Path,
     force: bool,
     mut skip: Vec<String>,
@@ -318,6 +331,7 @@ fn cmd_index(
     no_content: bool,
     one_file_system: bool,
     hidden: bool,
+    foreground: bool,
 ) {
     let db = default_db();
     if !force {
@@ -333,6 +347,28 @@ fn cmd_index(
             let t = s.trim();
             if !t.is_empty() {
                 skip.push(t.to_string());
+            }
+        }
+    }
+
+    // Submit a background build to the daemon unless --foreground (or
+    // --no-content, which the background path doesn't serve). Falls back to an
+    // in-process build if the daemon is unreachable — mirroring `deepfind
+    // search`'s --direct fallback so the user is never blocked.
+    if !foreground && !no_content {
+        match daemon_index_submit(root, &skip, max_file_size, one_file_system, hidden).await {
+            Ok((_accepted, message)) => {
+                println!("{message}");
+                return;
+            }
+            Err(e) => {
+                let msg = e.to_string();
+                if is_daemon_unreachable(&msg) {
+                    eprintln!("(daemon unavailable: {msg}; building in foreground)");
+                } else {
+                    eprintln!("error: {msg}");
+                    std::process::exit(1);
+                }
             }
         }
     }
@@ -872,6 +908,7 @@ async fn daemon_search(
                 done_total = Some(total);
                 break;
             }
+            ResponseFrame::IndexAck { .. } => return Err("unexpected IndexAck".into()),
             ResponseFrame::Error { message } => return Err(message.into()),
         }
     }
@@ -889,6 +926,43 @@ async fn daemon_search(
         _ => {}
     }
     Ok((out, lines))
+}
+
+/// Classify a daemon IPC error as "daemon unreachable" (down / no socket) so
+/// `cmd_index` can fall back to an in-process build. Mirrors the inline check
+/// in `cmd_search`'s fallback.
+fn is_daemon_unreachable(msg: &str) -> bool {
+    msg.contains("Connection refused") || msg.contains("No such file") || msg.contains("connect")
+}
+
+/// Submit a background index build to the daemon over the socket (P2.3).
+/// Returns the daemon's `(accepted, message)` ack. A connection error (daemon
+/// down) propagates as an `Err` so the caller can fall back to an in-process
+/// build.
+async fn daemon_index_submit(
+    root: &Path,
+    skip: &[String],
+    max_file_size: u64,
+    one_file_system: bool,
+    hidden: bool,
+) -> Result<(bool, String), Box<dyn std::error::Error + Send + Sync>> {
+    let stream = UnixStream::connect(default_socket()).await?;
+    let mut f = framed(stream);
+    let req = IndexRequest {
+        root: Some(root.to_path_buf()),
+        skip: skip.to_vec(),
+        max_file_size,
+        one_file_system,
+        hidden,
+        db: None,
+    };
+    f.send(encode_index_request(&req)?).await?;
+    let frame = f.next().await.ok_or("daemon closed without ack")??;
+    match decode_frame(&frame)? {
+        ResponseFrame::IndexAck { accepted, message } => Ok((accepted, message)),
+        ResponseFrame::Error { message } => Err(message.into()),
+        other => Err(format!("unexpected response frame: {other:?}").into()),
+    }
 }
 
 async fn direct_scan(
@@ -1002,6 +1076,19 @@ mod tests {
     fn index_state_missing_when_no_file() {
         let tmp = tempfile::tempdir().unwrap();
         assert_eq!(index_state(&tmp.path().join("index.dfdb")), "missing");
+    }
+
+    #[test]
+    fn daemon_unreachable_error_classification() {
+        // Socket present but nothing listening / no socket file at all.
+        assert!(is_daemon_unreachable("Connection refused (os error 61)"));
+        assert!(is_daemon_unreachable(
+            "No such file or directory (os error 2)"
+        ));
+        assert!(is_daemon_unreachable("failed to connect to socket"));
+        // Application errors are NOT unreachable ⇒ no fallback (fatal instead).
+        assert!(!is_daemon_unreachable("bad regex: *"));
+        assert!(!is_daemon_unreachable("unexpected IndexAck"));
     }
 
     #[test]
