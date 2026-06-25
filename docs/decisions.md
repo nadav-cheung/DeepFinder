@@ -26,6 +26,7 @@
 | 0012 | df-watch ignores its own writes under the data dir (feedback-loop fix) | 2026-06-24 | Accepted |
 | 0013 | Retired all 19 Swift-era tags for a clean Rust v1.0.0 slate | 2026-06-25 | Superseded by 0014 |
 | 0014 | First public version is 0.1.0, not 1.0.0 | 2026-06-25 | Accepted |
+| 0015 | Full Disk Access: heuristic probe + guidance, no programmatic grant | 2026-06-25 | Accepted |
 
 ---
 
@@ -203,3 +204,20 @@ Revisit when benchmarking incremental latency on a large corpus.
 **Decision.** The first public Rust release is versioned **0.1.0** (tag `v0.1.0`), revising the earlier 1.0.0 plan. `Cargo.toml` workspace `version`, `CHANGELOG.md` (`## [0.1.0]`), the release tag, and `dist plan` all reflect 0.1.0. (The dated design spec/plan still say 1.0.0 — left as historical snapshots.)
 
 **Consequences.** The user picked 0.1.0 over the originally-planned 1.0.0 at release time.
+
+---
+
+## ADR-0015 — Full Disk Access: heuristic probe + guidance, no programmatic grant
+
+**Date:** 2026-06-25 · **Phase:** post-A–F · **Status:** Accepted
+
+**Context.** DeepFinder reads the whole disk — including TCC-protected `~/Library` subdirs (`Mail`, `Messages`, …) — so the process must hold Full Disk Access (FDA). Before this, FDA was surfaced only *reactively*: `df-index` counted `permission-denied` entries and `deepfind index` printed one warning at the end. There was no proactive check and no guidance to grant. macOS exposes **no API** to query or grant FDA, and — unlike Accessibility — **no consent prompt** an app can trigger; the user must manually add the binary in System Settings. Design: `docs/superpowers/specs/2026-06-25-permissions-design.md`.
+
+**Decision.**
+- **Detection = heuristic `readdir` probe**, not a TCC API query (user-space can't read `TCC.db` under SIP). `df-index::fda_state()` does **one** `read_dir` on the first existing TCC-protected candidate (`~/Library/{Calendars,Mail,Messages,Safari,Metadata/CoreData}`): `Ok` ⇒ `Granted`, `PermissionDenied` ⇒ `Denied`, absent/non-mac ⇒ `Unknown`. No cache (one `readdir` is cheap).
+- **No `permissions grant`** — physically impossible for FDA. The closest "auto" action is `doctor` `open`-ing the FDA Settings pane; the user still adds the binary by hand.
+- **Lives in `df-index`** (the fs-I/O layer), preserving the `df-core` zero-I/O hard constraint.
+- **CLI and daemon are the same `deepfind` binary** (`deepfindd` is a linked lib), so a local CLI probe equals the daemon's FDA state — no socket roundtrip, no "daemon down ⇒ Unknown" path (unlike an Accessibility/Screen-Recording model where the granting identity and the CLI are separate processes).
+- **Three exit surfaces, distinct behavior:** `status` reports the verdict word only; `doctor` is the human self-check (TTY ⇒ auto-`open` the FDA pane + print `current_exe()` + the `launchctl kickstart -k` restart command; non-TTY ⇒ guidance only, so scripts/CI don't pop a GUI); daemon startup emits one `tracing::warn!` if `Denied` and never opens a GUI.
+
+**Consequences.** FDA state is now surfaced proactively at three places instead of only reactively at end-of-index. The probe is heuristic (community-standard, not a TCC API call) — authoritative for the `deepfind` binary, but macOS version drift could make a candidate readable without FDA, so candidates are tried in order and the list exhausts to `Unknown` rather than false-`Denied`. macOS-only pieces (`open`, candidate paths, `launchctl`) are `#[cfg(target_os = "macos")]`-gated; non-mac returns `Unknown`.

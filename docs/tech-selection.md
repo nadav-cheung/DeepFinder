@@ -101,6 +101,7 @@ query side:  extract keys from the folded query → take the shortest posting
 | Relevance ranking | Optional (path-depth + match-kind weighting), not core |
 | SIMD decode | Scalar correctness first; SIMD is an optional optimization |
 | Multi-volume auto-sharding / resumable cursor / GUI / pinyin-jieba | Out of scope this round |
+| Programmatic Full Disk Access grant / reading `TCC.db` | Physically impossible on macOS (no consent prompt an app can trigger, unlike Accessibility) / infeasible under SIP. FDA is **detected** via a heuristic `readdir` probe and the user is **guided** to System Settings — see ADR-0015 |
 
 ---
 

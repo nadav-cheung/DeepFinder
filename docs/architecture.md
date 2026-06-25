@@ -1,6 +1,6 @@
 # DeepFinder — System Architecture
 
-> **Status:** Updated 2026-06-24 to reflect the code **actually built** on `main` (not a design vision). The "complete implementation" round (Phases A–F) is fully delivered; 136 tests green.
+> **Status:** Updated 2026-06-25 to reflect the code **actually built** on `main` (not a design vision). The "complete implementation" round (Phases A–F) is fully delivered, plus Full Disk Access detection + `deepfind doctor`; 146 tests green.
 > **In one sentence:** a plocate-style filename index + zoekt-style content shards, behind a single shared trigram candidate engine, served by a resident daemon over a Unix socket to a thin CLI.
 > Diagrams are Mermaid (rendered natively by GitHub / VS Code / GitLab); byte-level on-disk layouts use ASCII.
 
@@ -58,7 +58,7 @@ flowchart LR
 flowchart BT
     core["<b>df-core</b><br/>pure lib: DB format + TurboPFor<br/>+ Robin Hood + query engine<br/>+ CandidateSource trait"]
     content["<b>df-content</b><br/>ShardBuilder/Reader<br/>+ ASCII fold + content verify"]
-    index["<b>df-index</b><br/>ignore walk + FileSource(pread)<br/>+ MmapSource(mmap) + atomic write + MANIFEST"]
+    index["<b>df-index</b><br/>ignore walk + FileSource(pread)<br/>+ MmapSource(mmap) + atomic write + MANIFEST<br/>+ FDA probe (fda_state)"]
     ipc["<b>df-ipc</b><br/>proto + wire(bincode+length frame)<br/>+ filter + paths"]
     daemon["<b>deepfindd</b><br/>resident daemon"]
     cli["<b>deepfind</b><br/>thin CLI + --direct fallback"]
@@ -80,7 +80,7 @@ flowchart BT
 |---|---|---|
 | **df-core** | DB format, TurboPFor codec, Robin Hood hash, query engine, `CandidateSource` trait | **pure lib, zero I/O** (operates on the `DbSource` trait) |
 | **df-content** | `ShardBuilder` / `ShardReader`, ASCII fold, content substring verify | depends on df-core |
-| **df-index** | `ignore` parallel walk, text gating, `FileSource` (pread), `MmapSource` (mmap), atomic write, MANIFEST | depends on df-core + df-content |
+| **df-index** | `ignore` parallel walk, text gating, `FileSource` (pread), `MmapSource` (mmap), atomic write, MANIFEST, **Full Disk Access probe (`fda_state`)** | depends on df-core + df-content |
 | **df-ipc** | `SearchRequest` / `ResponseFrame` proto, bincode + length frame, path filter, default paths | depends on df-core |
 | **deepfindd** | resident daemon: load DB + shards, socket server, merge-dedup, streaming output | depends on all |
 | **deepfind** | thin CLI: IPC client + `--direct` online fallback + highlight/exec | depends on df-core/df-index/df-ipc |
@@ -287,9 +287,31 @@ deepfind search <query>
 
 ---
 
-## 10. Current status and known gaps (honest inventory)
+## 10. Full Disk Access detection (operational)
 
-**Built and verified** (Phases A–F all delivered): dual-layer trigram (pread filename + mmap content) × shared candidate engine × daemon + CLI process model × smart-case × boolean AST × **filename + content regex** × `-n/-C` line-number context × layer-selection / path-mode / hidden / sort / early-exit × bfs `--expr` × **multi-DB** × **lockless ArcSwap hot-swap + df-watch incremental (rebuild_and_swap)**. 136 tests green, clippy/fmt clean, daemon + CLI verified end-to-end. Decision detail in [decisions.md](decisions.md); baselines in [perf-baseline.md](perf-baseline.md).
+DeepFinder reads the whole disk — including TCC-protected `~/Library` subdirs (`Mail`, `Messages`, `Safari`, `Calendars`, …) — so the process must hold **Full Disk Access (FDA)**. macOS exposes **no API** to query or grant FDA, and no consent prompt an app can trigger (unlike Accessibility). So DeepFinder **probes** heuristically and **guides** the user to the Settings pane; it cannot auto-grant.
+
+```mermaid
+flowchart LR
+    FS["filesystem — TCC-protected<br/>~/Library subdirs<br/>(Calendars · Mail · Messages<br/>· Safari · Metadata/CoreData)"]
+    PROBE["df-index fda_state()<br/>one read_dir on the first<br/>existing candidate"]
+    FS -->|"read_dir Ok ⇒ Granted<br/>PermissionDenied ⇒ Denied"| PROBE
+    PROBE --> SU["deepfind status<br/>(report only)"]
+    PROBE --> DR["deepfind doctor<br/>(guidance; TTY opens pane)"]
+    PROBE --> DM["deepfind daemon startup<br/>(warn! once · no GUI)"]
+    DR -.->|"TTY only"| PREFS["System Settings<br/>Full Disk Access pane"]
+```
+
+- **Probe** (`crates/df-index/src/permissions.rs`): `fda_state()` does **one** `read_dir` on the first existing TCC-protected candidate — `Ok` ⇒ `Granted`, `PermissionDenied` ⇒ `Denied`, absent/non-mac ⇒ `Unknown`. No side effects, no cache (one `readdir` is cheap). Lives in `df-index` (the fs-I/O layer) so **`df-core` stays pure**.
+- **Same binary ⇒ same verdict:** `deepfind daemon` and the CLI are the **same `deepfind` binary** (`deepfindd` is a linked lib), so a local CLI probe equals the daemon's FDA state — no need to ask the daemon over the socket, no "daemon down ⇒ Unknown" path.
+- **Three exit surfaces:** `status` (report, no popup); `doctor` (human self-check — on a TTY it auto-`open`s the FDA pane and prints the exact `current_exe()` path + the `launchctl kickstart -k` restart command; non-TTY prints guidance only); daemon startup (`tracing::warn!` once if `Denied`, never pops a GUI).
+- **No `permissions grant`:** physically impossible for FDA — the user must add the binary manually in System Settings. The doctor's auto-`open` only navigates to the pane.
+
+---
+
+## 11. Current status and known gaps (honest inventory)
+
+**Built and verified** (Phases A–F all delivered): dual-layer trigram (pread filename + mmap content) × shared candidate engine × daemon + CLI process model × smart-case × boolean AST × **filename + content regex** × `-n/-C` line-number context × layer-selection / path-mode / hidden / sort / early-exit × bfs `--expr` × **multi-DB** × **lockless ArcSwap hot-swap + df-watch incremental (rebuild_and_swap)** × **Full Disk Access detection + `deepfind doctor` guidance**. 146 tests green, clippy/fmt clean, daemon + CLI verified end-to-end. Decision detail in [decisions.md](decisions.md); baselines in [perf-baseline.md](perf-baseline.md).
 
 **Designed but not yet built** (the M7 performance-hardening layer + unbuilt incremental items — D2 left **none** in place after measurement this round):
 
@@ -319,7 +341,7 @@ deepfind search <query>
 
 ```
 cargo build --workspace
-cargo test --workspace          # 136 tests
+cargo test --workspace          # 146 tests
 cargo clippy --workspace --all-targets -D warnings
 cargo fmt --all -- --check
 ```
@@ -335,6 +357,7 @@ cargo fmt --all -- --check
 | content shard format / verify | `crates/df-content/src/shard.rs`, `fold.rs` |
 | streaming build + text gate | `crates/df-index/src/content_build.rs` |
 | pread/mmap source | `crates/df-index/src/lib.rs`, `mmap_source.rs` |
+| Full Disk Access probe | `crates/df-index/src/permissions.rs` |
 | IPC proto / wire / filter | `crates/df-ipc/src/{proto,wire,filter,paths}.rs` |
 | daemon query merge / streaming | `crates/deepfindd/src/lib.rs` |
 | CLI | `crates/deepfind/src/main.rs` |
