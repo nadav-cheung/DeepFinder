@@ -540,6 +540,17 @@ fn cmd_uninstall() {
     println!("Uninstalled LaunchAgent {label}.", label = launchd::LABEL);
 }
 
+/// At daemon start, warn once if Full Disk Access is missing. No GUI — the
+/// daemon must not pop System Settings. Guides the user to `deepfind doctor`.
+fn warn_if_no_fda() {
+    if matches!(df_index::fda_state(), df_index::FdaState::Denied) {
+        tracing::warn!(
+            "Full Disk Access not granted; protected dirs (~/Library/Mail, Messages, …) \
+             will be skipped. Run `deepfind doctor`."
+        );
+    }
+}
+
 async fn cmd_daemon() {
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -547,6 +558,7 @@ async fn cmd_daemon() {
                 .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info")),
         )
         .init();
+    warn_if_no_fda();
     if let Err(e) = deepfindd::serve(&default_socket(), &default_db()).await {
         eprintln!("daemon error: {e}");
         std::process::exit(1);
@@ -575,7 +587,10 @@ async fn cmd_status() {
         Ok(_) => println!("daemon: reachable ({})", sock.display()),
         Err(_) => println!("daemon: NOT reachable ({})", sock.display()),
     }
-    println!("full disk access: {}", fda_status_word(df_index::fda_state()));
+    println!(
+        "full disk access: {}",
+        fda_status_word(df_index::fda_state())
+    );
     let db = default_db();
     match open_reader(&db) {
         Some(r) => {
