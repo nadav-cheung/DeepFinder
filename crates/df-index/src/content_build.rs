@@ -2,7 +2,7 @@
 //! Streaming full-disk content build: walk → text-gate → dual builders → shard flush.
 
 use std::path::Path;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 
 use crossbeam_channel::bounded;
@@ -124,13 +124,67 @@ struct ConsumerOut {
     filename_docs: u32,
 }
 
+/// Live progress counters for a streaming build. The daemon's background-build
+/// job holds one and polls [`IndexProgress::snapshot`] from another thread so
+/// `deepfind status` can report indexing progress. Mirrors the existing
+/// `denied`/`skipped` atomic-counter idiom: workers + the consumer thread bump
+/// these under `Relaxed` ordering. All-atomic ⇒ `&IndexProgress` is `Sync` and
+/// cheaply shareable across the parallel walker + consumer.
+#[derive(Debug, Default)]
+pub struct IndexProgress {
+    pub files_scanned: AtomicU64,
+    pub content_bytes: AtomicU64,
+    pub shards_written: AtomicU64,
+}
+
+/// A point-in-time read of an [`IndexProgress`].
+#[derive(Debug, Clone, Copy, Default)]
+pub struct Snapshot {
+    pub files_scanned: u64,
+    pub content_bytes: u64,
+    pub shards_written: u64,
+}
+
+impl IndexProgress {
+    /// Point-in-time read of all counters.
+    pub fn snapshot(&self) -> Snapshot {
+        Snapshot {
+            files_scanned: self.files_scanned.load(Ordering::Relaxed),
+            content_bytes: self.content_bytes.load(Ordering::Relaxed),
+            shards_written: self.shards_written.load(Ordering::Relaxed),
+        }
+    }
+}
+
 /// Build the filename DB (`out_db`) AND the content shard set (`content_dir`)
 /// in one streaming pass. Writes `content_dir/MANIFEST`. Full-rebuild.
+///
+/// Convenience wrapper that discards live progress; use
+/// [`build_content_index_with_progress`] to observe counters during the build.
 pub fn build_content_index(
     root: &Path,
     out_db: &Path,
     content_dir: &Path,
     opts: &ContentBuildOptions,
+) -> crate::Result<ContentReport> {
+    build_content_index_with_progress(
+        root,
+        out_db,
+        content_dir,
+        opts,
+        Arc::new(IndexProgress::default()),
+    )
+}
+
+/// Like [`build_content_index`] but reports live progress through `progress`
+/// (files scanned / content bytes / shards written) so a caller on another
+/// thread can surface indexing progress (e.g. `deepfind status`).
+pub fn build_content_index_with_progress(
+    root: &Path,
+    out_db: &Path,
+    content_dir: &Path,
+    opts: &ContentBuildOptions,
+    progress: Arc<IndexProgress>,
 ) -> crate::Result<ContentReport> {
     let mut skip: Vec<&str> = DEFAULT_SKIP.to_vec();
     for e in &opts.extra_skip {
@@ -152,6 +206,9 @@ pub fn build_content_index(
     // Consumer owns both builders; flushes shards as it goes.
     let content_dir = content_dir.to_path_buf();
     let manifest_dir = content_dir.clone();
+    // Consumer + walker run on their own threads (`'static`); hand each an owned
+    // `Arc<IndexProgress>` clone. The caller keeps its own clone to poll.
+    let walker_progress = Arc::clone(&progress);
     let consumer = std::thread::spawn(move || -> crate::Result<ConsumerOut> {
         let mut fnb = DbBuilder::new();
         fnb.set_build_time(build_time);
@@ -172,6 +229,7 @@ pub fn build_content_index(
                     let sbytes = shard.finish(build_time);
                     let fname = format!("shard-{shard_id:05}.dfcs");
                     atomic_write_public(&content_dir.join(&fname), &sbytes)?;
+                    progress.shards_written.fetch_add(1, Ordering::Relaxed);
                     shard_entries.push(ShardEntry {
                         shard_id,
                         base_docid,
@@ -190,6 +248,7 @@ pub fn build_content_index(
             let sbytes = shard.finish(build_time);
             let fname = format!("shard-{shard_id:05}.dfcs");
             atomic_write_public(&content_dir.join(&fname), &sbytes)?;
+            progress.shards_written.fetch_add(1, Ordering::Relaxed);
             shard_entries.push(ShardEntry {
                 shard_id,
                 base_docid,
@@ -227,7 +286,9 @@ pub fn build_content_index(
         let sb = sb2.clone();
         let sl = sl2.clone();
         let skip = skip.clone();
+        let progress = Arc::clone(&walker_progress);
         Box::new(move |result| {
+            progress.files_scanned.fetch_add(1, Ordering::Relaxed);
             let entry = match result {
                 Ok(e) => e,
                 Err(e) => {
@@ -262,7 +323,12 @@ pub fn build_content_index(
                 None
             } else {
                 match classify(entry.path(), mfs) {
-                    ContentDecision::Text(b) => Some(b),
+                    ContentDecision::Text(b) => {
+                        progress
+                            .content_bytes
+                            .fetch_add(b.len() as u64, Ordering::Relaxed);
+                        Some(b)
+                    }
                     ContentDecision::Binary => {
                         sb.fetch_add(1, Ordering::Relaxed);
                         None
@@ -350,5 +416,41 @@ mod tests {
             classify(&p, 1024 * 1024),
             ContentDecision::Unreadable
         ));
+    }
+
+    #[test]
+    fn build_with_progress_populates_counters() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(root.join("a.txt"), b"hello world").unwrap();
+        std::fs::write(root.join("b.txt"), b"second file content").unwrap();
+
+        let db = tmp.path().join("index.dfdb");
+        let content_dir = tmp.path().join("content");
+        let progress = Arc::new(IndexProgress::default());
+        let report = build_content_index_with_progress(
+            root,
+            &db,
+            &content_dir,
+            &ContentBuildOptions::default(),
+            Arc::clone(&progress),
+        )
+        .unwrap();
+        let snap = progress.snapshot();
+
+        // Walker yields the root dir + 2 files ⇒ ≥3 scanned entries.
+        assert!(
+            snap.files_scanned >= 3,
+            "files_scanned={}",
+            snap.files_scanned
+        );
+        // Both files are text under the size cap ⇒ 11 + 19 = 30 content bytes.
+        assert!(
+            snap.content_bytes >= 30,
+            "content_bytes={}",
+            snap.content_bytes
+        );
+        // Every flushed shard (including the final partial) is counted.
+        assert_eq!(snap.shards_written, report.shards as u64, "shards mismatch");
     }
 }
