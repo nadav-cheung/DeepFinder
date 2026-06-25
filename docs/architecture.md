@@ -262,6 +262,7 @@ deepfind index   [--root] [--force] [--skip NAME…] [--max-file-size N]
                  [--no-content] [--one-file-system] [-H/--hidden]
 deepfind daemon
 deepfind status
+deepfind doctor                 # self-diagnostic: Full Disk Access check + guidance
 deepfind db      add <name> <root> [--max-file-size N]
                  remove <name>   |   list
 deepfind install [--no-watch]      # macOS:装用户 LaunchAgent(登录自启 + KeepAlive + 可选 df-watch)
