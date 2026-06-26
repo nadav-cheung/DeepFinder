@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 _Nothing yet._
 
+## [0.1.5] - 2026-06-26
+
+### Added
+- **True incremental indexing (LSM hot overlay):** file changes under a watched DB are now folded into a persisted hot overlay (write-ahead log) and surfaced in queries within ~1s — instead of triggering a full-root rescan + hot-swap on every change. Queries merge the cold shard/filename layers with the overlay (overlay overrides stale cold hits; tombstones remove deleted paths). The overlay is replayed from its WAL on daemon restart, so changes survive crashes.
+- **Compaction:** when the overlay grows past a threshold (default 2000 entries; tunable via `DEEPFIND_COMPACTION_THRESHOLD`), df-watch runs a full rebuild that subsumes the overlay and clears it (reusing the existing ArcSwap hot-swap), bounding memory + query-merge cost between compactions.
+- **Safety-net periodic rebuild:** the daemon now rebuilds every rooted DB once per day (tunable via `DEEPFIND_SAFETY_NET_SECS`) to recover from anything missed (daemon downtime, coalesced/lost FSEvents, WAL corruption), independently of df-watch.
+- **Single-instance daemon guard:** an advisory `flock` on `<data_dir>/daemon.lock` serializes daemon startup — a second `deepfind daemon` (e.g. a manual start racing launchd's KeepAlive respawn) bails instead of fighting the live daemon over the socket/index. The kernel releases the lock automatically on crash, so there's never a stale lock to clean up.
+
+### Fixed
+- A registry reload (e.g. `db add`, or the socket/lock creation at startup) no longer orphans the df-watch overlay handle: surviving DBs reuse their existing shard + overlay handles across the reload, so df-watch keeps updating the handles queries read.
+- df-watch now normalizes macOS canonical event paths (`/private/var/…`) back to the lexical build-root form, so overlay paths match the cold shard for suppression/override.
+
 ## [0.1.4] - 2026-06-26
 
 ### Changed
