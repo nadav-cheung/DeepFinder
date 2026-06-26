@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 _Nothing yet._
 
+## [0.1.4] - 2026-06-26
+
+### Changed
+- df-watch's automatic incremental rescans now report live progress (files · MB · shards) in `deepfind status`, identical to on-demand `deepfind index` builds — both paths share one progress-reporting build path (`index_job::tracked_build`). Previously df-watch rescans showed a bare `indexing` with no numbers.
+
 ## [0.1.3] - 2026-06-26
 
 ### Added
