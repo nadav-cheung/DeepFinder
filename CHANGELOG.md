@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 ### Added
 - **Background index builds (P2.3):** `deepfind index` now submits a background build to the daemon over the socket and returns immediately, instead of blocking in the foreground. Live build progress (files scanned · MB · shards) is reported by `deepfind status` while indexing. `--foreground` forces the old in-process build; the CLI falls back to it automatically when the daemon is unreachable. New IPC: `enum Request { Search, Index }` + `IndexRequest` / `ResponseFrame::IndexAck`. In-flight searches are never interrupted — the build hot-swaps the `DbSet` via `ArcSwap` (each connection pins a snapshot).
 
+### Fixed
+- df-watch's incremental rebuild now takes the same build-marker guard as on-demand/ startup builds, so a df-watch rebuild can no longer race a concurrent `deepfind index` and interleave (corrupt) shard writes.
+- A daemon killed mid-build no longer leaves a stuck `.indexing` marker; stale markers are swept at startup so `deepfind status` recovers instead of reporting `indexing` forever.
+
 ## [0.1.2] - 2026-06-25
 
 ### Added
