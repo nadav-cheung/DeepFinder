@@ -11,9 +11,10 @@
 //! report progress (`is_indexing` + [`read_progress`]).
 //!
 //! **Concurrency:** [`try_acquire`] is the single atomic guard (`create_new` on
-//! the marker) used by `spawn_build` AND by `watch::rebuild_and_swap`, so two
-//! builds of the same DB — on-demand vs df-watch, on-demand vs startup — can
-//! never interleave writes to the same shard names. A daemon killed mid-build
+//! the marker) used by `spawn_build`, df-watch's `compact_and_swap`, and the
+//! safety-net's `rebuild_and_swap`, so two builds of the same DB — on-demand vs
+//! df-watch vs safety-net vs startup — can never interleave writes to the same
+//! shard names. A daemon killed mid-build
 //! (SIGKILL) leaks the marker; [`sweep_stale_markers`] at startup recovers it.
 
 use std::fs::OpenOptions;
@@ -52,7 +53,8 @@ impl Drop for MarkerGuard {
 /// ⇒ exactly one winner). Returns a [`MarkerGuard`] whose `Drop` removes the
 /// marker, or `None` if a build is already in flight (or the marker can't be
 /// created) — so two builds of the same DB never run concurrently. Used by
-/// [`spawn_build`] (on-demand / startup) and `watch::rebuild_and_swap` (df-watch).
+/// [`spawn_build`] (on-demand / startup), df-watch's `compact_and_swap`, and the
+/// safety-net's `rebuild_and_swap`.
 pub(crate) fn try_acquire(db_path: &Path) -> Option<MarkerGuard> {
     let m = marker(db_path);
     if let Some(parent) = m.parent() {
@@ -96,8 +98,9 @@ const PROGRESS_INTERVAL_TICKS: u32 = 25;
 /// [`df_index::IndexProgress`] into the `.indexing` marker every 250ms, so
 /// `deepfind status` can show files / MB / shards while indexing. The caller
 /// MUST already hold the marker guard ([`try_acquire`]) — this fn only builds +
-/// reports. Shared by [`spawn_build`] (on-demand / startup) and
-/// `watch::rebuild_and_swap` (df-watch) so BOTH build paths surface progress.
+/// reports. Shared by [`spawn_build`] (on-demand / startup), df-watch compaction
+/// (`compact_and_swap`), and the safety-net (`rebuild_and_swap`) so every build
+/// path surfaces progress.
 pub(crate) fn tracked_build(
     root: &Path,
     db_path: &Path,
@@ -177,9 +180,9 @@ pub(crate) fn spawn_build(
                 // Attach df-watch to the freshly-built DB (only when the env
                 // gate is set, mirroring serve()'s startup loop). The entry is
                 // found by matching `db_path` in the post-swap snapshot; the
-                // watcher shares this entry's `Arc<ContentShards>`, so its
-                // `rebuild_and_swap` → `shards.reload()` updates the same shards
-                // queries read.
+                // watcher shares this entry's `Arc<ContentShards>` + overlay
+                // handle, so its overlay updates and `compact_and_swap`
+                // (`shards.reload()`) hit the same state queries read.
                 if std::env::var("DEEPFIND_WATCH").is_ok() {
                     let snap = dbset.load_full();
                     if let Some(entry) = snap.entries.iter().find(|e| e.db_path == db_path) {
@@ -189,6 +192,8 @@ pub(crate) fn spawn_build(
                                 entry.db_path.clone(),
                                 entry.shards.content_dir().to_path_buf(),
                                 entry.shards.clone(),
+                                entry.overlay.clone(),
+                                df_index::ContentBuildOptions::default().max_file_size,
                             );
                         }
                     }

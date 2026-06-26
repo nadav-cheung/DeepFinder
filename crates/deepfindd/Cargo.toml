@@ -20,6 +20,7 @@ arc-swap = { workspace = true }
 notify = { workspace = true }
 tokio = { workspace = true }
 futures = { workspace = true }
+libc = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]

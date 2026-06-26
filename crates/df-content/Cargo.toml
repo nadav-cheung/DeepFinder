@@ -9,6 +9,8 @@ license.workspace = true
 df-core = { workspace = true }
 memchr = { workspace = true }
 regex = { workspace = true }
+serde = { workspace = true }
+bincode = { workspace = true }
 
 [dev-dependencies]
 tempfile = { workspace = true }

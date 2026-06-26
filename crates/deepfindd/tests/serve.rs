@@ -29,6 +29,33 @@ async fn connect_wait(sock: &Path) -> UnixStream {
     panic!("daemon did not come up at {}", sock.display());
 }
 
+/// Single-instance guard: a second `serve()` sharing the daemon's lock dir is
+/// rejected fast (WouldBlock) instead of binding a second socket. Two different
+/// socket paths under the same tempdir resolve to the same `daemon.lock`.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn second_serve_in_same_dir_is_rejected() {
+    let tmp = tempfile::tempdir().unwrap();
+    let dir = tmp.path().to_path_buf();
+    let sock_a = dir.join("a.sock");
+    let sock_b = dir.join("b.sock"); // different socket, same dir → same daemon.lock
+    let db = dir.join("index.dfdb");
+
+    let s1 = {
+        let sock_a = sock_a.clone();
+        let db = db.clone();
+        tokio::spawn(async move { deepfindd::serve(&sock_a, &db).await })
+    };
+    // Let the first serve acquire the singleton lock (its first sync op).
+    tokio::time::sleep(Duration::from_millis(150)).await;
+
+    let res = deepfindd::serve(&sock_b, &db).await;
+    assert!(
+        matches!(res, Err(ref e) if e.kind() == std::io::ErrorKind::WouldBlock),
+        "second serve should be rejected as already-running, got {res:?}"
+    );
+    s1.abort();
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn serve_query_roundtrip() {
     let tmp = tempfile::tempdir().unwrap();
@@ -1229,4 +1256,356 @@ async fn searches_during_rebuild_never_error() {
             "partial/garbage result set during rebuild: {s:?}"
         );
     }
+}
+
+/// Overlay (LSM hot layer), read-only path: an overlay WAL written beside the
+/// index is replayed on `serve()`. Overlay hits appear in BOTH the content and
+/// filename layers, and a tombstone suppresses a stale cold-layer match — in
+/// path-batch mode AND in `-n` line mode. No df-watch here (DEEPFIND_WATCH
+/// unset): this exercises only the query-merge read path (Phase 2).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn overlay_wal_replay_merges_and_suppresses() {
+    let tmp = tempfile::tempdir().unwrap();
+    let data = tmp.path();
+    let root = data.join("root");
+    std::fs::create_dir_all(&root).unwrap();
+    // cold.txt lives in the COLD shard; the overlay tombstones it.
+    std::fs::write(root.join("cold.txt"), b"needle cold\n").unwrap();
+
+    let db_path = data.join("db/index.dfdb");
+    let content_dir = data.join("db/content");
+    build_content_index(
+        &root,
+        &db_path,
+        &content_dir,
+        &ContentBuildOptions::default(),
+    )
+    .unwrap();
+
+    // Pre-write the overlay WAL beside the index, then drop the store so serve()
+    // reopens + replays it.
+    let wal_path = data.join("db/overlay.wal");
+    let overlay_path = root.join("overlay.txt").to_string_lossy().into_owned();
+    let cold_path = root.join("cold.txt").to_string_lossy().into_owned();
+    {
+        let store = df_index::OverlayStore::open(&wal_path).unwrap();
+        let _ = store.append(&df_content::WalRecord::Upsert {
+            path: overlay_path.clone(),
+            meta: df_core::LiteMeta {
+                is_dir: false,
+                size: 18,
+                mtime: 0,
+            },
+            content: Some(b"needle in overlay\n".to_vec()),
+        });
+        let _ = store.append(&df_content::WalRecord::Delete {
+            path: cold_path.clone(),
+        });
+        store.sync().unwrap();
+    }
+
+    let socket = data.join("daemon.sock");
+    let sock = socket.clone();
+    let dbp = db_path.clone();
+    let server = tokio::spawn(async move { deepfindd::serve(&sock, &dbp).await });
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    // Content query "needle": overlay.txt appears (overlay); cold.txt is suppressed.
+    let content_only = SearchRequest {
+        query: "needle".into(),
+        scope: None,
+        limit: None,
+        opts: SearchOptions {
+            layers: df_ipc::proto::LayerMask {
+                filename: false,
+                content: true,
+            },
+            ..Default::default()
+        },
+        db: None,
+    };
+    let (_b, got) = query_and_collect(&socket, content_only).await;
+    assert!(
+        got.iter().any(|p| p.ends_with("overlay.txt")),
+        "overlay content hit missing: {got:?}"
+    );
+    assert!(
+        !got.iter().any(|p| p.ends_with("cold.txt")),
+        "cold.txt should be tombstoned: {got:?}"
+    );
+
+    // Filename query "overlay": overlay file found via the filename overlay.
+    let filename_only = SearchRequest {
+        query: "overlay".into(),
+        scope: None,
+        limit: None,
+        opts: SearchOptions {
+            layers: df_ipc::proto::LayerMask {
+                filename: true,
+                content: false,
+            },
+            ..Default::default()
+        },
+        db: None,
+    };
+    let (_b, got) = query_and_collect(&socket, filename_only).await;
+    assert!(
+        got.iter().any(|p| p.ends_with("overlay.txt")),
+        "overlay filename hit missing: {got:?}"
+    );
+
+    // `-n` line mode: overlay.txt renders a line hit; cold.txt's cold line hit
+    // is dropped by tombstone suppression.
+    let line_req = SearchRequest {
+        query: "needle".into(),
+        scope: None,
+        limit: None,
+        opts: SearchOptions {
+            line_numbers: true,
+            layers: df_ipc::proto::LayerMask {
+                filename: false,
+                content: true,
+            },
+            ..Default::default()
+        },
+        db: None,
+    };
+    let hits = query_lines(&socket, line_req).await;
+    assert!(
+        hits.iter().any(|h| h.path.ends_with("overlay.txt")),
+        "overlay line hit missing: {hits:?}"
+    );
+    assert!(
+        !hits.iter().any(|h| h.path.ends_with("cold.txt")),
+        "cold.txt line hit should be tombstoned: {hits:?}"
+    );
+
+    server.abort();
+}
+
+/// Compaction (LSM): once the overlay reaches the threshold (here forced low via
+/// `DEEPFIND_COMPACTION_THRESHOLD`), df-watch fires a full rebuild + clears the
+/// overlay/WAL. The new files then come from the COLD layer (post-rebuild) and
+/// the overlay WAL is truncated back to empty. Guards on DF_WATCH_LOCK (FSEvents).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn overlay_compaction_clears_and_rebuilds() {
+    let _guard = DF_WATCH_LOCK.lock().await;
+    let tmp = tempfile::tempdir().unwrap();
+    let data = tmp.path();
+    let root = data.join("root");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("a.txt"), b"needle here").unwrap();
+
+    let w_db = data.join("db/w/index.dfdb");
+    build_content_index(
+        &root,
+        &w_db,
+        &data.join("db/w/content"),
+        &ContentBuildOptions::default(),
+    )
+    .unwrap();
+    let mut reg = df_index::Registry::load(data);
+    reg.upsert(df_index::DbRecord {
+        name: "w".into(),
+        root: root.clone(),
+        db_path: w_db.clone(),
+        content_dir: data.join("db/w/content"),
+    });
+    reg.save().unwrap();
+
+    let socket = data.join("daemon.sock");
+    let wal_path = data.join("db/w/overlay.wal");
+    std::env::set_var("DEEPFIND_WATCH", "1");
+    std::env::set_var("DEEPFIND_COMPACTION_THRESHOLD", "2");
+    let sock = socket.clone();
+    let dbp = data.join("db/index.dfdb");
+    let server = tokio::spawn(async move { deepfindd::serve(&sock, &dbp).await });
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    // Create 3 new needle files → overlay grows past the threshold (2) → compaction.
+    for i in 0..3 {
+        std::fs::write(root.join(format!("new_{i}.txt")), b"needle").unwrap();
+    }
+
+    let req = |db: &str| SearchRequest {
+        query: "needle".into(),
+        scope: None,
+        limit: None,
+        opts: SearchOptions::default(),
+        db: Some(db.into()),
+    };
+
+    // Poll until: (a) all 4 files present (a.txt + new_0..2), AND (b) the overlay
+    // WAL was truncated (compaction ran). Both together prove compaction rebuilt
+    // the cold layer and cleared the overlay.
+    let deadline = std::time::Instant::now() + Duration::from_secs(25);
+    let mut converged = false;
+    while std::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let (_b, got) = query_and_collect(&socket, req("w")).await;
+        let all_present = got.iter().any(|p| p.ends_with("a.txt"))
+            && (0..3).all(|i| got.iter().any(|p| p.ends_with(&format!("new_{i}.txt"))));
+        let wal_empty = std::fs::metadata(&wal_path)
+            .map(|m| m.len() == 0)
+            .unwrap_or(true);
+        if all_present && wal_empty {
+            converged = true;
+            break;
+        }
+    }
+    std::env::remove_var("DEEPFIND_COMPACTION_THRESHOLD");
+    std::env::remove_var("DEEPFIND_WATCH");
+    server.abort();
+    assert!(
+        converged,
+        "compaction did not converge (rebuild + WAL clear)"
+    );
+}
+
+/// Safety-net periodic rebuild: independent of df-watch (DEEPFIND_WATCH unset
+/// here), a background thread rebuilds every rooted DB on a timer. Creating a
+/// new file under the root is picked up by the next safety-net rescan — no
+/// FSEvents involved, so this is deterministic (not subject to the df-watch
+/// concurrency flake). Verifies the LSM "safety net" recovers missed changes.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn safety_net_rebuild_picks_up_new_file() {
+    let tmp = tempfile::tempdir().unwrap();
+    let data = tmp.path();
+    let root = data.join("root");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("a.txt"), b"needle here").unwrap();
+
+    let w_db = data.join("db/w/index.dfdb");
+    build_content_index(
+        &root,
+        &w_db,
+        &data.join("db/w/content"),
+        &ContentBuildOptions::default(),
+    )
+    .unwrap();
+    let mut reg = df_index::Registry::load(data);
+    reg.upsert(df_index::DbRecord {
+        name: "w".into(),
+        root: root.clone(),
+        db_path: w_db.clone(),
+        content_dir: data.join("db/w/content"),
+    });
+    reg.save().unwrap();
+
+    let socket = data.join("daemon.sock");
+    // 1s safety-net interval; NO DEEPFIND_WATCH (isolate the safety-net path).
+    std::env::set_var("DEEPFIND_SAFETY_NET_SECS", "1");
+    let sock = socket.clone();
+    let dbp = data.join("db/index.dfdb");
+    let server = tokio::spawn(async move { deepfindd::serve(&sock, &dbp).await });
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    // Create b.txt AFTER the initial build; the safety-net rescan must find it.
+    std::fs::write(root.join("b.txt"), b"needle now").unwrap();
+
+    let req = SearchRequest {
+        query: "needle".into(),
+        scope: None,
+        limit: None,
+        opts: SearchOptions::default(),
+        db: Some("w".into()),
+    };
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    let mut converged = false;
+    while std::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let (_b, got) = query_and_collect(&socket, req.clone()).await;
+        if got.iter().any(|p| p.ends_with("b.txt")) {
+            converged = true;
+            break;
+        }
+    }
+    std::env::remove_var("DEEPFIND_SAFETY_NET_SECS");
+    server.abort();
+    assert!(converged, "safety-net rebuild did not pick up b.txt");
+}
+
+/// Regression: a registry reload mid-run (dbs.toml rewrite, e.g. `db add`) must
+/// NOT orphan the overlay handle — df-watch captured the handle at spawn and
+/// keeps updating it; after the reload, queries must still see new overlay
+/// changes. Guards the `reuse_handles_from` fix. Guards on DF_WATCH_LOCK.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn registry_reload_does_not_orphan_overlay() {
+    let _guard = DF_WATCH_LOCK.lock().await;
+    let tmp = tempfile::tempdir().unwrap();
+    let data = tmp.path();
+    let root = data.join("root");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("a.txt"), b"needle here").unwrap();
+
+    let w_db = data.join("db/w/index.dfdb");
+    build_content_index(
+        &root,
+        &w_db,
+        &data.join("db/w/content"),
+        &ContentBuildOptions::default(),
+    )
+    .unwrap();
+    let mut reg = df_index::Registry::load(data);
+    reg.upsert(df_index::DbRecord {
+        name: "w".into(),
+        root: root.clone(),
+        db_path: w_db.clone(),
+        content_dir: data.join("db/w/content"),
+    });
+    reg.save().unwrap();
+
+    let socket = data.join("daemon.sock");
+    std::env::set_var("DEEPFIND_WATCH", "1");
+    let sock = socket.clone();
+    let dbp = data.join("db/index.dfdb");
+    let server = tokio::spawn(async move { deepfindd::serve(&sock, &dbp).await });
+    tokio::time::sleep(Duration::from_millis(400)).await;
+
+    let req = || SearchRequest {
+        query: "needle".into(),
+        scope: None,
+        limit: None,
+        opts: SearchOptions::default(),
+        db: Some("w".into()),
+    };
+
+    // 1. overlay works before the reload: add b.txt → found.
+    std::fs::write(root.join("b.txt"), b"needle b").unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    while std::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let (_b, got) = query_and_collect(&socket, req()).await;
+        if got.iter().any(|p| p.ends_with("b.txt")) {
+            break;
+        }
+    }
+
+    // 2. trigger a registry reload by rewriting dbs.toml (new mtime, same entries).
+    let reg = df_index::Registry::load(data);
+    reg.save().unwrap();
+    // Let the registry watcher react (debounce + reload).
+    tokio::time::sleep(Duration::from_millis(900)).await;
+
+    // 3. overlay must STILL work after the reload: add c.txt → found (handle not
+    //    orphaned). b.txt must still be present too.
+    std::fs::write(root.join("c.txt"), b"needle c").unwrap();
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    let mut converged = false;
+    while std::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let (_b, got) = query_and_collect(&socket, req()).await;
+        let has_c = got.iter().any(|p| p.ends_with("c.txt"));
+        let has_b = got.iter().any(|p| p.ends_with("b.txt"));
+        if has_c && has_b {
+            converged = true;
+            break;
+        }
+    }
+    std::env::remove_var("DEEPFIND_WATCH");
+    server.abort();
+    assert!(
+        converged,
+        "overlay stopped working after registry reload (handle orphaned)"
+    );
 }

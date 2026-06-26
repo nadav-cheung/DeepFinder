@@ -20,6 +20,7 @@ pub mod content_build;
 pub mod error;
 pub mod manifest;
 pub mod mmap_source;
+pub mod overlay_store;
 pub mod permissions;
 pub mod registry;
 
@@ -30,6 +31,7 @@ pub use content_build::{
 pub use error::{IndexError, Result};
 pub use manifest::{Manifest, ShardEntry};
 pub use mmap_source::MmapSource;
+pub use overlay_store::{replay as replay_overlay, OverlayStore};
 pub use permissions::{fda_state, FdaState};
 pub use registry::{DbRecord, Registry, RegistryFile};
 

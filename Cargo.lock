@@ -311,7 +311,7 @@ checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 
 [[package]]
 name = "deepfind"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "clap",
  "deepfindd",
@@ -328,7 +328,7 @@ dependencies = [
 
 [[package]]
 name = "deepfindd"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "arc-swap",
  "bytes",
@@ -337,6 +337,7 @@ dependencies = [
  "df-index",
  "df-ipc",
  "futures",
+ "libc",
  "notify",
  "regex",
  "tempfile",
@@ -346,17 +347,19 @@ dependencies = [
 
 [[package]]
 name = "df-content"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
+ "bincode",
  "df-core",
  "memchr",
  "regex",
+ "serde",
  "tempfile",
 ]
 
 [[package]]
 name = "df-core"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "criterion",
  "serde",
@@ -366,7 +369,7 @@ dependencies = [
 
 [[package]]
 name = "df-index"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "criterion",
  "crossbeam-channel",
@@ -382,7 +385,7 @@ dependencies = [
 
 [[package]]
 name = "df-ipc"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "bincode",
  "bytes",

@@ -5,7 +5,9 @@
 
 pub mod fold;
 pub mod lines;
+pub mod overlay;
 pub mod regex_query;
 pub mod shard;
 
+pub use overlay::{decode_records, encode_record, Overlay, OverlayReader, WalRecord};
 pub use shard::{ShardBuilder, ShardReader};

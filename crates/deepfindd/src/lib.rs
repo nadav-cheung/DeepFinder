@@ -14,16 +14,18 @@ use std::time::Duration;
 
 use arc_swap::ArcSwap;
 use bytes::Bytes;
-use df_content::ShardReader;
+use df_content::{Overlay, ShardReader, WalRecord};
 use df_core::candidate::candidates;
 use df_core::db::DbReader;
 use df_core::{in_scope, query_docids, LiteMeta};
-use df_index::{FileSource, MmapSource};
+use df_index::{replay_overlay, FileSource, MmapSource, OverlayStore};
 use df_ipc::proto::{IndexRequest, LineHit, MatchKind, Request, ResponseFrame};
 use df_ipc::{decode_request, encode_frame, framed};
 use futures::{SinkExt, StreamExt};
 use tokio::net::{UnixListener, UnixStream};
 use tokio::task::JoinSet;
+
+mod singleton;
 
 /// Results per `Batch` frame.
 const STREAM_CHUNK: usize = 512;
@@ -253,6 +255,10 @@ impl ContentShards {
 /// same path. Because it goes through [`ContentShards::reload`] (ArcSwap), the
 /// daemon keeps serving the OLD snapshot while the rebuild runs and until every
 /// in-flight query on it finishes — no offline window, no SIGBUS.
+/// Rebuild the cold index + hot-swap the shards WITHOUT touching the overlay
+/// (the safety-net periodic rebuild uses this — it refreshes the cold layer but
+/// keeps overlay changes that arrived during the rebuild). Compaction uses
+/// [`compact_and_swap`] instead (rebuild + clear).
 pub(crate) fn rebuild_and_swap(
     root: &Path,
     db_path: &Path,
@@ -273,6 +279,143 @@ pub(crate) fn rebuild_and_swap(
     Ok(())
 }
 
+/// Default safety-net rebuild interval (once per day). Override with
+/// `DEEPFIND_SAFETY_NET_SECS` (for tuning / tests).
+const SAFETY_NET_SECS: u64 = 24 * 60 * 60;
+
+/// Background thread that periodically rebuilds every rooted DB via
+/// [`rebuild_and_swap`] — the LSM "safety net" that recovers from missed changes
+/// without relying on df-watch/FSEvents. Runs for the daemon's lifetime.
+fn spawn_safety_net(dbset: Arc<ArcSwap<DbSet>>) {
+    std::thread::spawn(move || loop {
+        let interval = std::env::var("DEEPFIND_SAFETY_NET_SECS")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .filter(|&s| s > 0)
+            .unwrap_or(SAFETY_NET_SECS);
+        std::thread::sleep(Duration::from_secs(interval));
+        let snap = dbset.load_full();
+        let mut rebuilt = 0;
+        for e in &snap.entries {
+            if let Some(root) = &e.root {
+                if let Err(e) =
+                    rebuild_and_swap(root, &e.db_path, e.shards.content_dir(), &e.shards)
+                {
+                    tracing::warn!(error = %e, root = ?root, "safety-net rebuild failed");
+                } else {
+                    rebuilt += 1;
+                }
+            }
+        }
+        if rebuilt > 0 {
+            tracing::info!(rebuilt, "safety-net rebuild cycle complete");
+        }
+    });
+}
+
+/// Compaction: a full rebuild that subsumes the overlay, then clear the overlay
+/// and truncate its WAL. Acquires the build marker and skips if a build is
+/// already in flight (the in-flight build is fresher; the overlay keeps
+/// absorbing until next time), so it can't race an on-demand/startup build
+/// writing the same shard names.
+pub(crate) fn compact_and_swap(
+    root: &Path,
+    db_path: &Path,
+    content_dir: &Path,
+    shards: &ContentShards,
+    overlay: &OverlayHandle,
+) {
+    let Some(_guard) = index_job::try_acquire(db_path) else {
+        tracing::info!(root = ?root, "compaction: build in flight; skipping");
+        return;
+    };
+    match index_job::tracked_build(root, db_path, content_dir, &Default::default()) {
+        Ok(_) => {
+            shards.reload();
+            overlay.clear();
+            tracing::info!(root = ?root, "compaction complete; overlay cleared");
+        }
+        Err(e) => tracing::warn!(error = %e, root = ?root, "compaction rebuild failed"),
+    }
+}
+
+/// The hot overlay for one DB: an [`ArcSwap`]'d [`Overlay`] (queries take a
+/// snapshot via [`Self::snapshot`]) backed by a persisted WAL ([`OverlayStore`])
+/// that the df-watch loop appends to. Mirrors the `ContentShards` pattern so an
+/// overlay update is atomic w.r.t. in-flight queries. `store` is `None` only if
+/// the WAL could not be opened (degraded: in-memory overlay, not persisted).
+struct OverlayHandle {
+    data: ArcSwap<Overlay>,
+    store: Option<OverlayStore>,
+}
+
+impl OverlayHandle {
+    /// Open the WAL at `wal_path`, replay it into an overlay, and hold the store
+    /// for future appends. Best-effort: WAL open failure degrades to read-only.
+    fn open(wal_path: &Path) -> Self {
+        let recs = replay_overlay(wal_path).unwrap_or_default();
+        let mut o = Overlay::default();
+        o.apply_records(&recs);
+        if !recs.is_empty() {
+            tracing::info!(wal = ?wal_path, recs = recs.len(), "overlay replayed");
+        }
+        let store = match OverlayStore::open(wal_path) {
+            Ok(s) => Some(s),
+            Err(e) => {
+                tracing::warn!(
+                    error = %e,
+                    wal = ?wal_path,
+                    "overlay WAL open failed; overlay is in-memory only"
+                );
+                None
+            }
+        };
+        Self {
+            data: ArcSwap::from_pointee(o),
+            store,
+        }
+    }
+
+    /// A stable snapshot for the duration of one query (mirrors shard snapshot).
+    fn snapshot(&self) -> Arc<Overlay> {
+        self.data.load_full()
+    }
+
+    /// Current entry count (compaction trigger).
+    fn len(&self) -> usize {
+        self.data.load_full().len()
+    }
+
+    /// Append `recs` to the WAL (fsynced) and publish a new overlay snapshot
+    /// (clone → apply → ArcSwap::store). Publishes once per batch, not per event.
+    /// If the WAL is missing (degraded mode) the in-memory overlay still updates.
+    fn record_and_apply(&self, recs: &[WalRecord]) {
+        if let Some(store) = &self.store {
+            for r in recs {
+                if let Err(e) = store.append(r) {
+                    tracing::warn!(error = %e, "overlay WAL append failed");
+                }
+            }
+            if let Err(e) = store.sync() {
+                tracing::warn!(error = %e, "overlay WAL sync failed");
+            }
+        }
+        let mut next = (*self.data.load_full()).clone();
+        next.apply_records(recs);
+        self.data.store(Arc::new(next));
+    }
+
+    /// Compaction: the rebuild subsumed the overlay — drop it + truncate the WAL.
+    fn clear(&self) {
+        if let Some(store) = &self.store {
+            if let Err(e) = store.truncate() {
+                tracing::warn!(error = %e, "overlay WAL truncate failed");
+            }
+        }
+        self.data.store(Arc::new(Overlay::default()));
+    }
+}
+
 /// One loaded DB: the filename reader + its content shards, named. `root` is the
 /// indexed source (from the registry) — present for registered DBs, used by the
 /// df-watch incremental watcher; `None` for the default DB (no incremental).
@@ -282,6 +425,7 @@ struct DbEntry {
     pub(crate) db_path: PathBuf,
     db: Arc<DbReader<FileSource>>,
     pub(crate) shards: Arc<ContentShards>,
+    pub(crate) overlay: Arc<OverlayHandle>,
 }
 
 /// The set of DBs a daemon serves: the default DB (the one `serve` was handed)
@@ -319,6 +463,21 @@ impl DbSet {
         Self { entries }
     }
 
+    /// Reuse the live `shards` + `overlay` handles from `old` for entries that
+    /// survived a registry reload (matched by `db_path`). A registry reload is
+    /// for `dbs.toml` changes (db add/remove), NOT an index rebuild — the index
+    /// files didn't change, so the existing handles (which df-watch captured at
+    /// spawn and keeps updating) must be preserved, or df-watch would be left
+    /// updating orphaned handles that queries no longer read.
+    pub(crate) fn reuse_handles_from(&mut self, old: &DbSet) {
+        for e in &mut self.entries {
+            if let Some(o) = old.entries.iter().find(|o| o.db_path == e.db_path) {
+                e.shards = o.shards.clone();
+                e.overlay = o.overlay.clone();
+            }
+        }
+    }
+
     /// Entries to query: all of them, or just the named one if `name` is set.
     fn select<'a>(&'a self, name: Option<&str>) -> Vec<&'a DbEntry> {
         match name {
@@ -348,12 +507,20 @@ fn open_entry(name: &str, db_path: &Path, root: Option<PathBuf>) -> Option<DbEnt
         .map(|p| p.join("content"))
         .unwrap_or_else(|| PathBuf::from("content"));
     let shards = Arc::new(ContentShards::open(&content_dir));
+    // Overlay WAL lives beside the index DB (sibling of `index.dfdb`), so it is
+    // under the data dir and filtered by df-watch's self-write guard.
+    let wal_path = db_path
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("overlay.wal");
+    let overlay = Arc::new(OverlayHandle::open(&wal_path));
     Some(DbEntry {
         name: name.to_string(),
         root,
         db_path: db_path.to_path_buf(),
         db: Arc::new(db),
         shards,
+        overlay,
     })
 }
 
@@ -370,6 +537,56 @@ struct QueryCtx<'a> {
     want_fn: bool,
     want_ct: bool,
     path_mode: df_ipc::proto::PathMode,
+}
+
+/// Render the hot overlay's content matches as grep-style [`LineHit`]s (`-n` /
+/// `-C`), mirroring `ContentShards::query_lines` over the overlay's in-memory
+/// docs. Skips tombstoned, out-of-scope, and non-content-indexed docs.
+fn overlay_line_hits(ov: &Overlay, q: &LineQuery) -> Vec<LineHit> {
+    let cap = q.limit.map(|l| l as usize).unwrap_or(usize::MAX);
+    let mut out = Vec::new();
+    let vneedle: &[u8] = if q.case_sensitive { q.needle } else { q.folded };
+    for d in 0..ov.len() as u32 {
+        if out.len() >= cap {
+            break;
+        }
+        let Some(path) = ov.path(d).map(str::to_owned) else {
+            continue;
+        };
+        if ov.tombstones().contains(path.as_str()) || !in_scope(&path, q.scope) {
+            continue;
+        }
+        let Some(content) = ov.content(d) else {
+            continue;
+        };
+        let offsets: Vec<usize> = match q.re {
+            Some(rx) => rx.find_iter(content).map(|m| m.start()).collect(),
+            None => df_content::lines::literal_match_offsets(content, vneedle, q.case_sensitive),
+        };
+        let mut seen: HashSet<u32> = HashSet::new();
+        for off in offsets {
+            if let Some(n) = q.context {
+                let (first, block) = df_content::lines::context_block(content, off, n);
+                if seen.insert(first) {
+                    out.push(LineHit {
+                        path: path.clone(),
+                        line_no: first,
+                        text: block,
+                    });
+                }
+            } else {
+                let no = df_content::lines::line_number(content, off);
+                if seen.insert(no) {
+                    out.push(LineHit {
+                        path: path.clone(),
+                        line_no: no,
+                        text: df_content::lines::line_text(content, off),
+                    });
+                }
+            }
+        }
+    }
+    out
 }
 
 /// Filename + content query for ONE DB entry, merged by path. The building block
@@ -431,12 +648,65 @@ fn query_entry(
         }
     }
 
+    // Hot overlay (LSM read): first drop stale cold-layer hits for any path the
+    // overlay shadows (upserted OR tombstoned — the cold version is stale), then
+    // add the overlay's current results. The overlay is queried independently
+    // and merged by path, exactly like the filename/content cold layers above.
+    {
+        let ov = entry.overlay.snapshot();
+        if ov.shadows_anything() {
+            merged.retain(|p, _| !ov.suppresses(p));
+        }
+        if ctx.want_fn {
+            let basename = ctx.path_mode == df_ipc::proto::PathMode::Basename;
+            for (path, meta) in ov.filename_query(ctx.needle, ctx.fn_case, basename, ctx.limit) {
+                if !in_scope(&path, ctx.scope) {
+                    continue;
+                }
+                override_in(&mut merged, path, meta, MatchKind::Filename, merge_cap);
+            }
+        }
+        if ctx.want_ct {
+            for (path, meta) in match ctx.re_content {
+                Some(re) => ov.content_regex_hits(re, ctx.limit),
+                None => ov.content_query(
+                    ctx.folded,
+                    ctx.needle.as_bytes(),
+                    ctx.case_sensitive,
+                    ctx.limit,
+                ),
+            } {
+                if !in_scope(&path, ctx.scope) {
+                    continue;
+                }
+                override_in(&mut merged, path, meta, MatchKind::Content, merge_cap);
+            }
+        }
+    }
+
     merged
 }
 
 /// Open `db_path` (+ the content shard set beside it), bind `socket_path`, serve
 /// until a shutdown signal, then drain + remove the socket.
 pub async fn serve(socket_path: &Path, db_path: &Path) -> std::io::Result<()> {
+    // Single-instance guard: hold an exclusive flock on <socket dir>/daemon.lock
+    // for the daemon's lifetime. A second `deepfind daemon` (e.g. a manual start
+    // racing launchd's KeepAlive respawn) bails here instead of binding a second
+    // socket and fighting the live daemon over index writes. The kernel releases
+    // the lock automatically if this process crashes, so there is never a stale
+    // lock to clean up (unlike the socket file below).
+    let _singleton = match singleton::acquire(&singleton::lock_path(socket_path)) {
+        Ok(f) => f,
+        Err(e) if e.kind() == std::io::ErrorKind::WouldBlock => {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::WouldBlock,
+                "deepfindd already running (singleton lock held)",
+            ));
+        }
+        Err(e) => return Err(e),
+    };
+
     // The DbSet lives behind an ArcSwap so it can be atomically replaced later
     // (background index builds → hot-swap, P2.2/P2.3). Connections take a
     // per-request snapshot via `load_full()`; here we take one for the startup
@@ -455,8 +725,9 @@ pub async fn serve(socket_path: &Path, db_path: &Path) -> std::io::Result<()> {
     );
 
     // df-watch (env-gated): for each registered DB with a known root, spawn an
-    // incremental watcher that rebuilds + hot-swaps on file changes.
+    // incremental watcher that folds changes into the overlay (+ compaction).
     if std::env::var("DEEPFIND_WATCH").is_ok() {
+        let max_file_size = df_index::ContentBuildOptions::default().max_file_size;
         for e in &initial.entries {
             if let Some(root) = &e.root {
                 watch::spawn(
@@ -464,6 +735,8 @@ pub async fn serve(socket_path: &Path, db_path: &Path) -> std::io::Result<()> {
                     e.db_path.clone(),
                     e.shards.content_dir().to_path_buf(),
                     e.shards.clone(),
+                    e.overlay.clone(),
+                    max_file_size,
                 );
             }
         }
@@ -501,9 +774,17 @@ pub async fn serve(socket_path: &Path, db_path: &Path) -> std::io::Result<()> {
         registry_dir.to_path_buf(),
     );
 
+    // Safety-net periodic rebuild: independently of df-watch, rebuild every
+    // rooted DB on a long interval to catch anything missed (daemon downtime,
+    // lost/coalesced FSEvents, WAL corruption). Uses `rebuild_and_swap` (NOT
+    // compaction) so the overlay is preserved — only the cold layer is refreshed.
+    spawn_safety_net(dbset.clone());
+
     if let Some(dir) = socket_path.parent() {
         tokio::fs::create_dir_all(dir).await?;
     }
+    // Safe under the singleton lock: no other daemon can be running, so any
+    // socket file left here is stale (a previous crash), not a live peer's.
     let _ = tokio::fs::remove_file(socket_path).await; // clear stale socket
     let listener = UnixListener::bind(socket_path)?;
 
@@ -743,6 +1024,14 @@ async fn handle_conn(
                     context: ctx,
                 };
                 all.extend(entry.shards.query_lines(&q));
+                let ov = entry.overlay.snapshot();
+                // Drop stale cold-layer line hits for any shadowed path before
+                // adding the overlay's current hits (overlay_line_hits skips
+                // tombstoned docs itself).
+                if ov.shadows_anything() {
+                    all.retain(|h| !ov.suppresses(&h.path));
+                }
+                all.extend(overlay_line_hits(&ov, &q));
             }
             all
         })
@@ -903,6 +1192,30 @@ fn file_mtime_secs(path: &str) -> Option<i64> {
         .map(|d| d.as_secs() as i64)
 }
 
+/// Overlay override: like [`merge_in`] but the incoming entry WINS (fresh meta),
+/// combining `MatchKind` with any existing entry. Used by the hot overlay so a
+/// changed file's current version supersedes the stale cold-layer hit on the
+/// same path.
+fn override_in(
+    map: &mut HashMap<String, (LiteMeta, MatchKind)>,
+    path: String,
+    meta: LiteMeta,
+    kind: MatchKind,
+    cap: usize,
+) {
+    match map.get_mut(&path) {
+        Some((m, k)) => {
+            *m = meta;
+            *k = combine_kind(*k, kind);
+        }
+        None => {
+            if map.len() < cap {
+                map.insert(path, (meta, kind));
+            }
+        }
+    }
+}
+
 /// Insert/merge a match into the dedup map. Filename + Content on same path → Both.
 fn merge_in(
     map: &mut HashMap<String, (LiteMeta, MatchKind)>,
@@ -935,9 +1248,11 @@ fn combine_kind(a: MatchKind, b: MatchKind) -> MatchKind {
 pub mod index_job;
 
 pub(crate) mod watch {
-    //! df-watch: a notify (FSEvents on macOS) watcher that, on file changes under
-    //! a registered DB's root, rebuilds its content index and hot-swaps the shards
-    //! via ArcSwap. The daemon keeps serving the old snapshot during the rebuild.
+    //! df-watch: a notify (FSEvents on macOS) watcher over a registered DB's
+    //! root. Each change is folded into the hot overlay (WAL + in-memory
+    //! ArcSwap), so mutations show up in queries without a full rebuild. When
+    //! the overlay grows past [`COMPACTION_THRESHOLD`], a compaction rebuilds
+    //! the cold shards and clears the overlay (LSM tiered model).
 
     use std::path::{Path, PathBuf};
     use std::sync::mpsc;
@@ -946,42 +1261,78 @@ pub(crate) mod watch {
 
     use notify::{EventKind, RecursiveMode, Watcher};
 
-    use crate::{rebuild_and_swap, ContentShards};
+    use crate::{compact_and_swap, ContentShards, OverlayHandle, WalRecord};
 
-    /// Coalesce event bursts before rebuilding.
+    /// Coalesce event bursts before applying them to the overlay.
     const DEBOUNCE: Duration = Duration::from_millis(300);
 
-    /// Spawn a background watcher over `root`. On changes (debounced), rebuild
-    /// (`db_path` / `content_dir`) and hot-swap `shards`. Runs for the daemon's
-    /// lifetime; log-only on errors (the daemon keeps serving the old snapshot).
+    /// Overlay entry count at which a compaction (full rebuild) fires and clears
+    /// it. Bounds memory + query-merge cost between compactions. Override with
+    /// `DEEPFIND_COMPACTION_THRESHOLD` (for tuning / tests).
+    fn compaction_threshold() -> usize {
+        std::env::var("DEEPFIND_COMPACTION_THRESHOLD")
+            .ok()
+            .and_then(|s| s.parse().ok())
+            .filter(|&n| n > 0)
+            .unwrap_or(2000)
+    }
+
+    /// Spawn a background watcher over `root`. On changes (debounced), fold the
+    /// affected paths into `overlay`; compact when it grows too large. Runs for
+    /// the daemon's lifetime; log-only on errors.
     pub fn spawn(
         root: PathBuf,
         db_path: PathBuf,
         content_dir: PathBuf,
         shards: Arc<ContentShards>,
+        overlay: Arc<OverlayHandle>,
+        max_file_size: u64,
     ) {
-        std::thread::spawn(move || run(&root, &db_path, &content_dir, shards));
+        std::thread::spawn(move || {
+            run(
+                &root,
+                &db_path,
+                &content_dir,
+                shards,
+                overlay,
+                max_file_size,
+            )
+        });
     }
 
-    fn run(root: &Path, db_path: &Path, content_dir: &Path, shards: Arc<ContentShards>) {
-        let (tx, rx) = mpsc::channel::<()>();
+    fn run(
+        root: &Path,
+        db_path: &Path,
+        content_dir: &Path,
+        shards: Arc<ContentShards>,
+        overlay: Arc<OverlayHandle>,
+        max_file_size: u64,
+    ) {
+        let (tx, rx) = mpsc::channel::<PathBuf>();
         // The index's own writes live under `~/.deep-finder`. Canonicalize so the
         // prefix match is robust against a symlinked `$HOME`; fall back to the
         // lexical path if canonicalization fails.
         let data_dir = df_ipc::data_dir()
             .canonicalize()
             .unwrap_or_else(|_| df_ipc::data_dir());
+        // notify (FSEvents) reports CANONICAL event paths, but the cold shard
+        // stores paths rooted at the LEXICAL build root (e.g. macOS `/var/…`
+        // vs `/private/var/…`). Normalize event paths back to the lexical root so
+        // overlay paths match the cold layer for suppression/override.
+        let canon_root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
         let mut watcher =
             match notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
                 if let Ok(ev) = res {
                     // React only to real user changes: ignore pure reads, and ignore
                     // the daemon's own writes under the data dir — otherwise a watched
                     // root that contains `~/.deep-finder` feeds back forever
-                    // (rebuild → shard write → event → rebuild → …).
+                    // (overlay write → event → overlay write → …).
                     if !matches!(ev.kind, EventKind::Access(_))
                         && !is_self_write(&ev.paths, &data_dir)
                     {
-                        let _ = tx.send(());
+                        for p in ev.paths {
+                            let _ = tx.send(p);
+                        }
                     }
                 }
             }) {
@@ -996,25 +1347,80 @@ pub(crate) mod watch {
             return;
         }
         tracing::info!(root = ?root, "df-watch: watching");
-        // Debounce + rebuild loop. `watcher` (and the sender it owns) stay alive
-        // for the loop's duration; the loop exits only if the channel closes.
-        while rx.recv().is_ok() {
-            while rx.try_recv().is_ok() {}
+        // Debounce + overlay-update loop. `watcher` (and the sender it owns) stay
+        // alive for the loop's duration; the loop exits only if the channel closes.
+        while let Ok(first) = rx.recv() {
+            let mut batch: Vec<PathBuf> = vec![first];
+            while let Ok(p) = rx.try_recv() {
+                batch.push(p);
+            }
             std::thread::sleep(DEBOUNCE);
-            while rx.try_recv().is_ok() {}
-            tracing::info!(root = ?root, "df-watch: rebuilding");
-            if let Err(e) = rebuild_and_swap(root, db_path, content_dir, &shards) {
-                tracing::warn!(error = %e, root = ?root, "df-watch: rebuild failed");
+            while let Ok(p) = rx.try_recv() {
+                batch.push(p);
+            }
+            let recs: Vec<WalRecord> = batch
+                .iter()
+                .map(|p| build_record(&lexify(p, root, &canon_root), max_file_size))
+                .collect();
+            overlay.record_and_apply(&recs);
+            tracing::info!(root = ?root, paths = batch.len(), "df-watch: overlay updated");
+            if overlay.len() >= compaction_threshold() {
+                tracing::info!(root = ?root, n = overlay.len(), "df-watch: compaction threshold");
+                compact_and_swap(root, db_path, content_dir, &shards, &overlay);
             }
         }
         drop(watcher);
     }
 
+    /// Re-root a canonical event path onto the lexical build root (see `run`).
+    /// If the event path isn't under `canon_root`, return it unchanged.
+    fn lexify(event: &Path, lexical_root: &Path, canon_root: &Path) -> PathBuf {
+        match event.strip_prefix(canon_root) {
+            Ok(rel) => lexical_root.join(rel),
+            Err(_) => event.to_path_buf(),
+        }
+    }
+
+    /// Build the WAL record for one changed path: `Delete` if it no longer
+    /// exists, else `Upsert` (content `None` for dirs / binary / oversized —
+    /// filename-layer only, matching the build path's text gate).
+    fn build_record(path: &Path, max_file_size: u64) -> WalRecord {
+        let pstr = path.to_string_lossy().into_owned();
+        let meta = match std::fs::metadata(path) {
+            Ok(m) => m,
+            Err(_) => return WalRecord::Delete { path: pstr },
+        };
+        let is_dir = meta.is_dir();
+        let size = meta.len() as i64;
+        let mtime = meta
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs() as i64)
+            .unwrap_or(0);
+        let content = if is_dir {
+            None
+        } else {
+            match df_index::content_build::classify(path, max_file_size) {
+                df_index::content_build::ContentDecision::Text(b) => Some(b),
+                _ => None,
+            }
+        };
+        WalRecord::Upsert {
+            path: pstr,
+            meta: df_core::LiteMeta {
+                is_dir,
+                size,
+                mtime,
+            },
+            content,
+        }
+    }
+
     /// True if any event path is inside the index data dir (`~/.deep-finder`) —
-    /// the daemon's own rebuild/log/socket writes. Such events must NOT trigger a
-    /// rebuild: a watched root that *contains* the data dir would otherwise feed
-    /// back into itself (rebuild writes shards → event → rebuild → …), looping
-    /// forever (reproduced: ~one mutation → tens of rebuilds, never converging).
+    /// the daemon's own overlay/log/socket writes. Such events must NOT feed the
+    /// overlay: a watched root that *contains* the data dir would otherwise feed
+    /// back into itself (overlay write → event → overlay write → …), looping.
     fn is_self_write(paths: &[PathBuf], data_dir: &Path) -> bool {
         paths.iter().any(|p| p.starts_with(data_dir))
     }
@@ -1140,7 +1546,11 @@ pub(crate) mod registry_watcher {
             last_mtime = Some(modified);
 
             tracing::info!("registry-watch: reloading DbSet");
-            let fresh = DbSet::open(&default_db_path);
+            let mut fresh = DbSet::open(&default_db_path);
+            // Preserve live shard + overlay handles for surviving DBs so df-watch
+            // (which captured them at spawn) keeps updating the handles queries read.
+            let old = dbset.load_full();
+            fresh.reuse_handles_from(&old);
             // Spawn background builds for any registered DBs still missing an index.
             for rec in &df_index::Registry::load(&data_dir).records {
                 index_job::spawn_if_missing(
