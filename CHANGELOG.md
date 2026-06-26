@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+_Nothing yet._
+
+## [0.1.3] - 2026-06-26
+
 ### Added
 - **Background index builds (P2.3):** `deepfind index` now submits a background build to the daemon over the socket and returns immediately, instead of blocking in the foreground. Live build progress (files scanned · MB · shards) is reported by `deepfind status` while indexing. `--foreground` forces the old in-process build; the CLI falls back to it automatically when the daemon is unreachable. New IPC: `enum Request { Search, Index }` + `IndexRequest` / `ResponseFrame::IndexAck`. In-flight searches are never interrupted — the build hot-swaps the `DbSet` via `ArcSwap` (each connection pins a snapshot).
 
