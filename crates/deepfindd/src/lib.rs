@@ -267,7 +267,7 @@ pub(crate) fn rebuild_and_swap(
         tracing::info!(root = ?root, "df-watch: build in flight; skipping this rebuild");
         return Ok(());
     };
-    df_index::build_content_index(root, db_path, content_dir, &Default::default())
+    index_job::tracked_build(root, db_path, content_dir, &Default::default())
         .map_err(|e| std::io::Error::other(format!("rebuild: {e}")))?;
     shards.reload();
     Ok(())

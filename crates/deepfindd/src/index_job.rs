@@ -92,6 +92,58 @@ const PROGRESS_TICK: Duration = Duration::from_millis(10);
 /// Write a progress snapshot every this many ticks (25 × 10ms = 250ms).
 const PROGRESS_INTERVAL_TICKS: u32 = 25;
 
+/// Run a streaming content build with a live-progress reporter that snapshots
+/// [`df_index::IndexProgress`] into the `.indexing` marker every 250ms, so
+/// `deepfind status` can show files / MB / shards while indexing. The caller
+/// MUST already hold the marker guard ([`try_acquire`]) — this fn only builds +
+/// reports. Shared by [`spawn_build`] (on-demand / startup) and
+/// `watch::rebuild_and_swap` (df-watch) so BOTH build paths surface progress.
+pub(crate) fn tracked_build(
+    root: &Path,
+    db_path: &Path,
+    content_dir: &Path,
+    opts: &ContentBuildOptions,
+) -> df_index::Result<df_index::ContentReport> {
+    let marker_path = marker(db_path);
+    let progress = Arc::new(df_index::IndexProgress::default());
+    // Reporter: periodically snapshot the counters into the marker file. Stops
+    // when `stop` is set (build done).
+    let stop = Arc::new(AtomicBool::new(false));
+    let reporter = {
+        let progress = Arc::clone(&progress);
+        let stop = Arc::clone(&stop);
+        let marker_path = marker_path.clone();
+        std::thread::spawn(move || {
+            while !stop.load(Ordering::Relaxed) {
+                let snap = progress.snapshot();
+                let line = format!(
+                    "{} files · {:.1} MB · {} shards",
+                    snap.files_scanned,
+                    snap.content_bytes as f64 / 1_048_576.0,
+                    snap.shards_written
+                );
+                let _ = std::fs::write(&marker_path, line);
+                for _ in 0..PROGRESS_INTERVAL_TICKS {
+                    if stop.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    std::thread::sleep(PROGRESS_TICK);
+                }
+            }
+        })
+    };
+    let res = df_index::build_content_index_with_progress(
+        root,
+        db_path,
+        content_dir,
+        opts,
+        Arc::clone(&progress),
+    );
+    stop.store(true, Ordering::Relaxed);
+    let _ = reporter.join();
+    res
+}
+
 /// Build `root` → `db_path`/`content_dir` in the background, then reload the
 /// whole DbSet from disk and atomically swap it in. Returns `false` (without
 /// spawning) if a build for `db_path` is already in flight — [`try_acquire`] is
@@ -117,50 +169,8 @@ pub(crate) fn spawn_build(
     };
     std::thread::spawn(move || {
         let _guard = guard; // MarkerGuard: removes the marker on drop
-        let marker_path = marker(&db_path);
         tracing::info!(root = ?root, "background-indexing");
-
-        let progress = Arc::new(df_index::IndexProgress::default());
-        // Reporter: periodically snapshot the counters into the marker file so
-        // `deepfind status` can show live progress. Stops when `stop` is set.
-        let stop = Arc::new(AtomicBool::new(false));
-        let reporter = {
-            let progress = Arc::clone(&progress);
-            let stop = Arc::clone(&stop);
-            let marker_path = marker_path.clone();
-            std::thread::spawn(move || {
-                while !stop.load(Ordering::Relaxed) {
-                    let snap = progress.snapshot();
-                    let line = format!(
-                        "{} files · {:.1} MB · {} shards",
-                        snap.files_scanned,
-                        snap.content_bytes as f64 / 1_048_576.0,
-                        snap.shards_written
-                    );
-                    let _ = std::fs::write(&marker_path, line);
-                    for _ in 0..PROGRESS_INTERVAL_TICKS {
-                        if stop.load(Ordering::Relaxed) {
-                            break;
-                        }
-                        std::thread::sleep(PROGRESS_TICK);
-                    }
-                }
-            })
-        };
-
-        let res = df_index::build_content_index_with_progress(
-            &root,
-            &db_path,
-            &content_dir,
-            &opts,
-            Arc::clone(&progress),
-        );
-        // Stop the reporter before the swap so status never shows mid-swap
-        // progress; the MarkerGuard removes the marker on drop.
-        stop.store(true, Ordering::Relaxed);
-        let _ = reporter.join();
-
-        match res {
+        match tracked_build(&root, &db_path, &content_dir, &opts) {
             Ok(_) => {
                 dbset.store(Arc::new(DbSet::open(&default_db_path)));
                 tracing::info!(root = ?root, "background-indexing complete; DbSet hot-swapped");
