@@ -259,6 +259,14 @@ pub(crate) fn rebuild_and_swap(
     content_dir: &Path,
     shards: &ContentShards,
 ) -> std::io::Result<()> {
+    // Acquire the build marker so this df-watch rebuild can't race an on-demand
+    // or startup build — two builds writing the same shard names would corrupt
+    // each other's output. If a build is in flight, skip this cycle; the
+    // in-flight build is fresher and df-watch will catch the next change event.
+    let Some(_guard) = index_job::try_acquire(db_path) else {
+        tracing::info!(root = ?root, "df-watch: build in flight; skipping this rebuild");
+        return Ok(());
+    };
     df_index::build_content_index(root, db_path, content_dir, &Default::default())
         .map_err(|e| std::io::Error::other(format!("rebuild: {e}")))?;
     shards.reload();
@@ -459,6 +467,13 @@ pub async fn serve(socket_path: &Path, db_path: &Path) -> std::io::Result<()> {
                 );
             }
         }
+    }
+
+    // Recover `.indexing` markers left by a previous daemon killed mid-build: at
+    // startup no build is in flight in this process, so any marker on disk is
+    // stale (otherwise `deepfind status` would report `indexing` forever).
+    if let Some(db_dir) = db_path.parent() {
+        index_job::sweep_stale_markers(db_dir);
     }
 
     // Background initial-index for registered DBs that have a root but no index

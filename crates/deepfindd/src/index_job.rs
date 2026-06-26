@@ -9,6 +9,12 @@
 //! in-flight queries (which pin a snapshot via `Arc`) are never interrupted.
 //! Live counters are written to the `.indexing` marker so `deepfind status` can
 //! report progress (`is_indexing` + [`read_progress`]).
+//!
+//! **Concurrency:** [`try_acquire`] is the single atomic guard (`create_new` on
+//! the marker) used by `spawn_build` AND by `watch::rebuild_and_swap`, so two
+//! builds of the same DB — on-demand vs df-watch, on-demand vs startup — can
+//! never interleave writes to the same shard names. A daemon killed mid-build
+//! (SIGKILL) leaks the marker; [`sweep_stale_markers`] at startup recovers it.
 
 use std::fs::OpenOptions;
 use std::path::{Path, PathBuf};
@@ -22,22 +28,63 @@ use df_index::ContentBuildOptions;
 
 use crate::DbSet;
 
-/// Marker file written while a build is in flight (so `deepfind status` can
-/// report `indexing` + live progress). Lives beside the DB's index.dfdb.
+/// The `.indexing` marker file written beside a DB's index.dfdb while a build is
+/// in flight (so `deepfind status` can report `indexing` + live progress).
 fn marker(db_path: &Path) -> PathBuf {
     db_path.with_extension("indexing")
 }
 
-/// Drop-guard that removes the `.indexing` marker when it goes out of scope —
-/// whether the build closure returns `Ok`, returns `Err`, or panics mid-build.
-/// Without it, a panic (or thread kill) would leave the marker on disk and
-/// `deepfind status` would report `indexing` forever (holistic-review I2).
-struct MarkerGuard<'a>(&'a Path);
+/// Drop-guard that removes the `.indexing` marker when dropped — whether the
+/// build returns `Ok`, `Err`, or panics. Owns its path so it is `Send` and can
+/// be moved into a worker thread. (A process SIGKILL still leaks the marker;
+/// [`sweep_stale_markers`] at daemon startup recovers those.)
+pub(crate) struct MarkerGuard {
+    path: PathBuf,
+}
 
-impl Drop for MarkerGuard<'_> {
+impl Drop for MarkerGuard {
     fn drop(&mut self) {
-        let _ = std::fs::remove_file(self.0);
+        let _ = std::fs::remove_file(&self.path);
     }
+}
+
+/// Atomically acquire the build marker for `db_path` (`OpenOptions::create_new`
+/// ⇒ exactly one winner). Returns a [`MarkerGuard`] whose `Drop` removes the
+/// marker, or `None` if a build is already in flight (or the marker can't be
+/// created) — so two builds of the same DB never run concurrently. Used by
+/// [`spawn_build`] (on-demand / startup) and `watch::rebuild_and_swap` (df-watch).
+pub(crate) fn try_acquire(db_path: &Path) -> Option<MarkerGuard> {
+    let m = marker(db_path);
+    if let Some(parent) = m.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    match OpenOptions::new().write(true).create_new(true).open(&m) {
+        Ok(_) => Some(MarkerGuard { path: m }),
+        Err(_) => None,
+    }
+}
+
+/// Remove leftover `.indexing` markers under `db_dir` from a previous daemon
+/// killed mid-build. Call at daemon startup, where no build is in flight in this
+/// process — so any marker on disk is stale. Leaves non-marker files untouched.
+pub fn sweep_stale_markers(db_dir: &Path) {
+    for entry in std::fs::read_dir(db_dir).into_iter().flatten().flatten() {
+        let p = entry.path();
+        if p.is_dir() {
+            for inner in std::fs::read_dir(&p).into_iter().flatten().flatten() {
+                let ip = inner.path();
+                if is_marker(&ip) {
+                    let _ = std::fs::remove_file(&ip);
+                }
+            }
+        } else if is_marker(&p) {
+            let _ = std::fs::remove_file(&p);
+        }
+    }
+}
+
+fn is_marker(p: &Path) -> bool {
+    p.extension().is_some_and(|x| x == "indexing")
 }
 
 /// Progress-reporter tick (sleep granularity so it notices `stop` quickly).
@@ -47,10 +94,10 @@ const PROGRESS_INTERVAL_TICKS: u32 = 25;
 
 /// Build `root` → `db_path`/`content_dir` in the background, then reload the
 /// whole DbSet from disk and atomically swap it in. Returns `false` (without
-/// spawning) if a build for `db_path` is already in flight — the `.indexing`
-/// marker is the atomic guard (`create_new`), so two concurrent builds of the
-/// same DB can never interleave shard writes. Errors are logged; the daemon
-/// keeps serving whatever it had.
+/// spawning) if a build for `db_path` is already in flight — [`try_acquire`] is
+/// the atomic guard, so two concurrent builds of the same DB can never
+/// interleave shard writes. Errors are logged; the daemon keeps serving whatever
+/// it had.
 ///
 /// On success the freshly-built DB is **also attached to df-watch** (when
 /// enabled): watchers attach only to DBs that had an index when their loop
@@ -64,29 +111,13 @@ pub(crate) fn spawn_build(
     dbset: Arc<ArcSwap<DbSet>>,
     default_db_path: PathBuf,
 ) -> bool {
-    let marker_path = marker(&db_path);
-    // Ensure the DB's directory exists (first-time named-DB builds have no dir
-    // yet); best-effort — the build itself also creates the content dir.
-    if let Some(parent) = marker_path.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    // Atomic guard: create_new succeeds for exactly one winner. AlreadyExists ⇒
-    // another build holds the marker; don't start a second.
-    match OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(&marker_path)
-    {
-        Ok(_) => {}
-        Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => return false,
-        Err(e) => {
-            tracing::warn!(error = %e, db = ?db_path, "index_job: cannot create marker");
-            return false;
-        }
-    }
-
+    let Some(guard) = try_acquire(&db_path) else {
+        tracing::info!(db = ?db_path, "index_job: build already in flight; not starting a second");
+        return false;
+    };
     std::thread::spawn(move || {
-        let _guard = MarkerGuard(marker_path.as_path());
+        let _guard = guard; // MarkerGuard: removes the marker on drop
+        let marker_path = marker(&db_path);
         tracing::info!(root = ?root, "background-indexing");
 
         let progress = Arc::new(df_index::IndexProgress::default());
@@ -235,6 +266,22 @@ mod tests {
     }
 
     #[test]
+    fn try_acquire_is_exclusive() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db = tmp.path().join("index.dfdb");
+        let g1 = try_acquire(&db).expect("first acquire succeeds");
+        assert!(
+            try_acquire(&db).is_none(),
+            "second acquire must be rejected while the first holds the marker"
+        );
+        drop(g1);
+        assert!(
+            try_acquire(&db).is_some(),
+            "re-acquire must succeed after the guard drops"
+        );
+    }
+
+    #[test]
     fn spawn_build_rejects_when_marker_present() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().join("root");
@@ -252,5 +299,37 @@ mod tests {
             db,
         );
         assert!(!accepted, "spawn_build must reject when marker present");
+    }
+
+    #[test]
+    fn sweep_stale_markers_removes_leftover() {
+        let tmp = tempfile::tempdir().unwrap();
+        let db_dir = tmp.path().join("db");
+        std::fs::create_dir_all(db_dir.join("w")).unwrap();
+        // Stale markers (default DB + a named DB) left by a killed previous daemon.
+        std::fs::write(db_dir.join("index.indexing"), b"").unwrap();
+        std::fs::write(db_dir.join("w").join("index.indexing"), b"").unwrap();
+        // A real DB + an unrelated file must be left alone.
+        std::fs::write(db_dir.join("index.dfdb"), b"real db").unwrap();
+        std::fs::write(db_dir.join("w").join("index.dfdb"), b"real named db").unwrap();
+
+        sweep_stale_markers(&db_dir);
+
+        assert!(
+            !db_dir.join("index.indexing").exists(),
+            "default marker removed"
+        );
+        assert!(
+            !db_dir.join("w").join("index.indexing").exists(),
+            "named-DB marker removed"
+        );
+        assert!(
+            db_dir.join("index.dfdb").exists(),
+            "sweep must not touch real DBs"
+        );
+        assert!(
+            db_dir.join("w").join("index.dfdb").exists(),
+            "sweep must not touch named-DB files"
+        );
     }
 }

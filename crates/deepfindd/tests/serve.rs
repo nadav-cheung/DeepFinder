@@ -1132,3 +1132,101 @@ async fn submit_index_request_builds_in_background() {
         "submitted index build did not populate the index"
     );
 }
+
+/// Every query takes a per-connection `Arc<DbSet>` snapshot; a background
+/// rebuild hot-swaps via `ArcSwap::store`, so a snapshot taken before the swap
+/// stays valid for its whole query. This test asserts the practical guarantee:
+/// searches run *during* a rebuild never error and never return a partial /
+/// mixed result set — each is cleanly the OLD state ([a.txt]) or the NEW ([]).
+/// It does NOT use df-watch (no FSEvents ⇒ not subject to the DF_WATCH_LOCK
+/// flake); the swap is triggered by an IndexRequest.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn searches_during_rebuild_never_error() {
+    let tmp = tempfile::tempdir().unwrap();
+    let data = tmp.path();
+    let root = data.join("root");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("a.txt"), b"needle").unwrap();
+
+    // v1 index so the daemon starts with a real, queryable DB.
+    let dbp = data.join("db/index.dfdb");
+    let content_dir = data.join("db/content");
+    df_index::build_content_index(&root, &dbp, &content_dir, &Default::default()).unwrap();
+    let socket = data.join("daemon.sock");
+    let sock = socket.clone();
+    let dbp_run = dbp.clone();
+    let server = tokio::spawn(async move { deepfindd::serve(&sock, &dbp_run).await });
+
+    // Concurrent search loop. query_and_collect panics on an Error frame, so a
+    // mid-swap failure fails the test directly; we also collect the sets to
+    // assert none is partial/garbage.
+    let search_task = tokio::spawn({
+        let socket = socket.clone();
+        async move {
+            let mut sets: Vec<Vec<String>> = Vec::new();
+            let deadline = std::time::Instant::now() + Duration::from_millis(1000);
+            while std::time::Instant::now() < deadline {
+                let req = SearchRequest {
+                    query: "needle".into(),
+                    scope: None,
+                    limit: None,
+                    opts: SearchOptions::default(),
+                    db: None,
+                };
+                let (_n, got) = query_and_collect(&socket, req).await;
+                sets.push(got);
+                tokio::time::sleep(Duration::from_millis(10)).await;
+            }
+            sets
+        }
+    });
+
+    // Mid-loop: change the file so the rebuild swaps to a state without "needle",
+    // then submit the rebuild over the socket.
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    std::fs::write(root.join("a.txt"), b"all clear nothing to find here").unwrap();
+    {
+        let stream = connect_wait(&socket).await;
+        let mut f = framed(stream);
+        let req = df_ipc::proto::IndexRequest {
+            root: Some(root.clone()),
+            ..Default::default()
+        };
+        f.send(df_ipc::encode_index_request(&req).unwrap())
+            .await
+            .unwrap();
+        let _ = f.next().await; // consume the IndexAck
+    }
+
+    let sets = search_task.await.unwrap();
+
+    // Confirm the rebuild actually landed (so the swap was exercised, not
+    // skipped): "needle" must eventually return nothing.
+    let deadline = std::time::Instant::now() + Duration::from_secs(10);
+    let mut swapped = false;
+    while std::time::Instant::now() < deadline {
+        let req = SearchRequest {
+            query: "needle".into(),
+            scope: None,
+            limit: None,
+            opts: SearchOptions::default(),
+            db: None,
+        };
+        let (_n, got) = query_and_collect(&socket, req).await;
+        if got.is_empty() {
+            swapped = true;
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    server.abort();
+    assert!(swapped, "rebuild never landed; the swap was not exercised");
+    assert!(!sets.is_empty(), "search loop ran no iterations");
+    for s in &sets {
+        assert!(
+            s.is_empty() || s.iter().all(|p| p.ends_with("a.txt")),
+            "partial/garbage result set during rebuild: {s:?}"
+        );
+    }
+}
