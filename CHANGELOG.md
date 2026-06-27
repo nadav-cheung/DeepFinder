@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/).
 
 _Nothing yet._
 
+## [0.1.6] - 2026-06-27
+
+### Fixed
+- **Filename layer stale after compaction / safety-net rebuild:** `compact_and_swap` and `rebuild_and_swap` reloaded the content shards after a rebuild but not the filename `DbSet`, so filename search results stayed stale until a daemon restart (deleted files still appeared by name; newly-added files were invisible by name). Content search was unaffected. Both rebuild paths now reload the filename layer via the existing `DbSet::open` + handle-reuse hot-swap (mirroring `spawn_build`), without orphaning the df-watch watcher.
+
 ## [0.1.5] - 2026-06-26
 
 ### Added
@@ -65,6 +70,7 @@ First public release of the Rust rewrite. Pre-1.0: usable, but the CLI/behavior 
 ### Changed
 - N/A (first Rust release).
 
+[0.1.6]: https://github.com/nadav-cheung/DeepFinder/releases/tag/v0.1.6
 [0.1.2]: https://github.com/nadav-cheung/DeepFinder/releases/tag/v0.1.2
 [0.1.1]: https://github.com/nadav-cheung/DeepFinder/releases/tag/v0.1.1
 [0.1.0]: https://github.com/nadav-cheung/DeepFinder/releases/tag/v0.1.0
