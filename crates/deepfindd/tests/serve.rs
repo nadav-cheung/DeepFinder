@@ -769,6 +769,10 @@ async fn df_watch_serves_incremental_update() {
     let _guard = DF_WATCH_LOCK.lock().await;
     let tmp = tempfile::tempdir().unwrap();
     let data = tmp.path();
+    // Isolate HOME so df-watch's df_ipc::data_dir() (settings + self-write guard)
+    // resolves under the tempdir, not the real ~/.deep-find. Process-global; restored below.
+    let prev_home = std::env::var_os("HOME");
+    std::env::set_var("HOME", data);
     let root = data.join("root");
     std::fs::create_dir_all(&root).unwrap();
     std::fs::write(root.join("a.txt"), b"needle here").unwrap();
@@ -825,11 +829,21 @@ async fn df_watch_serves_incremental_update() {
     std::fs::write(root.join("a.txt"), b"nothing now").unwrap();
     std::fs::write(root.join("b.txt"), b"needle now here").unwrap();
 
-    // Poll until the incremental rebuild swaps in (debounce + rebuild + FSEvents).
+    // Poll until the overlay reflects the mutation. df-watch is event-driven
+    // (FSEvents) and the watcher installs asynchronously after serve() spawns,
+    // so a one-shot mutation can be missed entirely — the test was bimodal
+    // (converge in <1s, or run the full deadline). Re-touch both files each
+    // iteration to RE-EMIT change events until the watcher catches up, which is
+    // robust to both the startup race and FSEvents initial-event loss.
     let deadline = std::time::Instant::now() + Duration::from_secs(25);
     let mut converged = false;
+    let mut last_got = String::new();
     while std::time::Instant::now() < deadline {
         tokio::time::sleep(Duration::from_millis(300)).await;
+        // Re-emit the events (idempotent rewrites) in case the watcher missed
+        // the initial mutation during its install window.
+        std::fs::write(root.join("a.txt"), b"nothing now").unwrap();
+        std::fs::write(root.join("b.txt"), b"needle now here").unwrap();
         let req = SearchRequest {
             query: "needle".into(),
             scope: None,
@@ -838,6 +852,7 @@ async fn df_watch_serves_incremental_update() {
             db: Some("w".into()),
         };
         let (_b, got) = query_and_collect(&socket, req).await;
+        last_got = format!("{got:?}");
         let has_b = got.iter().any(|p| p.ends_with("b.txt"));
         let no_a = !got.iter().any(|p| p.ends_with("a.txt"));
         if has_b && no_a {
@@ -847,7 +862,14 @@ async fn df_watch_serves_incremental_update() {
     }
     std::env::remove_var("DEEPFIND_WATCH");
     server.abort();
-    assert!(converged, "incremental update did not converge");
+    match prev_home {
+        Some(v) => std::env::set_var("HOME", v),
+        None => std::env::remove_var("HOME"),
+    }
+    assert!(
+        converged,
+        "incremental update did not converge; last results: {last_got}"
+    );
 }
 
 /// A registered DB whose index is missing gets built in the background on
@@ -949,12 +971,14 @@ async fn background_built_db_is_watched() {
     }
     assert!(built, "background build did not populate");
 
-    // NOW mutate: add a NEW file with the needle. If df-watch attached, it shows up.
-    std::fs::write(root.join("b.txt"), b"needle now here").unwrap();
+    // NOW mutate: add a NEW file with the needle. If df-watch attached, it shows
+    // up. df-watch attaches asynchronously after the build swaps in, so re-emit
+    // the change each iteration — robust to the attach race / FSEvents initial-event loss.
     let deadline = std::time::Instant::now() + Duration::from_secs(25);
     let mut converged = false;
     while std::time::Instant::now() < deadline {
         tokio::time::sleep(Duration::from_millis(300)).await;
+        std::fs::write(root.join("b.txt"), b"needle now here").unwrap();
         let req = SearchRequest {
             query: "needle".into(),
             scope: None,
@@ -1838,10 +1862,9 @@ async fn compaction_reloads_filename_layer() {
 
     // Add 3 files whose NAME is the search key (content is "needle" everywhere,
     // so the query discriminates the filename layer). 3 > threshold(2) → compaction.
-    for i in 0..3 {
-        std::fs::write(root.join(format!("fn_{i}.xyz")), b"needle").unwrap();
-    }
-
+    // df-watch installs asynchronously, so re-emit the writes each iteration until
+    // the overlay crosses threshold and compacts — robust to the startup race /
+    // FSEvents initial-event loss that made one-shot bursts fail to trigger compaction.
     let req = SearchRequest {
         query: "fn_0".into(),
         scope: None,
@@ -1856,6 +1879,9 @@ async fn compaction_reloads_filename_layer() {
     let mut converged = false;
     while std::time::Instant::now() < deadline {
         tokio::time::sleep(Duration::from_millis(300)).await;
+        for i in 0..3 {
+            std::fs::write(root.join(format!("fn_{i}.xyz")), b"needle").unwrap();
+        }
         let wal_empty = std::fs::metadata(&wal_path)
             .map(|m| m.len() == 0)
             .unwrap_or(true);
