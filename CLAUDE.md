@@ -15,7 +15,7 @@ macOS local file search (filename + content). Rust workspace; hybrid plocate-sty
 
 ## Test gotchas
 - macOS FS is case-insensitive: test files differing only in case (`Foo.txt`/`foo.txt`) collide — put them in separate subdirs.
-- Never point tests at the global `~/.deep-finder/`. Use `tempfile::tempdir` + a temp socket (pattern in `crates/deepfindd/tests/serve.rs`).
+- Never point tests at the global `~/.deep-find/`. Use `tempfile::tempdir` + a temp socket (pattern in `crates/deepfindd/tests/serve.rs`).
 
 ## Shell
 - zsh expands unquoted globs — always quote: `--include='*.rs'`, not `--include=*.rs`.

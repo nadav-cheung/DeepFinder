@@ -86,10 +86,10 @@ mod tests {
 
     #[test]
     fn lock_path_is_sibling_of_socket() {
-        let sock = Path::new("/Users/x/.deep-finder/socket");
+        let sock = Path::new("/Users/x/.deep-find/socket");
         assert_eq!(
             lock_path(sock),
-            PathBuf::from("/Users/x/.deep-finder/daemon.lock")
+            PathBuf::from("/Users/x/.deep-find/daemon.lock")
         );
     }
 }

@@ -45,7 +45,7 @@ We may negotiate a shorter or longer timeline depending on the complexity and se
 
 ## Scope
 
-DeepFind is a **local-only** macOS tool: the daemon listens on a Unix domain socket (`~/.deep-finder/daemon.sock`), not a network port, and never transmits indexed data over the network.
+DeepFind is a **local-only** macOS tool: the daemon listens on a Unix domain socket (`~/.deep-find/daemon.sock`), not a network port, and never transmits indexed data over the network.
 
 ### In Scope
 

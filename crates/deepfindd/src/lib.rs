@@ -1349,7 +1349,7 @@ pub(crate) mod watch {
         default_db_path: PathBuf,
     ) {
         let (tx, rx) = mpsc::channel::<PathBuf>();
-        // The index's own writes live under `~/.deep-finder`. Canonicalize so the
+        // The index's own writes live under `~/.deep-find`. Canonicalize so the
         // prefix match is robust against a symlinked `$HOME`; fall back to the
         // lexical path if canonicalization fails.
         let data_dir = df_ipc::data_dir()
@@ -1365,7 +1365,7 @@ pub(crate) mod watch {
                 if let Ok(ev) = res {
                     // React only to real user changes: ignore pure reads, and ignore
                     // the daemon's own writes under the data dir — otherwise a watched
-                    // root that contains `~/.deep-finder` feeds back forever
+                    // root that contains `~/.deep-find` feeds back forever
                     // (overlay write → event → overlay write → …).
                     if !matches!(ev.kind, EventKind::Access(_))
                         && !is_self_write(&ev.paths, &data_dir)
@@ -1465,7 +1465,7 @@ pub(crate) mod watch {
         }
     }
 
-    /// True if any event path is inside the index data dir (`~/.deep-finder`) —
+    /// True if any event path is inside the index data dir (`~/.deep-find`) —
     /// the daemon's own overlay/log/socket writes. Such events must NOT feed the
     /// overlay: a watched root that *contains* the data dir would otherwise feed
     /// back into itself (overlay write → event → overlay write → …), looping.
@@ -1479,9 +1479,9 @@ pub(crate) mod watch {
 
         #[test]
         fn ignores_paths_inside_data_dir() {
-            let data_dir = PathBuf::from("/root/.deep-finder");
+            let data_dir = PathBuf::from("/root/.deep-find");
             let shard = data_dir.join("db/w/content/shard-00000.dfcs");
-            let dir_itself = PathBuf::from("/root/.deep-finder");
+            let dir_itself = PathBuf::from("/root/.deep-find");
             assert!(is_self_write(&[shard], &data_dir));
             assert!(is_self_write(&[dir_itself], &data_dir)); // the dir itself counts
         }
@@ -1489,7 +1489,7 @@ pub(crate) mod watch {
         #[test]
         fn keeps_user_files_outside_data_dir() {
             // root contains the data dir, but the changed file is a real user file.
-            let data_dir = PathBuf::from("/root/.deep-finder");
+            let data_dir = PathBuf::from("/root/.deep-find");
             assert!(!is_self_write(
                 &[PathBuf::from("/root/trip.txt")],
                 &data_dir
@@ -1498,7 +1498,7 @@ pub(crate) mod watch {
 
         #[test]
         fn any_path_inside_flags_it() {
-            let data_dir = PathBuf::from("/root/.deep-finder");
+            let data_dir = PathBuf::from("/root/.deep-find");
             assert!(is_self_write(
                 &[
                     PathBuf::from("/root/a.txt"),
@@ -1510,7 +1510,7 @@ pub(crate) mod watch {
 
         #[test]
         fn empty_is_not_self_write() {
-            assert!(!is_self_write(&[], Path::new("/root/.deep-finder")));
+            assert!(!is_self_write(&[], Path::new("/root/.deep-find")));
         }
     }
 }

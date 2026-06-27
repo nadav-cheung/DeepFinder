@@ -451,7 +451,7 @@ fn warn_if_stale(db_path: &Path) {
     }
 }
 
-/// `deepfind db add/remove/list` — manage named DBs under `~/.deep-finder/`.
+/// `deepfind db add/remove/list` — manage named DBs under `~/.deep-find/`.
 fn cmd_db(action: DbAction) {
     let data = data_dir();
     match action {
@@ -1016,7 +1016,7 @@ async fn direct_scan(
 /// named "home" so the daemon's background-build job (P2.3) indexes it on
 /// start. Returns `None` once any DB exists.
 fn ensure_default_root(home: &Path) -> Option<(String, PathBuf)> {
-    let reg = df_index::Registry::load(&home.join(".deep-finder"));
+    let reg = df_index::Registry::load(&home.join(".deep-find"));
     if reg.records.is_empty() {
         Some(("home".into(), home.to_path_buf()))
     } else {
@@ -1072,7 +1072,7 @@ mod tests {
             Some(("home".into(), home.clone()))
         );
         // After registering one DB, it returns None.
-        let data = home.join(".deep-finder");
+        let data = home.join(".deep-find");
         std::fs::create_dir_all(&data).unwrap();
         let mut reg = df_index::Registry::load(&data);
         reg.upsert(df_index::DbRecord {

@@ -11,7 +11,7 @@
 .Trashes
 
 # App runtime data
-.deep-finder/
+.deep-find/
 
 # Codegraph (runtime index)
 .codegraph/

@@ -44,7 +44,7 @@ These are load-bearing invariants — violating them causes bugs or false negati
 ## Test gotchas (macOS)
 
 - The macOS filesystem is **case-insensitive**: test files differing only in case (`Foo.txt` / `foo.txt`) collide — put them in separate subdirs.
-- Never point tests at the global `~/.deep-finder/`. Use `tempfile::tempdir` plus a temp socket (see the pattern in `crates/deepfindd/tests/serve.rs`).
+- Never point tests at the global `~/.deep-find/`. Use `tempfile::tempdir` plus a temp socket (see the pattern in `crates/deepfindd/tests/serve.rs`).
 
 ## Shell
 

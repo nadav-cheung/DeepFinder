@@ -23,8 +23,8 @@ pub fn plist_path(home: &Path) -> PathBuf {
 /// `daemon` subcommand, rooted at `home`. `watch` injects `DEEPFIND_WATCH=1`
 /// so df-watch incremental hot-swap is on.
 pub fn render_plist(exe: &Path, home: &Path, watch: bool) -> String {
-    let out = home.join(".deep-finder/logs/daemon.out.log");
-    let err = home.join(".deep-finder/logs/daemon.err.log");
+    let out = home.join(".deep-find/logs/daemon.out.log");
+    let err = home.join(".deep-find/logs/daemon.err.log");
     let env = if watch {
         "\t<key>EnvironmentVariables</key>\n\t<dict>\n\t\t<key>DEEPFIND_WATCH</key>\n\t\t<string>1</string>\n\t</dict>\n"
     } else {
@@ -44,8 +44,7 @@ pub fn install(home: &Path, exe: &Path, watch: bool, load: bool) -> Result<(), S
     let path = plist_path(home);
     fs::create_dir_all(path.parent().unwrap_or(home))
         .map_err(|e| format!("create LaunchAgents dir: {e}"))?;
-    fs::create_dir_all(home.join(".deep-finder/logs"))
-        .map_err(|e| format!("create log dir: {e}"))?;
+    fs::create_dir_all(home.join(".deep-find/logs")).map_err(|e| format!("create log dir: {e}"))?;
     fs::write(&path, render_plist(exe, home, watch)).map_err(|e| format!("write plist: {e}"))?;
     if load {
         let status = Command::new("launchctl")
@@ -98,7 +97,7 @@ mod tests {
         assert!(xml.contains("<string>daemon</string>"));
         assert!(xml.contains("<key>RunAtLoad</key>"));
         assert!(xml.contains("<key>KeepAlive</key>"));
-        assert!(xml.contains("/Users/example/.deep-finder/logs/daemon.out.log"));
+        assert!(xml.contains("/Users/example/.deep-find/logs/daemon.out.log"));
         assert!(!xml.contains("DEEPFIND_WATCH"));
     }
 
