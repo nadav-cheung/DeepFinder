@@ -1469,6 +1469,7 @@ async fn overlay_compaction_clears_and_rebuilds() {
 /// concurrency flake). Verifies the LSM "safety net" recovers missed changes.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn safety_net_rebuild_picks_up_new_file() {
+    let _guard = DF_WATCH_LOCK.lock().await;
     let tmp = tempfile::tempdir().unwrap();
     let data = tmp.path();
     let root = data.join("root");
@@ -1607,5 +1608,153 @@ async fn registry_reload_does_not_orphan_overlay() {
     assert!(
         converged,
         "overlay stopped working after registry reload (handle orphaned)"
+    );
+}
+
+/// Regression: the safety-net periodic rebuild must reload the FILENAME layer
+/// (the `DbSet`'s `DbReader`), not just the content shards. Before the fix,
+/// `rebuild_and_swap` reloaded content shards but left the filename layer stale,
+/// so a file that appeared after the last build was visible by content but NOT
+/// by filename until a daemon restart. Deterministic (timer-driven; no FSEvents).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn safety_net_rebuild_reloads_filename_layer() {
+    let _guard = DF_WATCH_LOCK.lock().await;
+    let tmp = tempfile::tempdir().unwrap();
+    let data = tmp.path();
+    let root = data.join("root");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("a.txt"), b"needle here").unwrap();
+
+    let w_db = data.join("db/w/index.dfdb");
+    build_content_index(
+        &root,
+        &w_db,
+        &data.join("db/w/content"),
+        &ContentBuildOptions::default(),
+    )
+    .unwrap();
+    let mut reg = df_index::Registry::load(data);
+    reg.upsert(df_index::DbRecord {
+        name: "w".into(),
+        root: root.clone(),
+        db_path: w_db.clone(),
+        content_dir: data.join("db/w/content"),
+    });
+    reg.save().unwrap();
+
+    let socket = data.join("daemon.sock");
+    // 1s safety-net interval; NO DEEPFIND_WATCH (isolate the safety-net path).
+    std::env::set_var("DEEPFIND_SAFETY_NET_SECS", "1");
+    let sock = socket.clone();
+    let dbp = data.join("db/index.dfdb");
+    let server = tokio::spawn(async move { deepfindd::serve(&sock, &dbp).await });
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    // Create a file whose NAME (not content) is the search key. Content stays
+    // "needle" everywhere, so a "brandnew" hit can only come from the filename layer.
+    std::fs::write(root.join("brandnew.xyz"), b"needle").unwrap();
+
+    let req = SearchRequest {
+        query: "brandnew".into(),
+        scope: None,
+        limit: None,
+        opts: SearchOptions::default(),
+        db: Some("w".into()),
+    };
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    let mut converged = false;
+    while std::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let (_b, got) = query_and_collect(&socket, req.clone()).await;
+        if got.iter().any(|p| p.ends_with("brandnew.xyz")) {
+            converged = true;
+            break;
+        }
+    }
+    std::env::remove_var("DEEPFIND_SAFETY_NET_SECS");
+    server.abort();
+    assert!(
+        converged,
+        "safety-net rebuild did not surface brandnew.xyz by FILENAME \
+         (filename DbSet not reloaded, only content shards)"
+    );
+}
+
+/// Regression: df-watch compaction (full rebuild + overlay clear) must reload the
+/// FILENAME layer too. Before the fix, `compact_and_swap` reloaded content shards
+/// and cleared the overlay but left the filename `DbSet` stale, so after a
+/// compaction files added since the last build were invisible by filename until a
+/// daemon restart. Guards on DF_WATCH_LOCK (FSEvents).
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn compaction_reloads_filename_layer() {
+    let _guard = DF_WATCH_LOCK.lock().await;
+    let tmp = tempfile::tempdir().unwrap();
+    let data = tmp.path();
+    let root = data.join("root");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(root.join("a.txt"), b"needle here").unwrap();
+
+    let w_db = data.join("db/w/index.dfdb");
+    build_content_index(
+        &root,
+        &w_db,
+        &data.join("db/w/content"),
+        &ContentBuildOptions::default(),
+    )
+    .unwrap();
+    let mut reg = df_index::Registry::load(data);
+    reg.upsert(df_index::DbRecord {
+        name: "w".into(),
+        root: root.clone(),
+        db_path: w_db.clone(),
+        content_dir: data.join("db/w/content"),
+    });
+    reg.save().unwrap();
+
+    let socket = data.join("daemon.sock");
+    let wal_path = data.join("db/w/overlay.wal");
+    std::env::set_var("DEEPFIND_WATCH", "1");
+    std::env::set_var("DEEPFIND_COMPACTION_THRESHOLD", "2");
+    let sock = socket.clone();
+    let dbp = data.join("db/index.dfdb");
+    let server = tokio::spawn(async move { deepfindd::serve(&sock, &dbp).await });
+    tokio::time::sleep(Duration::from_millis(400)).await;
+
+    // Add 3 files whose NAME is the search key (content is "needle" everywhere,
+    // so the query discriminates the filename layer). 3 > threshold(2) → compaction.
+    for i in 0..3 {
+        std::fs::write(root.join(format!("fn_{i}.xyz")), b"needle").unwrap();
+    }
+
+    let req = SearchRequest {
+        query: "fn_0".into(),
+        scope: None,
+        limit: None,
+        opts: SearchOptions::default(),
+        db: Some("w".into()),
+    };
+
+    // Poll until compaction ran (WAL truncated) AND fn_0 is findable by filename —
+    // the latter requires the rebuilt filename layer to be reloaded into the DbSet.
+    let deadline = std::time::Instant::now() + Duration::from_secs(25);
+    let mut converged = false;
+    while std::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(300)).await;
+        let wal_empty = std::fs::metadata(&wal_path)
+            .map(|m| m.len() == 0)
+            .unwrap_or(true);
+        let (_b, got) = query_and_collect(&socket, req.clone()).await;
+        if wal_empty && got.iter().any(|p| p.ends_with("fn_0.xyz")) {
+            converged = true;
+            break;
+        }
+    }
+    std::env::remove_var("DEEPFIND_COMPACTION_THRESHOLD");
+    std::env::remove_var("DEEPFIND_WATCH");
+    server.abort();
+    assert!(
+        converged,
+        "compaction ran (or timed out) but fn_0.xyz was not findable by FILENAME \
+         afterward (filename DbSet not reloaded, only content shards)"
     );
 }

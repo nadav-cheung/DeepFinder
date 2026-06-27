@@ -194,6 +194,8 @@ pub(crate) fn spawn_build(
                                 entry.shards.clone(),
                                 entry.overlay.clone(),
                                 df_index::ContentBuildOptions::default().max_file_size,
+                                dbset.clone(),
+                                default_db_path.clone(),
                             );
                         }
                     }

@@ -264,6 +264,8 @@ pub(crate) fn rebuild_and_swap(
     db_path: &Path,
     content_dir: &Path,
     shards: &ContentShards,
+    dbset: &Arc<ArcSwap<DbSet>>,
+    default_db_path: &Path,
 ) -> std::io::Result<()> {
     // Acquire the build marker so this df-watch rebuild can't race an on-demand
     // or startup build — two builds writing the same shard names would corrupt
@@ -276,7 +278,23 @@ pub(crate) fn rebuild_and_swap(
     index_job::tracked_build(root, db_path, content_dir, &Default::default())
         .map_err(|e| std::io::Error::other(format!("rebuild: {e}")))?;
     shards.reload();
+    // Reload the filename layer (DbReader) from the rebuilt index, reusing the
+    // live shard + overlay handles so a running df-watch watcher isn't orphaned.
+    // Without this the filename layer stays stale (content shards alone reload).
+    reload_dbset_reusing_handles(dbset, default_db_path);
     Ok(())
+}
+
+/// Reload the filename layer of the live `DbSet` from disk after a compaction or
+/// safety-net rebuild, while reusing each entry's existing `shards` + `overlay`
+/// handles — so a df-watch watcher that captured those handles at spawn keeps
+/// updating the very handles queries read (no orphan). Mirrors the full reload
+/// `spawn_build` does, but preserves the hot handles via `reuse_handles_from`.
+fn reload_dbset_reusing_handles(dbset: &Arc<ArcSwap<DbSet>>, default_db_path: &Path) {
+    let old = dbset.load_full();
+    let mut fresh = DbSet::open(default_db_path);
+    fresh.reuse_handles_from(&old);
+    dbset.store(Arc::new(fresh));
 }
 
 /// Default safety-net rebuild interval (once per day). Override with
@@ -286,7 +304,7 @@ const SAFETY_NET_SECS: u64 = 24 * 60 * 60;
 /// Background thread that periodically rebuilds every rooted DB via
 /// [`rebuild_and_swap`] — the LSM "safety net" that recovers from missed changes
 /// without relying on df-watch/FSEvents. Runs for the daemon's lifetime.
-fn spawn_safety_net(dbset: Arc<ArcSwap<DbSet>>) {
+fn spawn_safety_net(dbset: Arc<ArcSwap<DbSet>>, default_db_path: PathBuf) {
     std::thread::spawn(move || loop {
         let interval = std::env::var("DEEPFIND_SAFETY_NET_SECS")
             .ok()
@@ -298,9 +316,14 @@ fn spawn_safety_net(dbset: Arc<ArcSwap<DbSet>>) {
         let mut rebuilt = 0;
         for e in &snap.entries {
             if let Some(root) = &e.root {
-                if let Err(e) =
-                    rebuild_and_swap(root, &e.db_path, e.shards.content_dir(), &e.shards)
-                {
+                if let Err(e) = rebuild_and_swap(
+                    root,
+                    &e.db_path,
+                    e.shards.content_dir(),
+                    &e.shards,
+                    &dbset,
+                    &default_db_path,
+                ) {
                     tracing::warn!(error = %e, root = ?root, "safety-net rebuild failed");
                 } else {
                     rebuilt += 1;
@@ -324,6 +347,8 @@ pub(crate) fn compact_and_swap(
     content_dir: &Path,
     shards: &ContentShards,
     overlay: &OverlayHandle,
+    dbset: &Arc<ArcSwap<DbSet>>,
+    default_db_path: &Path,
 ) {
     let Some(_guard) = index_job::try_acquire(db_path) else {
         tracing::info!(root = ?root, "compaction: build in flight; skipping");
@@ -333,6 +358,10 @@ pub(crate) fn compact_and_swap(
         Ok(_) => {
             shards.reload();
             overlay.clear();
+            // Reload the filename layer from the rebuilt index (content shards
+            // alone were reloaded above), reusing the live shard + overlay handles
+            // so df-watch isn't orphaned. Without this, filename hits stay stale.
+            reload_dbset_reusing_handles(dbset, default_db_path);
             tracing::info!(root = ?root, "compaction complete; overlay cleared");
         }
         Err(e) => tracing::warn!(error = %e, root = ?root, "compaction rebuild failed"),
@@ -737,6 +766,8 @@ pub async fn serve(socket_path: &Path, db_path: &Path) -> std::io::Result<()> {
                     e.shards.clone(),
                     e.overlay.clone(),
                     max_file_size,
+                    dbset.clone(),
+                    db_path.to_path_buf(),
                 );
             }
         }
@@ -778,7 +809,7 @@ pub async fn serve(socket_path: &Path, db_path: &Path) -> std::io::Result<()> {
     // rooted DB on a long interval to catch anything missed (daemon downtime,
     // lost/coalesced FSEvents, WAL corruption). Uses `rebuild_and_swap` (NOT
     // compaction) so the overlay is preserved — only the cold layer is refreshed.
-    spawn_safety_net(dbset.clone());
+    spawn_safety_net(dbset.clone(), db_path.to_path_buf());
 
     if let Some(dir) = socket_path.parent() {
         tokio::fs::create_dir_all(dir).await?;
@@ -1259,9 +1290,10 @@ pub(crate) mod watch {
     use std::sync::Arc;
     use std::time::Duration;
 
+    use arc_swap::ArcSwap;
     use notify::{EventKind, RecursiveMode, Watcher};
 
-    use crate::{compact_and_swap, ContentShards, OverlayHandle, WalRecord};
+    use crate::{compact_and_swap, ContentShards, DbSet, OverlayHandle, WalRecord};
 
     /// Coalesce event bursts before applying them to the overlay.
     const DEBOUNCE: Duration = Duration::from_millis(300);
@@ -1280,6 +1312,7 @@ pub(crate) mod watch {
     /// Spawn a background watcher over `root`. On changes (debounced), fold the
     /// affected paths into `overlay`; compact when it grows too large. Runs for
     /// the daemon's lifetime; log-only on errors.
+    #[allow(clippy::too_many_arguments)] // threads live handles + reload ctx straight through to `run`
     pub fn spawn(
         root: PathBuf,
         db_path: PathBuf,
@@ -1287,6 +1320,8 @@ pub(crate) mod watch {
         shards: Arc<ContentShards>,
         overlay: Arc<OverlayHandle>,
         max_file_size: u64,
+        dbset: Arc<ArcSwap<DbSet>>,
+        default_db_path: PathBuf,
     ) {
         std::thread::spawn(move || {
             run(
@@ -1296,10 +1331,13 @@ pub(crate) mod watch {
                 shards,
                 overlay,
                 max_file_size,
+                dbset,
+                default_db_path,
             )
         });
     }
 
+    #[allow(clippy::too_many_arguments)] // matches `spawn`; same straight-through thread
     fn run(
         root: &Path,
         db_path: &Path,
@@ -1307,6 +1345,8 @@ pub(crate) mod watch {
         shards: Arc<ContentShards>,
         overlay: Arc<OverlayHandle>,
         max_file_size: u64,
+        dbset: Arc<ArcSwap<DbSet>>,
+        default_db_path: PathBuf,
     ) {
         let (tx, rx) = mpsc::channel::<PathBuf>();
         // The index's own writes live under `~/.deep-finder`. Canonicalize so the
@@ -1366,7 +1406,15 @@ pub(crate) mod watch {
             tracing::info!(root = ?root, paths = batch.len(), "df-watch: overlay updated");
             if overlay.len() >= compaction_threshold() {
                 tracing::info!(root = ?root, n = overlay.len(), "df-watch: compaction threshold");
-                compact_and_swap(root, db_path, content_dir, &shards, &overlay);
+                compact_and_swap(
+                    root,
+                    db_path,
+                    content_dir,
+                    &shards,
+                    &overlay,
+                    &dbset,
+                    &default_db_path,
+                );
             }
         }
         drop(watcher);
@@ -1618,6 +1666,7 @@ fn rebuild_and_swap_serves_updated_content() {
     std::fs::write(root.join("a.txt"), b"needle here").unwrap();
     df_index::build_content_index(root, &db, &content_dir, &Default::default()).unwrap();
     let cs = ContentShards::open(&content_dir);
+    let dbset: Arc<ArcSwap<DbSet>> = Arc::new(ArcSwap::from_pointee(DbSet::open(&db)));
 
     let folded = df_content::fold::fold(b"needle");
     let before: Vec<String> = cs
@@ -1630,7 +1679,7 @@ fn rebuild_and_swap_serves_updated_content() {
     // Mutate: a.txt drops the needle; a new file gains it.
     std::fs::write(root.join("a.txt"), b"nothing relevant").unwrap();
     std::fs::write(root.join("b.txt"), b"needle now here").unwrap();
-    rebuild_and_swap(root, &db, &content_dir, &cs).unwrap();
+    rebuild_and_swap(root, &db, &content_dir, &cs, &dbset, &db).unwrap();
 
     let after: Vec<String> = cs
         .query(&folded, b"needle", false, None, None)
