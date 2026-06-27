@@ -20,7 +20,7 @@
 | 0006 | Default sort = (match-kind weight, path depth, path); stable | 2026-06-23 | Accepted |
 | 0007 | Multi-DB = named independent indices + path-keyed merge; no global docid | 2026-06-23 | Accepted |
 | 0008 | bfs language coexists with filter flags as `--expr` | 2026-06-23 | Accepted |
-| 0009 | Incremental = watcher → full-root rescan + ArcSwap hot-swap; per-file merge + dir-mtime deferred | 2026-06-23 | Accepted |
+| 0009 | Incremental = watcher → full-root rescan + ArcSwap hot-swap; per-file merge + dir-mtime deferred | 2026-06-23 | Superseded by 0017 |
 | 0010 | D2 hardening: measured, none justified on the synthetic baseline | 2026-06-23 | Accepted |
 | 0011 | F2 dir-mtime table + F3 MANIFEST signature deferred | 2026-06-23 | Accepted |
 | 0012 | df-watch ignores its own writes under the data dir (feedback-loop fix) | 2026-06-24 | Accepted |
@@ -28,6 +28,8 @@
 | 0014 | First public version is 0.1.0, not 1.0.0 | 2026-06-25 | Accepted |
 | 0015 | Full Disk Access: heuristic probe + guidance, no programmatic grant | 2026-06-25 | Accepted |
 | 0016 | Index build = daemon background task submitted over the socket; progress via status | 2026-06-26 | Accepted |
+| 0017 | True incremental = LSM hot overlay (Overlay + WAL + compaction + safety-net); supersedes 0009 | 2026-06-26 | Accepted |
+| 0018 | Single-instance daemon guard via advisory `flock` on `daemon.lock` | 2026-06-26 | Accepted |
 
 ---
 
@@ -109,7 +111,7 @@
 
 **Context.** The requirement was "build multiple roots, search by name, dedup correct." The simplest correct design avoids inventing a compound-shard docid namespace.
 
-**Decision.** A registry (`~/.deep-finder/dbs.toml`: `name → {root, db_path, content_dir}`). The daemon loads all registered DBs into a `DbSet` and loops over them, merging results by path (existing `merge_in` dedup). `search --db <name>` restricts to one; default = all. **No on-disk MANIFEST change and no cross-DB `base_docid` mapping is required** for correctness, because dedup is path-keyed, not docid-keyed. (Per-shard `base_docid` within a DB already exists.)
+**Decision.** A registry (`~/.deep-find/dbs.toml`: `name → {root, db_path, content_dir}`). The daemon loads all registered DBs into a `DbSet` and loops over them, merging results by path (existing `merge_in` dedup). `search --db <name>` restricts to one; default = all. **No on-disk MANIFEST change and no cross-DB `base_docid` mapping is required** for correctness, because dedup is path-keyed, not docid-keyed. (Per-shard `base_docid` within a DB already exists.)
 
 **Consequences.** Simplest correct design satisfying the requirement. `toml = "0.8"` was added as a workspace dep for a human-editable registry.
 
@@ -129,7 +131,7 @@
 
 ## ADR-0009 — Incremental = watcher → full-root rescan + ArcSwap hot-swap; per-file merge + dir-mtime deferred
 
-**Date:** 2026-06-23 · **Phase:** F · **Status:** Accepted
+**Date:** 2026-06-23 · **Phase:** F · **Status:** Superseded by ADR-0017
 
 **Context.** True per-file in-place TurboPFor posting merge is high-risk and out of the verified scope. A full-rescan watcher is provably correct (equivalent to `--force`) and far simpler.
 
@@ -176,9 +178,9 @@ Revisit when benchmarking incremental latency on a large corpus.
 
 **Date:** 2026-06-24 · **Phase:** post-A–F · **Status:** Accepted
 
-**Context.** Without this, a registered DB whose `root` *contains* the data dir (e.g. `db add w ~`, indexing `$HOME` or any ancestor of `~/.deep-finder`) feeds back forever: `rebuild_and_swap` writes shards under the watched root → FSEvents → another rebuild → … . Reproduced: one mutation → ~29 rebuilds in 8 s, never converging (CPU burn + index churn). After the fix: one mutation → one rebuild.
+**Context.** Without this, a registered DB whose `root` *contains* the data dir (e.g. `db add w ~`, indexing `$HOME` or any ancestor of `~/.deep-find`) feeds back forever: `rebuild_and_swap` writes shards under the watched root → FSEvents → another rebuild → … . Reproduced: one mutation → ~29 rebuilds in 8 s, never converging (CPU burn + index churn). After the fix: one mutation → one rebuild.
 
-**Decision.** The df-watch watcher ignores any event whose path is inside `~/.deep-finder` (the index data dir — shards, `index.dfdb`, `daemon.sock`, `logs/`, `dbs.toml`), via a new pure predicate `is_self_write(paths, data_dir)`. The data dir is canonicalized so the prefix match survives a symlinked `$HOME`.
+**Decision.** The df-watch watcher ignores any event whose path is inside `~/.deep-find` (the index data dir — shards, `index.dfdb`, `daemon.sock`, `logs/`, `dbs.toml`), via a new pure predicate `is_self_write(paths, data_dir)`. The data dir is canonicalized so the prefix match survives a symlinked `$HOME`.
 
 **Consequences.** The predicate is unit-tested; the existing `df_watch_serves_incremental_update` (sibling root, no overlap) is unchanged. **Scope not fixed here:** df-watch only ever watches *registered* DBs (`db add`, `root = Some`); the **default** DB (`index --root`, `root = None`) spawns no watcher, so `deepfind install`'s `DEEPFIND_WATCH=1` is a silent no-op for a default-only setup. Making the default DB watchable needs the root persisted somewhere the daemon can recover — separate work.
 
@@ -238,3 +240,39 @@ Revisit when benchmarking incremental latency on a large corpus.
 - **No new swap path:** on-demand builds reuse the existing `dbset.store` + rename-aside retirement, so in-flight queries (which pin an `Arc<DbSet>` snapshot per connection) are never interrupted — there is no second SIGBUS-safety story to get right.
 
 **Consequences.** The foreground blocking build is gone from the default path (still reachable via `--foreground` for scripts / tests / no-daemon). The wire gained a tagged `enum Request { Search, Index }`; since CLI and daemon are the same binary, version skew is not a concern. `IndexProgress` lives in `df-index` (the I/O layer), preserving the `df-core` zero-I/O hard constraint.
+
+---
+
+## ADR-0017 — True incremental = LSM hot overlay (Overlay + WAL + compaction + safety-net)
+
+**Date:** 2026-06-26 · **Status:** Accepted · **Supersedes:** ADR-0009
+
+**Context.** ADR-0009 shipped df-watch as a **full-root rescan on every change** — provably correct and SIGBUS-safe, but high I/O/CPU for a single edited file, with latency that scaled with corpus size. The "true per-file incremental" it explicitly deferred was the in-place TurboPFor posting merge, which stayed high-risk (mutating immutable cold postings). The LSM-tree model (MemTable + WAL + SSTables + compaction) gets per-file incremental *without* mutating the cold postings: fold live edits into a small in-memory overlay, persist via a WAL, merge at read time, and periodically rebuild (compact) to fold the overlay back into cold storage.
+
+**Decision.** A tiered-LSM incremental layer, reusing the existing engine primitives:
+
+- **MemTable — hot `Overlay`** (`df-content::overlay`, pure, in-memory, behind an `ArcSwap`): absorbs per-file changes as `WalRecord::Upsert{path,meta,content}` / `Delete{path}`. It keeps its own per-path local docid space + trigram `try_map`, and `OverlayReader` implements `CandidateSource`, so the **same** rarest-trigram candidate + verify algorithm queries it. Re-upsert drops the doc's old postings; delete leaves an inert slot + a tombstone.
+- **WAL — `OverlayStore`** (`df-index::overlay_store`): append-only `overlay.wal` (`u32 len` + bincode `WalRecord`), fsync'd per debounced batch, replayed into a fresh `Overlay` on restart; truncated on compaction. A half-written tail frame from a crash is dropped at decode (stops at the first truncated/corrupt frame).
+- **Read merge (standard LSM):** cold filename/content layers + overlay are each queried independently and merged by path — overlay entries **override** stale cold hits on the same path, tombstones **suppress** deleted paths. An empty / freshly-compacted overlay (`shadows_anything() == false`) skips the override pass entirely (zero cost on the common query).
+- **Compaction — `compact_and_swap`:** when the overlay ≥ threshold (default 2000, `DEEPFIND_COMPACTION_THRESHOLD`), a full rebuild subsumes the overlay → reload shards **and reload the filename layer** → `overlay.clear()` + WAL truncate. Bounds memory + query-merge cost between compactions.
+- **Safety-net — `rebuild_and_swap`:** a daily full rebuild (`DEEPFIND_SAFETY_NET_SECS`, default 24h) refreshes the cold layer *without* clearing the overlay, backstopping anything missed (daemon downtime, coalesced/lost FSEvents, WAL corruption).
+- df-watch stays **env-gated** (`DEEPFIND_WATCH=1`) and watches **registered DBs only** (a known `root`); the default DB (`root = None`) still has no incremental — see ADR-0012.
+
+**Consequences.**
+
+- **Supersedes ADR-0009:** per-file incremental is no longer deferred — it is delivered via the overlay. df-watch no longer rescans on every change; a full rebuild fires only on compaction or the safety-net.
+- **F2 (dir-mtime partial rescan, ADR-0011) is moot on the common path** — there is no per-change rescan left to optimize. It could still apply to the compaction / safety-net rescans; still unimplemented, still correctness-neutral.
+- **F3 (MANIFEST signature) is backstopped** by WAL replay + the daily safety-net, so on-disk drift detection is no longer the only line of defense; still not implemented.
+- No new external deps: the WAL is `std::fs` + the already-in-tree `bincode`; the overlay reuses the existing `CandidateSource` trait (no I/O added to `df-core`). The overlay adds one merge step per DB per query, bounded by the compaction threshold; <3-byte queries over the overlay linear-scan its (small) doc set by design.
+
+---
+
+## ADR-0018 — Single-instance daemon guard via advisory `flock` on `daemon.lock`
+
+**Date:** 2026-06-26 · **Status:** Accepted
+
+**Context.** A resident daemon owns the Unix socket and the index-build pipeline; two daemons sharing `$HOME` would contend on the socket bind and race on shard/index writes. The socket file alone cannot serve as the guard — a crashed daemon leaves a stale socket behind, so "socket exists" is not a reliable liveness signal (and a manual `deepfind daemon` can race launchd's KeepAlive respawn).
+
+**Decision.** Serialize daemon startup with an exclusive, non-blocking advisory `flock` (`LOCK_EX | LOCK_NB`) on `<socket dir>/daemon.lock`, held for the daemon's lifetime (`deepfindd::singleton`). Because `flock` is owned by the live open file description, the kernel releases it automatically on crash/exit — **no stale lock to clean up**, unlike the socket file (which is still removed on startup, now safe to do under the lock since no peer can be live). A second acquire returns `EWOULDBLOCK`, surfaced as a clear "deepfindd already running" error. Unix-only (`#![cfg(unix)]`); the project targets apple-darwin.
+
+**Consequences.** At most one daemon per `$HOME`; the manual-start-vs-launchd race resolves with the loser bailing cleanly. No lock-cleanup logic is needed (kernel-managed lifetime). It does **not** prevent a second daemon under a different `$HOME` / data dir — by design, those are independent instances.

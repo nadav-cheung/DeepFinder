@@ -9,7 +9,7 @@ tool. Filename search is inspired by [Everything](https://www.voidtools.com/) /
 > **Status: Rust rewrite shipped.** Dual-layer trigram index — plocate-style
 > filename layer (pread) + zoekt-style content shards (mmap) — behind one shared
 > candidate engine, served by a resident daemon over a Unix socket to a thin CLI.
-> The non-UI scope is feature-complete (Phases A–F delivered, 136 tests green).
+> The non-UI scope is feature-complete (Phases A–F delivered; 163 tests green).
 > GUI / interactive TUI are deferred.
 >
 > Full architecture: [`docs/architecture.md`](docs/architecture.md);
@@ -29,18 +29,19 @@ tool. Filename search is inspired by [Everything](https://www.voidtools.com/) /
 - **Multi-DB** — `deepfind db add/remove/list`; `search --db <name>`.
 - **Process model** — resident daemon + thin CLI; daemon down → CLI auto-falls
   back to `--direct` online scan.
-- **Incremental** — `df-watch` (notify/FSEvents watcher) hot-swaps shards live
+- **Incremental** — `df-watch` (notify/FSEvents) folds live edits into a hot
+  overlay (WAL-persisted; ~1s to surface), compacted + safety-net rebuilt
   (env `DEEPFIND_WATCH`).
 
 ## Architecture (6-crate workspace, acyclic)
 
 - **`df-core`** — trigram index DB format + TurboPFor codec + query engine
   (pure library, **zero I/O**)
-- **`df-content`** — zoekt-style content shard builder/reader + ASCII fold
+- **`df-content`** — zoekt-style content shard builder/reader + hot overlay + ASCII fold
 - **`df-index`** — `ignore` parallel traversal → atomic single-file DB + shards;
   multi-DB registry; `df-watch` watcher
 - **`df-ipc`** — Unix socket protocol (length-framed, streamed) + filters + bfs parser
-- **`deepfindd`** — resident daemon (pread filename + mmap content, ArcSwap hot-swap)
+- **`deepfindd`** — resident daemon (pread filename + mmap content + overlay merge, ArcSwap hot-swap, single-instance guard)
 - **`deepfind`** — thin CLI (daemon client + `--direct` fallback + exec/highlight)
 
 ## Build gates (all green before commit)

@@ -1,7 +1,7 @@
 # DeepFind — End-state Technology Selection
 
-> **Status:** Updated 2026-06-24. This table is the **end-state (target)** model; the 2026-06-23 "complete implementation" (Phases A–F) delivered several of these items (see the ✅ marks), the rest ⏳ remain to be built. Derived from the two locked design specs (`docs/superpowers/specs/2026-06-22-rust-search-index-cli-design.md`, `…-v2-content-index-design.md`).
-> **In one sentence:** the end-state = **the built baseline + the v2.1 incremental layer + the M7 hardening layer**; full rebuild is only the v2.0 milestone, not the end-state.
+> **Status:** Updated 2026-06-27 (v0.1.6). This table is the **end-state (target)** model; the 2026-06-23 "complete implementation" (Phases A–F) plus the v0.1.x follow-ons delivered most of these items (see the ✅ marks), the rest ⏳ remain to be built. Derived from the two locked design specs (`docs/superpowers/specs/2026-06-22-rust-search-index-cli-design.md`, `…-v2-content-index-design.md`).
+> **In one sentence:** the end-state = **the built baseline + the incremental layer (LSM hot overlay, now built) + the M7 hardening layer**; full rebuild is only the v2.0 milestone, not the end-state.
 > **Companion doc:** [architecture.md](architecture.md) (as-built architecture diagrams, reflecting the real code on `main`).
 
 ---
@@ -37,6 +37,7 @@
 | Filename compression | zstd + **trained dictionary** + block index | ✅ | Paths are highly redundant; a trained dictionary compresses far better than generic zstd; the block index enables random decompression |
 | docid model | global u32 + `base_docid` mapping | ✅ | Results from both layers can be **union-deduped by path key** directly, with no cross-layer join |
 | **shard set** | `ArcSwap<Vec<Arc<Shard>>>` **lockless atomic snapshot** | ✅ | Swap shards with no downtime during a rebuild; old `Arc`s drop after drain (F1 delivered; rename-over preserves inode, verified to prevent SIGBUS) |
+| **hot overlay (incremental)** | in-memory `Overlay` (ArcSwap) + persisted `overlay.wal` (append + fsync + replay); cold layers stay immutable | ✅ | LSM tiered model: live edits folded into the overlay between compactions; queries merge cold + overlay by path. See ADR-0017 |
 | **scope pruning** | `dirTable` + per-doc `u16 dir_id` → shard-level skip | ⏳ | Today `--scope` is a post-query path filter; the end-state can skip an entire shard |
 
 ---
@@ -71,12 +72,13 @@ query side:  extract keys from the folded query → take the shortest posting
 
 | Dimension | End-state choice | Status | Why this |
 |---|---|---|---|
-| **Update model** | **incremental: `df-watch` (`notify`/FSEvents watcher) → `rebuild_and_swap` + ArcSwap hot-swap** | ✅ (partial) | the watcher + zero-downtime hot-swap **are delivered** (F4); but each change is a **full-root rescan**, not a per-file posting merge (high-risk, not done) |
-| Full rebuild | v2.0 baseline (retained) | ✅ | Simple and reliable; kept as the `--force` fallback |
-| Incremental hooks | dir-mtime table (F2) + MANIFEST signature (F3) | ⏳ (deferred) | Correctness-neutral — a full-root rescan is equivalent to a full rebuild; the hooks are in `crates/df-core/src/db.rs` (`dirmtime_off` reserved). Only worth it once benchmarked on a large corpus |
+| **Update model** | **incremental: `df-watch` (`notify`/FSEvents) folds changes into an LSM hot overlay (`Overlay` + `overlay.wal`) — queries merge cold + overlay; compaction + daily safety-net rebuild** | ✅ | True per-file incremental **without mutating cold postings**: edits land in the overlay (~1s to surface); a full rebuild fires only on compaction (overlay ≥ threshold) or the safety-net. See ADR-0017 |
+| Full rebuild | v2.0 baseline (retained) | ✅ | Simple and reliable; used by compaction, the safety-net, and `--force` |
 | Rebuild shard swap | write new file → `ArcSwap::store` → drop old after drain (old shard first **renamed aside**) | ✅ | No offline window; rename-aside (not a direct unlink) prevents an mmap SIGBUS (F1 verified) |
+| dir-mtime partial rescan (F2) | skip unchanged dirs during a rebuild | ⏳ (largely moot) | Moot on the change path (incremental is the overlay, no per-change rescan); could still optimize the compaction/safety-net rescans. Hooks reserved in `crates/df-core/src/db.rs` (`dirmtime_off`). Correctness-neutral |
+| MANIFEST signature (F3) | drift/tamper detection before swapping | ⏳ (backstopped) | On-disk drift is now backstopped by WAL replay + the daily safety-net rebuild, so F3 is no longer the only defense; still not implemented |
 
-> **Design-lock conclusion** (spec): v2.0 = full rebuild (user-locked); incremental = v2.1. The end-state target is incremental, but **the architecture deliberately reserves hooks** so it is never painted into a corner. **Current state (2026-06-24):** v2.1's watcher incremental (rebuild_and_swap + ArcSwap hot-swap) is delivered; true per-file posting merge remains for later.
+> **Design-lock conclusion** (spec): v2.0 = full rebuild (user-locked); incremental = v2.1. **Current state (2026-06-27, v0.1.6):** incremental is delivered as the LSM hot overlay (ADR-0017) — a per-file change no longer triggers a rescan; it folds into the overlay and surfaces in ~1s, with compaction + a daily safety-net rebuild bounding memory and backstopping misses. The architecture's reserved hooks in `db.rs` are now largely moot for the change path.
 
 ---
 
@@ -85,6 +87,7 @@ query side:  extract keys from the folded query → take the shortest posting
 | Dimension | End-state choice | Status | Why this |
 |---|---|---|---|
 | Deployment | **resident daemon + thin CLI** | ✅ | the daemon holds the index handles (no re-opening of large mmaps) → fast repeated queries |
+| **Single instance** | advisory `flock` on `<data_dir>/daemon.lock` | ✅ | At most one daemon per `$HOME`; kernel releases the lock on crash (no stale-lock cleanup). See ADR-0018 |
 | Transport | **Unix domain socket** + LengthDelimitedCodec (4B length prefix) | ✅ | Local-only, no network exposure, low latency, can carry credentials |
 | Result transport | **streaming Batch×N (512/frame) + Done** | ✅ | Ten-thousand-scale results don't block — returned incrementally, CLI prints as it receives |
 | Fallback | daemon unavailable → CLI auto `--direct` online scan | ✅ | Never blocks the user; graceful degradation |
@@ -110,15 +113,15 @@ query side:  extract keys from the folded query → take the shortest posting
 | Layer | ✅ Built | ⏳ Not yet built (end-state) |
 |---|---|---|
 | Language / engineering | 3/3 | — |
-| Storage | 8/9 | dirTable pruning |
+| Storage | 9/10 | dirTable pruning |
 | Engine | 8/11 | ASCII direct array, 2-rarest (measured-reverted), bigram |
-| Update model | watcher + hot-swap + full rebuild ✅; per-file merge not done | dir-mtime (F2), MANIFEST signature (F3), per-file posting merge |
-| Process / IPC / mmap | 4/6 | madvise, per-shard parallelism |
+| Update model | LSM overlay incremental + compaction + safety-net + hot-swap + full rebuild ✅ | dir-mtime (F2, largely moot), MANIFEST signature (F3, backstopped) |
+| Process / IPC / mmap | 5/7 | madvise, per-shard parallelism |
 
-**Verdict:** the core engine + process model + dual-layer storage are **built and correct**; the incremental-update watcher + hot-swap layer is also delivered. The remaining end-state work clusters in two areas — **(1) true incremental (per-file merge / dir-mtime / signature)**, **(2) the performance-hardening layer (M7)**. Both have **locked designs and an unblocked architecture**; they only await implementation (D2 left none in place after measurement this round; they need re-evaluation on a large real corpus).
+**Verdict:** the core engine + process model + dual-layer storage are **built and correct**; the incremental-update layer is now **fully delivered** as the LSM hot overlay (ADR-0017) — per-file changes fold into the overlay instead of triggering a rescan. The remaining end-state work is essentially **the performance-hardening layer (M7)** (ASCII direct array / 2-rarest already measured-reverted / bigram / dirTable / madvise / per-shard parallelism), plus the two now-moot/backstopped extras (F2 dir-mtime, F3 MANIFEST signature). These have **locked designs and an unblocked architecture**; D2 left none in place after measurement — they need re-evaluation on a large real corpus.
 
 ---
 
 ## Convergence (one sentence)
 
-> **Progress (2026-06-24):** lockless shard hot-swap (ArcSwap, F1) + df-watch incremental (watcher → `rebuild_and_swap`, F4) **are delivered**, upgrading "full rebuild" to "change-triggered rescan + hot-swap." **Still to build:** per-file posting merge, dir-mtime incremental (F2), MANIFEST signature (F3), plus the M7 hardening layer (ASCII direct array / 2-rarest already measured-reverted / bigram / dirTable / madvise / per-shard parallelism) — D2 left none in place after measurement this round; needs re-evaluation on a large real corpus. The architecture is **unblocked** thanks to reserved hooks in `db.rs`; only implementation is missing.
+> **Progress (2026-06-27, v0.1.6):** lockless shard hot-swap (ArcSwap, F1) + **true incremental via the LSM hot overlay** (Overlay + WAL + compaction + safety-net, ADR-0017) + single-instance guard (ADR-0018) **are delivered** — a per-file change folds into the overlay and surfaces in ~1s, with compaction + a daily safety-net bounding memory and backstopping misses. **Still to build:** the M7 performance-hardening layer (ASCII direct array / 2-rarest already measured-reverted / bigram / dirTable / madvise / per-shard parallelism); F2 (dir-mtime) is now largely moot and F3 (MANIFEST signature) is backstopped by WAL replay + the safety-net. D2 left none in place after measurement; needs re-evaluation on a large real corpus.

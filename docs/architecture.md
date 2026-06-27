@@ -1,7 +1,7 @@
 # DeepFind — System Architecture
 
-> **Status:** Updated 2026-06-25 to reflect the code **actually built** on `main` (not a design vision). The "complete implementation" round (Phases A–F) is fully delivered, plus Full Disk Access detection + `deepfind doctor`; 146 tests green.
-> **In one sentence:** a plocate-style filename index + zoekt-style content shards, behind a single shared trigram candidate engine, served by a resident daemon over a Unix socket to a thin CLI.
+> **Status:** Updated 2026-06-27 (v0.1.6) to reflect the code **actually built** on `main` (not a design vision). Phases A–F are fully delivered, plus Full Disk Access detection + `deepfind doctor`, **true incremental indexing via an LSM hot overlay (WAL + compaction + safety-net)**, background index builds, the multi-DB registry, and a **single-instance daemon guard**. 163 tests green.
+> **In one sentence:** a plocate-style filename index + zoekt-style content shards, behind a single shared trigram candidate engine, served by a resident daemon over a Unix socket to a thin CLI — with an LSM hot overlay absorbing live edits between compactions.
 > Diagrams are Mermaid (rendered natively by GitHub / VS Code / GitLab); byte-level on-disk layouts use ASCII.
 
 ---
@@ -17,13 +17,15 @@ DeepFind is a local file-search tool for macOS, targeting fast substring search 
 | **trigrep** | trigram-accelerated substring verification | shared `candidates()` candidate-gen + verify |
 | **lolcate-rs** | mmap + streaming bounded build | `MmapSource`, crossbeam backpressure channel |
 | **fd / bfs** | find UX + robust full-disk traversal | CLI flag set, `same_file_system`, permission-error classification |
-| **reflex** | mmap fast repeated queries | daemon-resident mmap (incremental left for later) |
+| **reflex** | mmap fast repeated queries | daemon-resident mmap (cold shards stay mapped) |
+| **LSM-tree** (LevelDB/RocksDB) | MemTable + WAL + tiered compaction | the hot `Overlay` + `overlay.wal` + `compact_and_swap` + safety-net |
 
 **Core design principles**
 
 - **Two storage layers, one engine:** the filename layer (pread, low latency) and the content layer (mmap, GB-scale) are stored independently, but share a single "rarest-trigram candidate + substring verify" algorithm through the `CandidateSource` trait.
 - **df-core is zero-I/O:** all engine/codec logic operates on a small trait (`DbSource`) implemented by one caller, so it can be unit-tested and benchmarked without a real DB.
 - **Resident daemon + thin CLI:** the daemon holds the index handles; the CLI queries over a socket. If the daemon is down, the CLI automatically falls back to `--direct` online scanning, so the user is never blocked.
+- **LSM incremental (cold layers + hot overlay):** the cold filename/content layers are immutable on disk; live file edits are folded into an in-memory **`Overlay`** persisted by a **write-ahead log** (`overlay.wal`). Queries read all three and merge by path — overlay entries **override** stale cold hits, tombstones **remove** deleted paths. When the overlay grows past a threshold, a **compaction** rebuilds the cold layers and clears it; a daily **safety-net** rebuild backstops any missed change.
 
 ---
 
@@ -34,20 +36,26 @@ flowchart LR
     subgraph User["User"]
         C["deepfind<br/>(thin CLI)"]
     end
-    subgraph Daemon["Resident process"]
-        D["deepfindd<br/>socket server<br/>+ merge / streaming"]
+    subgraph Daemon["Resident process (singleton: daemon.lock)"]
+        D["deepfindd<br/>socket server + merge / streaming"]
         ENG["df-core engine<br/>trigram candidate + verify<br/>TurboPFor · Robin Hood · boolean"]
+        OV["Overlay (ArcSwap)<br/>+ df-watch / compaction /<br/>safety-net / index_job"]
     end
-    subgraph Store["~/.deep-finder/ (disk)"]
+    subgraph Store["~/.deep-find/ (disk)"]
         FN[("index.dfdb<br/>filename layer · pread")]
         SH[("shard-*.dfcs<br/>content layer · mmap")]
+        WAL[("overlay.wal<br/>overlay WAL")]
+        REG["dbs.toml · MANIFEST<br/>daemon.lock · logs/"]
     end
-    C -->|"SearchRequest<br/>(Unix socket · bincode)"| D
+    FS["filesystem<br/>(FSEvents)"] -.->|"change event"| OV
+    OV -->|"append + fsync"| WAL
+    C -->|"Search / IndexRequest<br/>(Unix socket · bincode)"| D
     D --> ENG
     ENG -->|"pread"| FN
     ENG -->|"mmap"| SH
+    ENG -->|"snapshot"| OV
     D -->|"Batch* · Done"| C
-    C -.->|"daemon down? → --direct<br/>online ignore walk"| FS["filesystem"]
+    C -.->|"daemon down? → --direct<br/>online ignore walk"| FS
 ```
 
 ---
@@ -57,10 +65,10 @@ flowchart LR
 ```mermaid
 flowchart BT
     core["<b>df-core</b><br/>pure lib: DB format + TurboPFor<br/>+ Robin Hood + query engine<br/>+ CandidateSource trait"]
-    content["<b>df-content</b><br/>ShardBuilder/Reader<br/>+ ASCII fold + content verify"]
-    index["<b>df-index</b><br/>ignore walk + FileSource(pread)<br/>+ MmapSource(mmap) + atomic write + MANIFEST<br/>+ FDA probe (fda_state)"]
+    content["<b>df-content</b><br/>ShardBuilder/Reader + Overlay<br/>+ ASCII fold + content verify"]
+    index["<b>df-index</b><br/>ignore walk + FileSource(pread)<br/>+ MmapSource(mmap) + atomic write + MANIFEST<br/>+ OverlayStore(WAL) + Registry + FDA probe"]
     ipc["<b>df-ipc</b><br/>proto + wire(bincode+length frame)<br/>+ filter + paths"]
-    daemon["<b>deepfindd</b><br/>resident daemon"]
+    daemon["<b>deepfindd</b><br/>resident daemon + DbSet/overlay merge<br/>+ singleton + index_job + df-watch"]
     cli["<b>deepfind</b><br/>thin CLI + --direct fallback"]
 
     content --> core
@@ -79,24 +87,28 @@ flowchart BT
 | crate | responsibility | key constraint |
 |---|---|---|
 | **df-core** | DB format, TurboPFor codec, Robin Hood hash, query engine, `CandidateSource` trait | **pure lib, zero I/O** (operates on the `DbSource` trait) |
-| **df-content** | `ShardBuilder` / `ShardReader`, ASCII fold, content substring verify | depends on df-core |
-| **df-index** | `ignore` parallel walk, text gating, `FileSource` (pread), `MmapSource` (mmap), atomic write, MANIFEST, **Full Disk Access probe (`fda_state`)** | depends on df-core + df-content |
+| **df-content** | `ShardBuilder` / `ShardReader`, pure `Overlay` (LSM MemTable) + `WalRecord` codec, ASCII fold, content substring verify | depends on df-core |
+| **df-index** | `ignore` parallel walk, text gating, `FileSource` (pread), `MmapSource` (mmap), atomic write, MANIFEST, **`OverlayStore` (WAL persistence)**, **`Registry` (`dbs.toml`)**, **Full Disk Access probe (`fda_state`)** | depends on df-core + df-content |
 | **df-ipc** | `SearchRequest` / `ResponseFrame` proto, bincode + length frame, path filter, default paths | depends on df-core |
-| **deepfindd** | resident daemon: load DB + shards, socket server, merge-dedup, streaming output | depends on all |
+| **deepfindd** | resident daemon: `DbSet` (default + registered DBs) with per-entry **filename + content + overlay** query merge, socket server, streaming output, **singleton guard**, **`index_job`** (background builds + progress), **`df-watch`** (overlay + compaction + safety-net) | depends on all |
 | **deepfind** | thin CLI: IPC client + `--direct` online fallback + highlight/exec | depends on df-core/df-index/df-ipc |
 
 ---
 
 ## 4. Dual-layer storage model
 
-Two **fully independent** file families live under `~/.deep-finder/`, fed simultaneously by a single walk:
+Two **fully independent** cold file families — the filename DB and the content shards — live under `~/.deep-find/`, fed simultaneously by a single walk. Beside them sit the daemon's operational files: `overlay.wal` (the hot overlay's WAL, fed by df-watch), `.indexing` (the in-flight build marker), `dbs.toml` (the registry), and `daemon.lock` (the singleton). The cold on-disk layouts are below; the overlay's in-memory + WAL model is §4.4.
 
 ```mermaid
 flowchart LR
-    subgraph home["~/.deep-finder/"]
+    subgraph home["~/.deep-find/"]
         SOCK["daemon.sock<br/>(Unix domain socket)"]
+        LOCK["daemon.lock<br/>(singleton flock)"]
+        REG["dbs.toml<br/>(named-DB registry)"]
         subgraph dbdir["db/"]
             FN["index.dfdb<br/>① filename layer · single file · pread"]
+            WAL["overlay.wal<br/>③ overlay WAL (append + fsync)"]
+            MK[".indexing<br/>(in-flight-build marker<br/>+ live progress)"]
             subgraph cdir["content/"]
                 MAN["MANIFEST<br/>shard list + base_docid + build_time"]
                 S1["shard-00000.dfcs<br/>② content layer · mmap"]
@@ -107,6 +119,8 @@ flowchart LR
         LOGS["logs/"]
     end
 ```
+
+Named DBs (`db add`) repeat the `db/` layout under `db/<name>/` (`index.dfdb` + `overlay.wal` + `content/`); the default DB lives directly under `db/`.
 
 **Why two layers instead of one:** filenames want low latency, low RSS → a single pread file, the daemon never holds the whole DB resident; content wants GB-scale → mmap'd multi-shard, splitting when a shard's `contentCorpus` reaches ~128 MB. The two layers are unified by **the same candidate algorithm**, but their storage / access strategies are entirely different.
 
@@ -147,7 +161,24 @@ Opened with `memmap2` `MAP_SHARED PROT_READ`; `metaData.base_docid` maps a local
 
 ### 4.3 The merged docid model
 
-A single global `u32` docid namespace spans both layers: filename docids are `0..N_name`; content shard docids are local, mapped into the global space via `base_docid + local`. **Dedup = path-keyed set union** (both layers are produced from the same walk, so they share the same canonical absolute paths), not a cross-layer string join.
+Each layer keeps its **own local** docid namespace: filename `DbReader` uses `0..N_name`; each content shard uses local docids mapped into a per-DB global space via `base_docid + local`; the overlay uses `0..N_overlay`. Because docids are never compared *across* sources, the overlay's space cannot collide with shard docids. **Dedup and override are path-keyed**, not docid-keyed: all three layers are merged by canonical absolute path (overlay entries override stale cold hits on the same path; tombstones remove them) — no cross-layer string join is needed.
+
+### 4.4 The LSM hot overlay (incremental read/write model)
+
+The cold layers (`index.dfdb` + `shard-*.dfcs`) are **immutable on disk** between rebuilds; live edits land in the overlay. This is a classic tiered LSM, with three roles mapped onto the existing engine:
+
+| LSM role | DeepFind piece | Where |
+|---|---|---|
+| **MemTable** (absorbs writes) | in-memory `Overlay` — per-path doc + trigram `try_map`, behind an `ArcSwap` | `df-content::overlay` |
+| **WAL** (durability) | append-only `overlay.wal` (`u32 len` + bincode `WalRecord`), fsync'd per debounced batch, truncated on compaction | `df-index::overlay_store` |
+| **SSTables** (cold, immutable) | the pread filename DB + mmap'd content shards | `df-core::db`, `df-content::shard` |
+| **Compaction** (flush MemTable → SST) | `compact_and_swap`: full rebuild subsumes the overlay → reload shards + reload filename layer → `overlay.clear()` + WAL truncate | `deepfindd::compact_and_swap` |
+
+**Write path** (df-watch, debounced ~300ms): classify each changed path → `WalRecord::Upsert{path,meta,content}` (or `Delete`) → `OverlayStore::append` + `sync` → clone-snapshot, `apply_records`, `ArcSwap::store`. A re-upsert drops the doc's old trigram postings first; a delete leaves an inert slot + a tombstone. Threshold (default 2000 entries, `DEEPFIND_COMPACTION_THRESHOLD`) triggers compaction.
+
+**Read path**: the cold layers and the overlay are each queried **independently** through the same `CandidateSource` algorithm (`OverlayReader` implements the trait over the overlay's `try_map`). The daemon merges by path with **standard LSM read semantics** — overlay entries override cold hits on the same path, tombstones suppress them. An empty/freshly-compacted overlay (`shadows_anything() == false`) skips the override pass entirely, so the common query pays nothing.
+
+**Recovery**: on startup the daemon replays `overlay.wal` into a fresh `Overlay`. A half-written tail frame from a crash is silently dropped (decode stops at the first truncated/corrupt frame); the daily **safety-net** rebuild (`rebuild_and_swap`, `DEEPFIND_SAFETY_NET_SECS`, default 24h) backstops any loss by refreshing the cold layer *without* clearing the overlay.
 
 ---
 
@@ -178,7 +209,8 @@ flowchart TD
 
 - **Text gate** (zoekt DocChecker + trigrep idea): binary / oversized files enter **only the filename layer**, never the content layer.
 - **Atomic write** = `tmp → fsync → rename`; a half-written DB is never left behind.
-- **Incremental is landed** (v2.1): `df-watch` (a notify abstraction over FSEvents) watches for changes → `rebuild_and_swap` does a full-root rescan + an ArcSwap hot-swap; full rebuild is retained as the `--force` fallback. Per-file posting merge + dir-mtime incremental (F2) + MANIFEST signature (F3) are **not** done (correctness-neutral; see [decisions.md](decisions.md)).
+- **One build path, four triggers:** the same `build_content_index` streaming build backs (a) `deepfind index` (on-demand, via `index_job::spawn_build`), (b) daemon-startup builds for registered DBs missing an index (`spawn_if_missing`), (c) **compaction** (`compact_and_swap`, when the overlay overflows), and (d) the **safety-net** periodic rebuild (`rebuild_and_swap`). A single `.indexing` marker (`OpenOptions::create_new`) is the atomic guard across all four, so two builds of the same DB can never interleave shard writes; a `MarkerGuard` removes it on drop, and `sweep_stale_markers` recovers any left by a SIGKILL'd daemon.
+- **Incremental is the LSM overlay, not a rescan** (v0.1.5): `df-watch` (notify over FSEvents) folds each debounced change into the hot overlay (§4.4), surfacing in queries within ~1s — a full rebuild only fires on compaction (overlay ≥ threshold) or the daily safety-net. df-watch is **env-gated** (`DEEPFIND_WATCH=1`) and watches **registered DBs only** (a known `root`); the default DB (`index --root`, `root = None`) spawns no watcher.
 
 ---
 
@@ -191,9 +223,11 @@ sequenceDiagram
     participant HC as handle_conn
     participant FN as filename layer<br/>DbReader (pread)
     participant CT as content layer<br/>ShardReader (mmap)
+    participant OV as hot overlay<br/>Overlay (ArcSwap)
 
     CLI->>HC: SearchRequest{query, scope, limit, opts}
     HC->>HC: parse smart-case (opts.case.sensitive(query))<br/>+ regex-mode decision
+    Note over HC: per DB entry (query_entry): filename ∥ content ∥ overlay
     par spawn_blocking
         HC->>FN: query_docids(needle, case, limit)
         Note over FN: single term → single_docids<br/>with AND/OR/NOT → boolean_docids
@@ -203,8 +237,10 @@ sequenceDiagram
         Note over CT: rarest trigram → posting → substring verify
         CT-->>HC: content matches
     end
-    HC->>HC: merge-dedup by path (MatchKind: f/c/b)
-    HC->>HC: post-filter passes() [-e/-t/-E/-g/-d]
+    HC->>OV: snapshot() (one Arc per query)
+    Note over HC,OV: LSM read: drop cold hits for any path the overlay<br/>shadows (upsert OR tombstone) → add overlay's current<br/>results (override_in) — skipped if overlay is empty
+    HC->>HC: merge-dedup by path (MatchKind: f/c/b),<br/>then merge across DB entries
+    HC->>HC: post-filter passes() [-e/-t/-E/-g/-d] + sort
     HC-->>CLI: ResponseFrame::Batch × N (512/frame)
     HC-->>CLI: ResponseFrame::Done{total}
 ```
@@ -236,7 +272,7 @@ sequenceDiagram
 
 ## 8. IPC protocol (df-ipc)
 
-Unix domain socket (`~/.deep-finder/daemon.sock`), `LengthDelimitedCodec` (4-byte length prefix), messages `serde` + `bincode`.
+Unix domain socket (`~/.deep-find/daemon.sock`), `LengthDelimitedCodec` (4-byte length prefix), messages `serde` + `bincode`.
 
 ```
 enum Request {                   Response frames (daemon → CLI, streaming)
@@ -262,7 +298,9 @@ IndexRequest (P2.3) {              direct, extensions, types, excludes,
 
 ```
 deepfind index   [--root] [--force] [--skip NAME…] [--max-file-size N]
-                 [--no-content] [--one-file-system] [-H/--hidden]
+                 [--no-content] [--one-file-system] [-H/--hidden] [--foreground]
+                 # submits a background build to the daemon; --foreground forces
+                 # in-process (and is the auto-fallback when the daemon is down)
 deepfind daemon
 deepfind status
 deepfind doctor                 # self-diagnostic: Full Disk Access check + guidance
@@ -314,9 +352,9 @@ flowchart LR
 
 ## 11. Current status and known gaps (honest inventory)
 
-**Built and verified** (Phases A–F all delivered): dual-layer trigram (pread filename + mmap content) × shared candidate engine × daemon + CLI process model × smart-case × boolean AST × **filename + content regex** × `-n/-C` line-number context × layer-selection / path-mode / hidden / sort / early-exit × bfs `--expr` × **multi-DB** × **lockless ArcSwap hot-swap + df-watch incremental (rebuild_and_swap)** × **Full Disk Access detection + `deepfind doctor` guidance**. 146 tests green, clippy/fmt clean, daemon + CLI verified end-to-end. Decision detail in [decisions.md](decisions.md); baselines in [perf-baseline.md](perf-baseline.md).
+**Built and verified** (Phases A–F all delivered): dual-layer trigram (pread filename + mmap content) × shared candidate engine × daemon + CLI process model × smart-case × boolean AST × **filename + content regex** × `-n/-C` line-number context × layer-selection / path-mode / hidden / sort / early-exit × bfs `--expr` × **multi-DB + `dbs.toml` registry + registry hot-reload** × **lockless ArcSwap hot-swap** × **background index builds (`index_job`) + live progress in `status`** × **LSM incremental: hot overlay + WAL + compaction + daily safety-net (`df-watch`)** × **single-instance daemon guard** × **Full Disk Access detection + `deepfind doctor` guidance**. 163 tests green, clippy/fmt clean, daemon + CLI verified end-to-end. Decision detail in [decisions.md](decisions.md); baselines in [perf-baseline.md](perf-baseline.md).
 
-**Designed but not yet built** (the M7 performance-hardening layer + unbuilt incremental items — D2 left **none** in place after measurement this round):
+**Designed but not yet built** (the performance-hardening layer — D2 left **none** of its speculative optimizations in place after measurement):
 
 | Gap | Impact / current state |
 |---|---|
@@ -326,7 +364,7 @@ flowchart LR
 | **No dirTable** → `--scope` is a post-query path filter, not shard-level pruning | a scope query cannot skip an entire shard |
 | Content query is a **sequential loop** (no per-shard parallelism) | latency grows linearly with shard count |
 | No `madvise` hints / RLIMIT_NOFILE bump / `.git`-sentinel subtree pruning | large-scale tuning is weak |
-| Incremental is a **full-root rescan** `rebuild_and_swap`, not a per-file posting merge | per-file incremental merge is high-risk and not done; dir-mtime incremental (F2), MANIFEST signature (F3) deferred — correctness-neutral |
+| `df-watch` only watches **registered** DBs (a known `root`), not the default DB | the default DB (`index --root`) has no incremental; its root isn't persisted where the daemon can recover it (ADR-0012 scope) |
 
 **Explicitly future** (not gaps, a roadmap): GUI / interactive TUI, positional trigram / phrase search, pinyin/jieba, SIMD decode.
 
@@ -336,15 +374,16 @@ flowchart LR
 
 | Scenario | Path |
 |---|---|
-| **Index (submit, P2.3)** | `deepfind index` → `IndexRequest` over socket → daemon background build (off hot path) → ArcSwap hot-swap; progress via `deepfind status`. `--foreground` / daemon-down ⇒ in-process build |
-| **Query (hot)** | CLI → socket → daemon `handle_conn` → filename ∥ content → merge-dedup → streamed back |
+| **Index (submit, P2.3)** | `deepfind index` → `IndexRequest` over socket → daemon `index_job::spawn_build` (off hot path) → reload `DbSet` + ArcSwap hot-swap; live progress via `deepfind status`. `--foreground` / daemon-down ⇒ in-process build |
+| **Incremental (df-watch)** | FSEvents change → debounced batch → `WalRecord`s appended+fsync'd to `overlay.wal` → `Overlay` ArcSwap-publish → next query merges it. At threshold → `compact_and_swap`; daily → safety-net `rebuild_and_swap` |
+| **Query (hot)** | CLI → socket → daemon `handle_conn` → per-DB filename ∥ content ∥ overlay → merge-dedup + override/suppress → streamed back |
 | **Fallback** | daemon unavailable / socket error → CLI `--direct` (`ignore` walk + online substring) |
 
 ## Appendix B: Build and verify
 
 ```
 cargo build --workspace
-cargo test --workspace          # 146 tests
+cargo test --workspace          # 163 tests
 cargo clippy --workspace --all-targets -D warnings
 cargo fmt --all -- --check
 ```
@@ -358,9 +397,15 @@ cargo fmt --all -- --check
 | query dispatch + boolean | `crates/df-core/src/query.rs`, `boolquery.rs` |
 | TurboPFor / Robin Hood | `crates/df-core/src/turbopfor.rs`, `db.rs` |
 | content shard format / verify | `crates/df-content/src/shard.rs`, `fold.rs` |
+| **LSM overlay (MemTable) + WalRecord codec** | `crates/df-content/src/overlay.rs` |
+| **overlay WAL persistence + replay** | `crates/df-index/src/overlay_store.rs` |
+| **named-DB registry (`dbs.toml`)** | `crates/df-index/src/registry.rs` |
 | streaming build + text gate | `crates/df-index/src/content_build.rs` |
 | pread/mmap source | `crates/df-index/src/lib.rs`, `mmap_source.rs` |
 | Full Disk Access probe | `crates/df-index/src/permissions.rs` |
 | IPC proto / wire / filter | `crates/df-ipc/src/{proto,wire,filter,paths}.rs` |
-| daemon query merge / streaming | `crates/deepfindd/src/lib.rs` |
+| daemon query merge / streaming / DbSet | `crates/deepfindd/src/lib.rs` |
+| **df-watch + compaction + safety-net** | `crates/deepfindd/src/lib.rs` (`mod watch`, `compact_and_swap`, `spawn_safety_net`) |
+| **background builds + progress marker** | `crates/deepfindd/src/index_job.rs` |
+| **single-instance guard** | `crates/deepfindd/src/singleton.rs` |
 | CLI | `crates/deepfind/src/main.rs` |
