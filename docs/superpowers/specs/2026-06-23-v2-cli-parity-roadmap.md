@@ -1,9 +1,9 @@
-# DeepFinder v2 — CLI Parity & Strengths-Integration Roadmap
+# DeepFind v2 — CLI Parity & Strengths-Integration Roadmap
 
 **Date:** 2026-06-23
 **Basis:** Knowledge of the reference projects in `search-analysis/` (zoekt, trigrep, fd, bfs, reflex, lolcate-rs). **Caveat:** derived from tool knowledge, not a fresh source audit — verify each feature against the cloned source before implementing. Survey workflow that would have confirmed this hit account rate-limits; this is the pragmatic fallback.
 
-**Goal (user directive 2026-06-23):** make DeepFinder's CLI feature-complete by integrating the strengths of each reference project. GUI is deferred until explicit user confirmation.
+**Goal (user directive 2026-06-23):** make DeepFind's CLI feature-complete by integrating the strengths of each reference project. GUI is deferred until explicit user confirmation.
 
 > **UPDATE (2026-06-24):** Every item flagged "Remaining" in the STATUS paragraph
 > below — **content-regex** (Phase A1), **`-n`/`-C`** line-number/context (A2),
@@ -19,7 +19,7 @@
 
 ## What each project is best at (signature strength → adopt)
 
-| Project | Signature strength | Adopt into DeepFinder |
+| Project | Signature strength | Adopt into DeepFind |
 |---|---|---|
 | **fd** | Best-in-class find UX: types/extensions/hidden/exclude/exec, smart-case, fast parallel walk | Primary CLI-UX template for the `search`/`find` flags |
 | **bfs** | find expression language + breadth-first + robust predicates | Depth control, prune, `-size/-newer` predicates |
@@ -47,7 +47,7 @@
 |---|---|---|---|---|
 | **`-x/--exec`** run a command per result | fd, bfs | M7/M8 | M | `{}` placeholder, parallel; big UX win |
 | **`-g/--glob`** glob-pattern match (vs regex) | fd | M6 | S | globset |
-| **`-p/--full-path`** match against full path (vs basename) | fd, bfs | M6 | S | DeepFinder already matches full path; add basename-only mode (`-b`?) |
+| **`-p/--full-path`** match against full path (vs basename) | fd, bfs | M6 | S | DeepFind already matches full path; add basename-only mode (`-b`?) |
 | **`-E/--exclude`** exclude globs | fd | M6 | S | globset exclude |
 | **Content match `-n/--line-number` + `-c/--context`** | zoekt, trigrep | M8 | M | needs positional-ish content scan (we're file-level; line-num requires scanning the matched file — acceptable post-verify) |
 | **Result ranking/sorting** (recency, path-score, match-quality) | zoekt | M8 | M | REVIEW §8.3 unresolved; pick path-depth + match-kind weighting |
@@ -66,7 +66,7 @@
 
 ---
 
-## Already covered (DeepFinder v1 + v2, don't re-build)
+## Already covered (DeepFind v1 + v2, don't re-build)
 Filename + content trigram search; mmap content shards; boolean AND/OR/NOT; `--scope`; `--limit`; `-l` long listing; `--direct` fallback; configurable skip-list (`--skip`/`DEEPFIND_SKIP`); FDA detection; graceful daemon drain (SIGINT/SIGTERM); streamed Batch results; `--force`/staleness; `--max-file-size`/`--no-content`/`--one-file-system`.
 
 ## Deliberately skipped
@@ -103,4 +103,4 @@ deepfind search <query>
 ```
 
 ## Recommended next (after M5)
-**Regex search + type/extension filters + smart-case** (the P0 block) — it's the single biggest parity gap: every reference tool does regex + type filters, and DeepFinder currently does only literal substring. This is also the natural M6 (the spec's M6 "CLI flags" expands into this). M5 (in-progress: daemon combined filename+content results) is the prerequisite (combined results are what regex/filters then constrain).
+**Regex search + type/extension filters + smart-case** (the P0 block) — it's the single biggest parity gap: every reference tool does regex + type filters, and DeepFind currently does only literal substring. This is also the natural M6 (the spec's M6 "CLI flags" expands into this). M5 (in-progress: daemon combined filename+content results) is the prerequisite (combined results are what regex/filters then constrain).

@@ -1,4 +1,4 @@
-# DeepFinder
+# DeepFind
 
 A fast local file search engine for macOS — **filename + content** search in one
 tool. Filename search is inspired by [Everything](https://www.voidtools.com/) /
@@ -61,7 +61,7 @@ brew install nadav-cheung/tap/deepfind
 
 **Or one-line script:**
 ```sh
-curl -LsSf https://github.com/nadav-cheung/DeepFinder/releases/latest/download/deepfind-installer.sh | sh
+curl -LsSf https://github.com/nadav-cheung/DeepFind/releases/latest/download/deepfind-installer.sh | sh
 ```
 
 **Start the background daemon** (registers `$HOME`; the daemon background-indexes it on start, live-updates on file changes, starts at login):

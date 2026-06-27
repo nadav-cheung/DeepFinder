@@ -3,11 +3,11 @@
 blank_issues_enabled: false
 contact_links:
   - name: 📚 Documentation
-    url: https://github.com/nadav-cheung/DeepFinder/blob/main/docs/architecture.md
+    url: https://github.com/nadav-cheung/DeepFind/blob/main/docs/architecture.md
     about: Check the architecture + CLI docs before filing — many questions are answered there.
   - name: 💬 Discussions
-    url: https://github.com/nadav-cheung/DeepFinder/discussions
+    url: https://github.com/nadav-cheung/DeepFind/discussions
     about: Questions, ideas, and feature discussion belong in Discussions, not Issues.
   - name: 🔒 Report a security vulnerability
-    url: https://github.com/nadav-cheung/DeepFinder/security/advisories/new
+    url: https://github.com/nadav-cheung/DeepFind/security/advisories/new
     about: Report vulnerabilities privately via GitHub Security Advisories — do NOT open a public issue.

@@ -1,8 +1,8 @@
-# DeepFinder — 开源 1.0 发布设计
+# DeepFind — 开源 1.0 发布设计
 
 **Date:** 2026-06-24
 **Status:** Design approved (user confirmed all locked decisions 2026-06-24)
-**Scope:** 把 DeepFinder(Rust 重写版)发布为开源 1.0 —— 版本号、macOS 标准安装路径与命令行分发、自动后台索引、发布自动化。GUI / 交互式 TUI 仍排除。
+**Scope:** 把 DeepFind(Rust 重写版)发布为开源 1.0 —— 版本号、macOS 标准安装路径与命令行分发、自动后台索引、发布自动化。GUI / 交互式 TUI 仍排除。
 
 **依据:**
 - 已建成架构:[architecture.md](../../architecture.md)

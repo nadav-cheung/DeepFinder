@@ -1,4 +1,4 @@
-# DeepFinder — TCC / Full Disk Access 检测 + 引导设计
+# DeepFind — TCC / Full Disk Access 检测 + 引导设计
 
 > **状态**:📝 设计稿,待实现(2026-06-25)。
 > **日期**:2026-06-25
@@ -9,18 +9,18 @@
 
 ## 0. 背景:为什么需要、以及和 cua-driver 的关键分歧
 
-DeepFinder 要读全盘(含 `~/Library/Mail`、`Messages`、`Safari`、`Calendars` 等 TCC 保护目录)建索引 / 直扫,进程必须持有 **Full Disk Access(FDA)**。当前只有**反应式**告警:`df-index` 统计 `permission-denied` 条目,`deepfind index` 结束时打印一行 warning。缺**主动检测**和**引导用户授权**。
+DeepFind 要读全盘(含 `~/Library/Mail`、`Messages`、`Safari`、`Calendars` 等 TCC 保护目录)建索引 / 直扫,进程必须持有 **Full Disk Access(FDA)**。当前只有**反应式**告警:`df-index` 统计 `permission-denied` 条目,`deepfind index` 结束时打印一行 warning。缺**主动检测**和**引导用户授权**。
 
 **和 cua-driver 模型的根本分歧**(必须先讲清,否则设计会跑偏):
 
-| | cua-driver(Accessibility + Screen Recording) | DeepFinder(Full Disk Access) |
+| | cua-driver(Accessibility + Screen Recording) | DeepFind(Full Disk Access) |
 |---|---|---|
 | 能否代码触发授权弹窗? | **能**(`AXIsProcessTrustedWithOptions` / 首次截屏触发 consent 对话框) | **不能**——macOS 无任何 API 弹 FDA 授权框 |
 | `permissions grant` 的本质 | LaunchServices 起 .app → 触发弹窗 → 等用户在对话框同意 | **无等价物**。用户必须手动到「系统设置 → 隐私与安全性 → 完全磁盘访问权限」加二进制 / 打开开关 |
 
-**因此**:DeepFinder 的「检测到就自动打开」= 自动 `open` FDA 系统设置面板,**不是** consent 弹窗;用户仍要**手动**加 `deepfind` 二进制。本设计不做 `permissions grant`(对 FDA 物理不可能)。
+**因此**:DeepFind 的「检测到就自动打开」= 自动 `open` FDA 系统设置面板,**不是** consent 弹窗;用户仍要**手动**加 `deepfind` 二进制。本设计不做 `permissions grant`(对 FDA 物理不可能)。
 
-**DeepFinder 比 cua-driver 更简单的一点**:cua-driver 要「通过 daemon 读授权状态、daemon 没跑就 unknown」,因为它的授权挂在 `CuaDriver.app` 上,与终端里跑的 CLI 是两个身份。DeepFinder 的 **daemon(`deepfind daemon`)和 CLI 是同一个 `deepfind` 二进制**(见 `crates/deepfind/Cargo.toml`,唯一 `[[bin]]`;`deepfindd` 是被链入的 lib)→ **CLI 本地 probe 的结果就等于 daemon 的 FDA 状态**,无需走 socket 问 daemon、无需「daemon 没跑就 unknown」那套。
+**DeepFind 比 cua-driver 更简单的一点**:cua-driver 要「通过 daemon 读授权状态、daemon 没跑就 unknown」,因为它的授权挂在 `CuaDriver.app` 上,与终端里跑的 CLI 是两个身份。DeepFind 的 **daemon(`deepfind daemon`)和 CLI 是同一个 `deepfind` 二进制**(见 `crates/deepfind/Cargo.toml`,唯一 `[[bin]]`;`deepfindd` 是被链入的 lib)→ **CLI 本地 probe 的结果就等于 daemon 的 FDA 状态**,无需走 socket 问 daemon、无需「daemon 没跑就 unknown」那套。
 
 可借鉴 cua-driver:Granted / Denied / ❓ Unknown 三态语义 + 清晰 ✅/❌/❓ 输出。
 

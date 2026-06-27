@@ -5,7 +5,7 @@ description: Pre-release checklist for OSS publication — license headers, docs
 
 # OSS Release Checklist
 
-Run this checklist before publishing DeepFinder as open source.
+Run this checklist before publishing DeepFind as open source.
 
 ## Steps
 

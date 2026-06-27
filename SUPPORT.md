@@ -2,7 +2,7 @@
 
 ## Getting Help
 
-DeepFinder is a community-supported open source project. Here is where to get help:
+DeepFind is a community-supported open source project. Here is where to get help:
 
 ### Documentation
 
@@ -10,13 +10,13 @@ Start with the [project README](README.md) and the system architecture in [`docs
 
 ### GitHub Discussions
 
-For questions, usage help, configuration guidance, and general discussion, use **[GitHub Discussions](https://github.com/nadav-cheung/DeepFinder/discussions)**. Search existing threads before opening a new one — your question may already be answered.
+For questions, usage help, configuration guidance, and general discussion, use **[GitHub Discussions](https://github.com/nadav-cheung/DeepFind/discussions)**. Search existing threads before opening a new one — your question may already be answered.
 
 ### GitHub Issues
 
 GitHub Issues are for **actionable, concrete items** only:
 
-- **Bug reports**: Something is broken or not working as documented. Include: DeepFinder version (`deepfind --version`), macOS version, steps to reproduce, expected vs. actual behavior, and relevant logs.
+- **Bug reports**: Something is broken or not working as documented. Include: DeepFind version (`deepfind --version`), macOS version, steps to reproduce, expected vs. actual behavior, and relevant logs.
 - **Feature requests**: A specific, well-scoped enhancement with clear motivation. Explain the problem you are trying to solve before proposing the solution.
 
 Issues that are usage questions or lack sufficient detail will be redirected to Discussions.

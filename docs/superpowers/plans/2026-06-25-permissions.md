@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Add proactive Full Disk Access (FDA) detection + user guidance to DeepFinder, replacing today's purely reactive "permission denied" warning with a probe-based check surfaced in `deepfind status`, a new `deepfind doctor`, and a daemon-startup log warning.
+**Goal:** Add proactive Full Disk Access (FDA) detection + user guidance to DeepFind, replacing today's purely reactive "permission denied" warning with a probe-based check surfaced in `deepfind status`, a new `deepfind doctor`, and a daemon-startup log warning.
 
 **Architecture:** A pure-ish probe `df_index::fda_state() -> FdaState { Granted, Denied, Unknown }` (readdir a known TCC-protected `~/Library` subdir; classify by errno) lives in `df-index` (keeps `df-core` I/O-free). The CLI (`deepfind`, same binary as the daemon) calls it from three places: `status` (report-only), `doctor` (TTY auto-opens the System Settings FDA pane + prints the exact binary path and a restart command), and `cmd_daemon` (one `tracing::warn!` on startup, no GUI). macOS cannot grant FDA programmatically — "auto-open" means opening the settings pane, not a consent dialog; the user still adds the binary manually.
 

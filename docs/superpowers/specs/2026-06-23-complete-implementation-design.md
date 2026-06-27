@@ -1,8 +1,8 @@
-# DeepFinder — 完整实现设计(排除 UI)
+# DeepFind — 完整实现设计(排除 UI)
 
 **Date:** 2026-06-23
 **Status:** **Delivered** — Phases A–F all implemented & merged to `main` (2026-06-24, 118 tests green; see [`../../decisions.md`](../../decisions.md) + [`../../architecture.md`](../../architecture.md) §9–10). *(Design approved 2026-06-23: user confirmed scope + ordering; the body below is the executed plan.)*
-**Scope:** 把 DeepFinder 的**全部非-UI 功能**实现到完成态。GUI 与交互式 TUI 明确排除。
+**Scope:** 把 DeepFind 的**全部非-UI 功能**实现到完成态。GUI 与交互式 TUI 明确排除。
 
 **依据:**
 - 已建成架构:[architecture.md](../../architecture.md)

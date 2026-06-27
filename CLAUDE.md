@@ -1,4 +1,4 @@
-# CLAUDE.md — DeepFinder
+# CLAUDE.md — DeepFind
 
 macOS local file search (filename + content). Rust workspace; hybrid plocate-style filename index (pread) + zoekt-style content shards (mmap) behind one trigram candidate engine; resident daemon + thin CLI over Unix socket. Full architecture: `docs/architecture.md`; end-state choices: `docs/tech-selection.md`.
 

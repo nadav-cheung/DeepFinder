@@ -1,4 +1,4 @@
-# DeepFinder v2 — M5 Daemon ShardSet + Combined Results Plan
+# DeepFind v2 — M5 Daemon ShardSet + Combined Results Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development. Checkbox (`- [ ]`) tracking.
 

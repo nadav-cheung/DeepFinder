@@ -1,4 +1,4 @@
-# DeepFinder — Performance Baseline (2026-06-23)
+# DeepFind — Performance Baseline (2026-06-23)
 
 > Captured on macOS (Darwin 25.5) with `cargo bench` (release, default sample counts unless noted).
 > This is the synthetic baseline used to gate the Phase D hardening decisions in [decisions.md](decisions.md) (ADR-0010).

@@ -1,4 +1,4 @@
-# DeepFinder — System Architecture
+# DeepFind — System Architecture
 
 > **Status:** Updated 2026-06-25 to reflect the code **actually built** on `main` (not a design vision). The "complete implementation" round (Phases A–F) is fully delivered, plus Full Disk Access detection + `deepfind doctor`; 146 tests green.
 > **In one sentence:** a plocate-style filename index + zoekt-style content shards, behind a single shared trigram candidate engine, served by a resident daemon over a Unix socket to a thin CLI.
@@ -8,7 +8,7 @@
 
 ## 1. Overview
 
-DeepFinder is a local file-search tool for macOS, targeting fast substring search over **whole-disk filenames + content**. The architecture is a "hybrid" — it borrows one technique from each of several open-source projects and assembles them into a single engine:
+DeepFind is a local file-search tool for macOS, targeting fast substring search over **whole-disk filenames + content**. The architecture is a "hybrid" — it borrows one technique from each of several open-source projects and assembles them into a single engine:
 
 | Source | Technique borrowed | Where it lands |
 |---|---|---|
@@ -292,7 +292,7 @@ deepfind search <query>
 
 ## 10. Full Disk Access detection (operational)
 
-DeepFinder reads the whole disk — including TCC-protected `~/Library` subdirs (`Mail`, `Messages`, `Safari`, `Calendars`, …) — so the process must hold **Full Disk Access (FDA)**. macOS exposes **no API** to query or grant FDA, and no consent prompt an app can trigger (unlike Accessibility). So DeepFinder **probes** heuristically and **guides** the user to the Settings pane; it cannot auto-grant.
+DeepFind reads the whole disk — including TCC-protected `~/Library` subdirs (`Mail`, `Messages`, `Safari`, `Calendars`, …) — so the process must hold **Full Disk Access (FDA)**. macOS exposes **no API** to query or grant FDA, and no consent prompt an app can trigger (unlike Accessibility). So DeepFind **probes** heuristically and **guides** the user to the Settings pane; it cannot auto-grant.
 
 ```mermaid
 flowchart LR

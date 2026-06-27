@@ -1,4 +1,4 @@
-# DeepFinder Complete Implementation Plan (excl. UI)
+# DeepFind Complete Implementation Plan (excl. UI)
 
 > **Status (2026-06-24): EXECUTED — all A–F tasks complete & merged to `main`**
 > (118 tests green; outcome in [`../../decisions.md`](../../decisions.md)). The

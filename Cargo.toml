@@ -15,9 +15,9 @@ edition = "2021"
 rust-version = "1.96"
 license = "MIT"
 authors = ["Nadav"]
-repository = "https://github.com/nadav-cheung/DeepFinder"
+repository = "https://github.com/nadav-cheung/DeepFind"
 description = "Fast local file search for macOS — trigram index + daemon + CLI"
-homepage = "https://github.com/nadav-cheung/DeepFinder"
+homepage = "https://github.com/nadav-cheung/DeepFind"
 
 # Catalog of shared dependency versions. Crates opt in with `{ workspace = true }`.
 [workspace.dependencies]

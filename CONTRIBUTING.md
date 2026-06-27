@@ -1,6 +1,6 @@
-# Contributing to DeepFinder
+# Contributing to DeepFind
 
-DeepFinder is a macOS local file search tool (filename + content search). It is a Rust workspace: a hybrid plocate-style filename index (pread) + zoekt-style content shards (mmap) behind one trigram candidate engine, with a resident daemon and a thin CLI over a Unix socket.
+DeepFind is a macOS local file search tool (filename + content search). It is a Rust workspace: a hybrid plocate-style filename index (pread) + zoekt-style content shards (mmap) behind one trigram candidate engine, with a resident daemon and a thin CLI over a Unix socket.
 
 Thanks for your interest in contributing! This guide captures the project's conventions so changes land clean and green.
 

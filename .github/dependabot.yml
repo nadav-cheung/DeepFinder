@@ -1,4 +1,4 @@
-# Dependabot keeps GitHub Actions versions current. DeepFinder is a Rust
+# Dependabot keeps GitHub Actions versions current. DeepFind is a Rust
 # workspace; the only ecosystem tracked here is `github-actions` — the actions
 # used in .github/workflows/.
 #

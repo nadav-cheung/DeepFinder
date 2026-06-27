@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 # SPDX-FileCopyrightText: 2026 nadav.com.cn
-"""Local link-integrity checker for DeepFinder markdown docs.
+"""Local link-integrity checker for DeepFind markdown docs.
 
 Runs before CI (lychee) to catch broken internal links early. Checks:
   - internal file links resolve (e.g. [x](../foo.md), [x](./bar.md#sec))

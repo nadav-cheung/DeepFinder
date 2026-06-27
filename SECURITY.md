@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-DeepFinder is pre-1.0 (`0.1.x`). Security fixes are applied to the latest release line:
+DeepFind is pre-1.0 (`0.1.x`). Security fixes are applied to the latest release line:
 
 | Version | Supported          |
 | ------- | ------------------ |
@@ -13,7 +13,7 @@ Only the latest `0.1.x` release receives security updates. If you are running an
 
 ## Reporting a Vulnerability
 
-If you discover a security vulnerability in DeepFinder, please report it privately. **Do not open a public GitHub issue.**
+If you discover a security vulnerability in DeepFind, please report it privately. **Do not open a public GitHub issue.**
 
 **Preferred — GitHub Private Vulnerability Reporting:** click **"Report a vulnerability"** on this repository's [Security → Advisories](../../security/advisories/new) tab. Reports submitted this way are encrypted, visible only to maintainers, and support coordinated disclosure end-to-end (draft security advisory → optional CVE → controlled publication). This is the fastest and safest path.
 
@@ -23,7 +23,7 @@ If you discover a security vulnerability in DeepFinder, please report it private
 
 When reporting, please include as much of the following as possible:
 
-- Affected component and DeepFinder version (`deepfind --version`)
+- Affected component and DeepFind version (`deepfind --version`)
 - Step-by-step reproduction instructions
 - Proof-of-concept code or a sample exploit (if available)
 - Any relevant logs, crash reports, or screenshots
@@ -45,7 +45,7 @@ We may negotiate a shorter or longer timeline depending on the complexity and se
 
 ## Scope
 
-DeepFinder is a **local-only** macOS tool: the daemon listens on a Unix domain socket (`~/.deep-finder/daemon.sock`), not a network port, and never transmits indexed data over the network.
+DeepFind is a **local-only** macOS tool: the daemon listens on a Unix domain socket (`~/.deep-finder/daemon.sock`), not a network port, and never transmits indexed data over the network.
 
 ### In Scope
 
@@ -61,10 +61,10 @@ The following components and attack surfaces are considered in scope:
 
 - **Social engineering** attacks (phishing, pretexting, impersonation).
 - **Physical access** attacks (direct hardware access, DMA attacks).
-- **Denial of Service (DoS)** that relies on saturating the local machine's resources (CPU, memory, disk I/O) — DeepFinder is a local-only tool by design.
-- **Issues in third-party dependencies** unless you can demonstrate a specific impact within DeepFinder's context.
+- **Denial of Service (DoS)** that relies on saturating the local machine's resources (CPU, memory, disk I/O) — DeepFind is a local-only tool by design.
+- **Issues in third-party dependencies** unless you can demonstrate a specific impact within DeepFind's context.
 - **Theoretical vulnerabilities** without a practical proof of concept.
-- **Missing security headers or cookie flags** — DeepFinder is a native macOS application with no network/web-service surface.
+- **Missing security headers or cookie flags** — DeepFind is a native macOS application with no network/web-service surface.
 
 If you are unsure whether an issue is in scope, please email us before investing significant research time.
 

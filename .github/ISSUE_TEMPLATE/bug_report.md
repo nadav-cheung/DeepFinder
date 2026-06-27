@@ -21,7 +21,7 @@ What you expected to happen.
 What actually happened.
 
 ## Environment
-- **DeepFinder version**: (run `deepfind --version`)
+- **DeepFind version**: (run `deepfind --version`)
 - **macOS version**: 
 - **Hardware**: (e.g., MacBook Pro M4)
 

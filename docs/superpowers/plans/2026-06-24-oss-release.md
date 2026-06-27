@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Ship DeepFinder (Rust) as open-source 1.0 — single `deepfind` binary, automated background indexing of `$HOME`, Homebrew + curl|sh distribution via cargo-dist, universal macOS binary.
+**Goal:** Ship DeepFind (Rust) as open-source 1.0 — single `deepfind` binary, automated background indexing of `$HOME`, Homebrew + curl|sh distribution via cargo-dist, universal macOS binary.
 
 **Architecture:** Phase 1 collapses `deepfindd` to a lib (daemon runs via `deepfind daemon`). Phase 2 makes the daemon's `DbSet` hot-swappable (`Arc<ArcSwap<DbSet>>`) so it background-builds missing indexes on startup and reports freshness — mirroring the existing shard ArcSwap. Phases 3–5 do version/tags, cargo-dist + OSS files, and the release cut.
 
@@ -629,7 +629,7 @@ git commit -m "build(dist): cargo-dist config (universal-apple-darwin, homebrew+
 ### Task 4.2: Create the homebrew-tap repo + publish token (manual, documented)
 
 - [ ] **Step 1:** Create an empty public repo `github.com/nadav-cheung/homebrew-tap`.
-- [ ] **Step 2:** Add a GitHub secret to `nadav-cheung/DeepFinder` for tap publishing (cargo-dist's `HOMEBREW_TAP_GITHUB_TOKEN`, or install the dist GitHub App) — follow `dist init`'s printed instructions.
+- [ ] **Step 2:** Add a GitHub secret to `nadav-cheung/DeepFind` for tap publishing (cargo-dist's `HOMEBREW_TAP_GITHUB_TOKEN`, or install the dist GitHub App) — follow `dist init`'s printed instructions.
 - [ ] **Step 3:** Record the setup in `docs/decisions.md` (one entry: tap repo + token, date).
 
 ### Task 4.3: OSS files (CONTRIBUTING, CoC)
@@ -665,7 +665,7 @@ brew install nadav-cheung/tap/deepfind
 
 **Or one-line script:**
 ```sh
-curl -LsSf https://github.com/nadav-cheung/DeepFinder/releases/latest/download/deepfind-installer.sh | sh
+curl -LsSf https://github.com/nadav-cheung/DeepFind/releases/latest/download/deepfind-installer.sh | sh
 ```
 
 **Start the background daemon** (auto-indexes `$HOME`, live-updates, starts at login):

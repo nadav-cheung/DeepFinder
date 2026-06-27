@@ -1,4 +1,4 @@
-# DeepFinder — End-state Technology Selection
+# DeepFind — End-state Technology Selection
 
 > **Status:** Updated 2026-06-24. This table is the **end-state (target)** model; the 2026-06-23 "complete implementation" (Phases A–F) delivered several of these items (see the ✅ marks), the rest ⏳ remain to be built. Derived from the two locked design specs (`docs/superpowers/specs/2026-06-22-rust-search-index-cli-design.md`, `…-v2-content-index-design.md`).
 > **In one sentence:** the end-state = **the built baseline + the v2.1 incremental layer + the M7 hardening layer**; full rebuild is only the v2.0 milestone, not the end-state.

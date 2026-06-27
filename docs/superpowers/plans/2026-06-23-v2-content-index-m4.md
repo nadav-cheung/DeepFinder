@@ -1,4 +1,4 @@
-# DeepFinder v2 — M4 Streaming Full-Disk Build (Phase 2 start) Plan
+# DeepFind v2 — M4 Streaming Full-Disk Build (Phase 2 start) Plan
 
 > **For agentic workers:** REQUIRED SUB-SKILL: superpowers:subagent-driven-development. Steps use checkbox (`- [ ]`) tracking.
 

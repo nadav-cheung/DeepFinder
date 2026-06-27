@@ -1,6 +1,6 @@
-# Architecture Decision Records — DeepFinder
+# Architecture Decision Records — DeepFind
 
-> Append-only log of decisions made while building DeepFinder. Each record follows the
+> Append-only log of decisions made while building DeepFind. Each record follows the
 > **MADR** (Markdown Any Decision Record) format — **Status / Context / Decision / Consequences** —
 > numbered `ADR-0001` onward. The log is append-only: never edit a past record's *Decision*; if it no
 > longer holds, supersede it with a new record instead.
@@ -147,7 +147,7 @@
 
 **Decision.** No M7 hardening item is implemented this round. Each was evaluated against the baseline:
 
-- **2-rarest intersection (D2.1)** — implemented + benchmarked, then **reverted**. For DeepFinder's *literal-substring* candidate generation, a query's trigrams are contiguous, so they co-occur in the same documents ⇒ the two rarest postings overlap almost entirely ⇒ intersecting them does not shrink the verify set. Measured: `common` ("src") 1.05 ms → 1.06 ms (noise). 2-rarest only helps *multi-term* queries, which DeepFinder routes through the boolean AST, not `candidates()`.
+- **2-rarest intersection (D2.1)** — implemented + benchmarked, then **reverted**. For DeepFind's *literal-substring* candidate generation, a query's trigrams are contiguous, so they co-occur in the same documents ⇒ the two rarest postings overlap almost entirely ⇒ intersecting them does not shrink the verify set. Measured: `common` ("src") 1.05 ms → 1.06 ms (noise). 2-rarest only helps *multi-term* queries, which DeepFind routes through the boolean AST, not `candidates()`.
 - **Bigram short-query path (D2.2)** — the only hot signal (2-byte `short` = 2.43 ms linear scan), but it needs an on-disk bigram index = an invasive filename-DB + content-shard **format change** for a modest, narrow gain. Not justified at current corpus scale.
 - **ASCII direct array / dirTable / per-shard parallel / madvise (D2.3–D2.6)** — signal unclear without a real multi-GB corpus; deferred until one is benchmarked.
 
@@ -212,7 +212,7 @@ Revisit when benchmarking incremental latency on a large corpus.
 
 **Date:** 2026-06-25 · **Phase:** post-A–F · **Status:** Accepted
 
-**Context.** DeepFinder reads the whole disk — including TCC-protected `~/Library` subdirs (`Mail`, `Messages`, …) — so the process must hold Full Disk Access (FDA). Before this, FDA was surfaced only *reactively*: `df-index` counted `permission-denied` entries and `deepfind index` printed one warning at the end. There was no proactive check and no guidance to grant. macOS exposes **no API** to query or grant FDA, and — unlike Accessibility — **no consent prompt** an app can trigger; the user must manually add the binary in System Settings. Design: `docs/superpowers/specs/2026-06-25-permissions-design.md`.
+**Context.** DeepFind reads the whole disk — including TCC-protected `~/Library` subdirs (`Mail`, `Messages`, …) — so the process must hold Full Disk Access (FDA). Before this, FDA was surfaced only *reactively*: `df-index` counted `permission-denied` entries and `deepfind index` printed one warning at the end. There was no proactive check and no guidance to grant. macOS exposes **no API** to query or grant FDA, and — unlike Accessibility — **no consent prompt** an app can trigger; the user must manually add the binary in System Settings. Design: `docs/superpowers/specs/2026-06-25-permissions-design.md`.
 
 **Decision.**
 - **Detection = heuristic `readdir` probe**, not a TCC API query (user-space can't read `TCC.db` under SIP). `df-index::fda_state()` does **one** `read_dir` on the first existing TCC-protected candidate (`~/Library/{Calendars,Mail,Messages,Safari,Metadata/CoreData}`): `Ok` ⇒ `Granted`, `PermissionDenied` ⇒ `Denied`, absent/non-mac ⇒ `Unknown`. No cache (one `readdir` is cheap).

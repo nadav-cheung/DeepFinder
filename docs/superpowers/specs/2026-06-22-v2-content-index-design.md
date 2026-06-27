@@ -1,4 +1,4 @@
-# DeepFinder v2 — Content Index (Final Architecture)
+# DeepFind v2 — Content Index (Final Architecture)
 
 **Date:** 2026-06-22
 **Status:** Design approved (pending spec review)

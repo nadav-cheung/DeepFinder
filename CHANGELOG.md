@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to DeepFinder (Rust edition) are documented here.
+All notable changes to DeepFind (Rust edition) are documented here.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/).
 
@@ -70,7 +70,7 @@ First public release of the Rust rewrite. Pre-1.0: usable, but the CLI/behavior 
 ### Changed
 - N/A (first Rust release).
 
-[0.1.6]: https://github.com/nadav-cheung/DeepFinder/releases/tag/v0.1.6
-[0.1.2]: https://github.com/nadav-cheung/DeepFinder/releases/tag/v0.1.2
-[0.1.1]: https://github.com/nadav-cheung/DeepFinder/releases/tag/v0.1.1
-[0.1.0]: https://github.com/nadav-cheung/DeepFinder/releases/tag/v0.1.0
+[0.1.6]: https://github.com/nadav-cheung/DeepFind/releases/tag/v0.1.6
+[0.1.2]: https://github.com/nadav-cheung/DeepFind/releases/tag/v0.1.2
+[0.1.1]: https://github.com/nadav-cheung/DeepFind/releases/tag/v0.1.1
+[0.1.0]: https://github.com/nadav-cheung/DeepFind/releases/tag/v0.1.0
