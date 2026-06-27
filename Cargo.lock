@@ -320,6 +320,8 @@ dependencies = [
  "df-ipc",
  "futures",
  "ignore",
+ "serde",
+ "serde_json",
  "tempfile",
  "tokio",
  "tracing",
@@ -378,9 +380,11 @@ dependencies = [
  "ignore",
  "memmap2",
  "serde",
+ "serde_json",
  "tempfile",
  "thiserror",
  "toml",
+ "tracing",
 ]
 
 [[package]]

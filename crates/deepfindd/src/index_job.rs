@@ -107,6 +107,14 @@ pub(crate) fn tracked_build(
     content_dir: &Path,
     opts: &ContentBuildOptions,
 ) -> df_index::Result<df_index::ContentReport> {
+    // Load settings.json ignore patterns once here (the single funnel for
+    // spawn_build / compact_and_swap / rebuild_and_swap) so every daemon build
+    // path uniformly honors the global ignore list. A bad config falls back to
+    // defaults (no patterns) — never fails the build.
+    let mut opts = opts.clone();
+    opts.ignore_patterns = df_index::Settings::load(&df_ipc::data_dir()).ignore;
+    let opts = &opts;
+
     let marker_path = marker(db_path);
     let progress = Arc::new(df_index::IndexProgress::default());
     // Reporter: periodically snapshot the counters into the marker file. Stops

@@ -8,7 +8,8 @@ use std::sync::Arc;
 use crossbeam_channel::bounded;
 use df_content::ShardBuilder;
 use df_core::db::DbBuilder;
-use ignore::{WalkBuilder, WalkState};
+use ignore::gitignore::{Gitignore, GitignoreBuilder};
+use ignore::{Match, WalkBuilder, WalkState};
 
 use crate::manifest::{Manifest, ShardEntry};
 use crate::{atomic_write_public, DEFAULT_SKIP};
@@ -85,6 +86,11 @@ pub struct ContentBuildOptions {
     pub one_file_system: bool,
     /// Index hidden files (dotfiles) too. Off by default.
     pub hidden: bool,
+    /// gitignore-glob patterns (from `settings.json`) to skip in addition to the
+    /// built-in skip-list and the `ignore` crate's `standard_filters`. Compiled
+    /// once per walk into an in-memory matcher; matched against each entry's
+    /// full path.
+    pub ignore_patterns: Vec<String>,
 }
 
 impl Default for ContentBuildOptions {
@@ -94,8 +100,89 @@ impl Default for ContentBuildOptions {
             extra_skip: Vec::new(),
             one_file_system: false,
             hidden: false,
+            ignore_patterns: Vec::new(),
         }
     }
+}
+
+/// Compile `patterns` (gitignore-globs from `settings.json`) rooted at `root`
+/// into a single in-memory matcher. Each pattern is validated before being
+/// added; a bad/empty/malformed glob is warned-and-skipped (the rest still
+/// apply). Empty input ⇒ `None` (no matcher, so no per-entry cost).
+///
+/// **Absolute-path patterns.** The spec advertises filesystem-absolute forms
+/// like `/Users/x/Secret`. The `ignore` crate treats a leading `/` as
+/// gitignore "anchored relative to the matcher root", NOT as a filesystem-
+/// absolute path — so feeding `/Users/x/Secret` verbatim would silently match
+/// nothing (a false sense of security). An absolute path that lies UNDER `root`
+/// is therefore translated to its root-relative anchored form (`/Secret`); one
+/// that is NOT under `root` cannot match anything the walker visits (the walker
+/// stays under `root`) and is skipped with a warning.
+pub fn compile_ignore_matcher(root: &Path, patterns: &[String]) -> Option<Gitignore> {
+    if patterns.is_empty() {
+        return None;
+    }
+    let mut b = GitignoreBuilder::new(root);
+    for line in patterns {
+        let Some(normalized) = normalize_pattern(root, line) else {
+            tracing::warn!(
+                pattern = %line,
+                "settings ignore: skipping pattern (absolute path not under build root, or malformed/empty)"
+            );
+            continue;
+        };
+        if let Err(e) = b.add_line(None, &normalized) {
+            tracing::warn!(pattern = %line, error = %e, "settings ignore: skipping bad glob");
+        }
+    }
+    match b.build() {
+        Ok(gi) => Some(gi),
+        Err(e) => {
+            tracing::warn!(error = %e, "settings ignore matcher build failed; ignoring all patterns");
+            None
+        }
+    }
+}
+
+/// Normalize one settings pattern for the gitignore matcher rooted at `root`.
+/// Returns the string to feed `add_line`, or `None` to skip+warn.
+///
+/// - Trims surrounding whitespace; empty/whitespace-only ⇒ skip (matches
+///   nothing, would only pollute the matcher).
+/// - An absolute filesystem path (`Path::new(line).is_absolute()`):
+///     - under `root` ⇒ the root-relative anchored form (`/` + rel), which the
+///       gitignore matcher anchors correctly (e.g. `/Users/x/Secret` with root
+///       `/Users/x` ⇒ `/Secret`).
+///     - not under `root` ⇒ `None` (cannot match anything the walker visits).
+/// - Anything else (relative globs, bare names) is returned verbatim.
+fn normalize_pattern(root: &Path, line: &str) -> Option<String> {
+    let trimmed = line.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    // Negation patterns (`!foo`) are relative globs; leave them to add_line.
+    let body = trimmed.strip_prefix('!').unwrap_or(trimmed);
+    if Path::new(body).is_absolute() {
+        let abs = Path::new(body);
+        return match abs.strip_prefix(root) {
+            // Under root: emit the root-relative anchored form. A leading `/`
+            // makes gitignore anchor relative to the matcher root (= `root`),
+            // so `/Secret` matches `<root>/Secret` exactly.
+            Ok(rel) if rel.as_os_str().is_empty() => {
+                // Pattern IS the root itself — anchor to "/" (matches root dir).
+                Some("/".to_string())
+            }
+            Ok(rel) => Some(format!("/{}", rel.to_string_lossy())),
+            Err(_) => None, // absolute path outside root: cannot match here
+        };
+    }
+    Some(trimmed.to_string())
+}
+
+/// True if `path` is ignored by `matcher`. `is_dir` selects gitignore dir
+/// semantics (so a pattern like `secret` with no slash matches a directory).
+pub fn is_ignored(matcher: &Gitignore, path: &Path, is_dir: bool) -> bool {
+    matches!(matcher.matched(path, is_dir), Match::Ignore(_))
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -197,6 +284,11 @@ pub fn build_content_index_with_progress(
     // worker (cheap: the inner closure holds an Arc, not the Vec).
     let skip = Arc::new(skip);
 
+    // Settings.json ignore patterns: compiled ONCE into an in-memory matcher
+    // (rooted at `root`) and shared across workers via Arc. One filter covers
+    // both the filename and content layers — this single walk feeds both.
+    let ignore_matcher = Arc::new(compile_ignore_matcher(root, &opts.ignore_patterns));
+
     let (tx, rx) = bounded::<BuildRec>(CHANNEL_CAP);
     let build_time = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -286,6 +378,7 @@ pub fn build_content_index_with_progress(
         let sb = sb2.clone();
         let sl = sl2.clone();
         let skip = skip.clone();
+        let ignore_matcher = Arc::clone(&ignore_matcher);
         let progress = Arc::clone(&walker_progress);
         Box::new(move |result| {
             progress.files_scanned.fetch_add(1, Ordering::Relaxed);
@@ -308,6 +401,18 @@ pub fn build_content_index_with_progress(
                 return WalkState::Continue;
             };
             let is_dir = entry.file_type().is_some_and(|t| t.is_dir());
+            // settings.json ignore patterns (union with the name-skip above).
+            // A matching directory is pruned (don't descend); a matching file
+            // is simply not sent to the consumer (skips both layers at once).
+            if let Some(m) = ignore_matcher.as_ref() {
+                if is_ignored(m, entry.path(), is_dir) {
+                    return if is_dir {
+                        WalkState::Skip
+                    } else {
+                        WalkState::Continue
+                    };
+                }
+            }
             let (size, mtime) = match entry.metadata() {
                 Ok(md) => (
                     md.len() as i64,
@@ -452,5 +557,97 @@ mod tests {
         );
         // Every flushed shard (including the final partial) is counted.
         assert_eq!(snap.shards_written, report.shards as u64, "shards mismatch");
+    }
+
+    // --- settings ignore matcher ---
+
+    /// Helper: compile a matcher rooted at `root` from `patterns`, then ask
+    /// whether `cand` (an absolute path under root) is ignored.
+    fn ignored(root: &Path, patterns: &[&str], cand: &Path, is_dir: bool) -> bool {
+        let m = compile_ignore_matcher(
+            root,
+            &patterns.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+        )
+        .expect("non-empty patterns ⇒ Some(matcher)");
+        is_ignored(&m, cand, is_dir)
+    }
+
+    #[test]
+    fn glob_pattern_matches_file_under_root() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        assert!(ignored(root, &["*.log"], &root.join("noise.log"), false));
+        assert!(!ignored(root, &["*.log"], &root.join("keep.rs"), false));
+    }
+
+    #[test]
+    fn bare_name_matches_directory_entry() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        // `secret` (no slash) matches the directory entry — the walker then
+        // prunes the subtree, so nested files never reach the matcher.
+        assert!(ignored(root, &["secret"], &root.join("secret"), true));
+        assert!(!ignored(root, &["secret"], &root.join("keep.rs"), false));
+    }
+
+    // edge-1: an absolute-path pattern that points at a path UNDER the build
+    // root must ignore it (the spec advertises `/Users/x/Secret`). The naive
+    // gitignore form fails because the matcher anchors a leading-slash pattern
+    // relative to the build root, not as a filesystem-absolute path.
+    #[test]
+    fn absolute_path_pattern_under_root_ignores_entry() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let secret = root.join("Secret");
+        std::fs::create_dir_all(&secret).unwrap();
+        // The spec's motivating example: an absolute FS path equal to the
+        // walker entry path. Must ignore the dir (and thus prune it).
+        let pat = secret.to_string_lossy().into_owned();
+        assert!(
+            ignored(root, &[pat.as_str()], &secret, true),
+            "absolute path under root must be ignored"
+        );
+    }
+
+    // edge-1: an absolute-path pattern that is NOT under the build root cannot
+    // match anything the walker visits (the walker stays under root). It is a
+    // no-op for this build root — it must not spuriously ignore local paths.
+    #[test]
+    fn absolute_path_pattern_not_under_root_is_noop() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let other = tempfile::tempdir().unwrap();
+        let pat = other.path().join("Secret").to_string_lossy().into_owned();
+        // A local file must NOT be ignored by an absolute pattern elsewhere.
+        assert!(
+            !ignored(root, &[pat.as_str()], &root.join("keep.rs"), false),
+            "absolute path outside root must not match local files"
+        );
+    }
+
+    // edge-2: a malformed glob the `ignore` crate silently accepts (returns
+    // Ok from add_line) must still be warned-and-skipped per spec §8. These
+    // patterns match nothing when retained, so skipping them changes nothing
+    // functionally — but the spec and the in-code doc comment promise a warn.
+    // We assert the matcher still compiles (Some) and the OTHER patterns still
+    // apply (the bad one is dropped, not retained to poison the matcher).
+    #[test]
+    fn malformed_glob_does_not_poison_matcher() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        // `[` is a malformed glob the ignore crate accepts silently. A valid
+        // pattern alongside it must still match.
+        let m = compile_ignore_matcher(
+            root,
+            &[
+                "[".to_string(),
+                "*.log".to_string(),
+                "".to_string(),
+                "   ".to_string(),
+            ],
+        )
+        .expect("matcher builds from the surviving valid pattern");
+        assert!(is_ignored(&m, &root.join("noise.log"), false));
+        assert!(!is_ignored(&m, &root.join("keep.rs"), false));
     }
 }

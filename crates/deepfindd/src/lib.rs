@@ -898,6 +898,8 @@ fn handle_index_request(
         extra_skip: req.skip,
         one_file_system: req.one_file_system,
         hidden: req.hidden,
+        // Loaded centrally in `tracked_build` (covers all build funnels).
+        ignore_patterns: Vec::new(),
     };
     let accepted = index_job::spawn_build(
         root,
@@ -1398,9 +1400,21 @@ pub(crate) mod watch {
             while let Ok(p) = rx.try_recv() {
                 batch.push(p);
             }
+            // settings.json ignore patterns — recompiled PER BATCH (cheap: the file
+            // is tiny and patterns are few, read only on activity bursts) so a
+            // `config ignore add` during a running watch takes effect on the next
+            // event, not the next watcher restart. Rooted at the build root so
+            // relative patterns resolve like the cold layer. This is read-at-use
+            // (like direct_scan / tracked_build), NOT a file watcher on settings.json.
+            let ignore_matcher = df_index::content_build::compile_ignore_matcher(
+                root,
+                &df_index::Settings::load(&df_ipc::data_dir()).ignore,
+            );
             let recs: Vec<WalRecord> = batch
                 .iter()
-                .map(|p| build_record(&lexify(p, root, &canon_root), max_file_size))
+                .map(|p| lexify(p, root, &canon_root))
+                .filter(|p| !path_ignored(ignore_matcher.as_ref(), p))
+                .map(|p| build_record(&p, max_file_size))
                 .collect();
             overlay.record_and_apply(&recs);
             tracing::info!(root = ?root, paths = batch.len(), "df-watch: overlay updated");
@@ -1473,6 +1487,18 @@ pub(crate) mod watch {
         paths.iter().any(|p| p.starts_with(data_dir))
     }
 
+    /// True if `path` matches the settings.json ignore matcher (so a change
+    /// event on it must NOT be folded into the overlay). `None` matcher ⇒ keep.
+    /// `is_dir` is read from metadata when present (a deleted path has none →
+    /// treated as a file, which is the safe default for matching).
+    fn path_ignored(matcher: Option<&df_index::Gitignore>, path: &Path) -> bool {
+        let Some(m) = matcher else {
+            return false;
+        };
+        let is_dir = std::fs::metadata(path).is_ok_and(|md| md.is_dir());
+        df_index::content_build::is_ignored(m, path, is_dir)
+    }
+
     #[cfg(test)]
     mod is_self_write_tests {
         use super::*;
@@ -1511,6 +1537,43 @@ pub(crate) mod watch {
         #[test]
         fn empty_is_not_self_write() {
             assert!(!is_self_write(&[], Path::new("/root/.deep-find")));
+        }
+    }
+
+    #[cfg(test)]
+    mod path_ignored_tests {
+        use super::*;
+        use df_index::content_build::compile_ignore_matcher;
+
+        fn matcher(root: &str, patterns: &[&str]) -> Option<df_index::Gitignore> {
+            compile_ignore_matcher(
+                Path::new(root),
+                &patterns.iter().map(|s| s.to_string()).collect::<Vec<_>>(),
+            )
+        }
+
+        #[test]
+        fn none_matcher_keeps_everything() {
+            // No matcher ⇒ nothing is ignored.
+            assert!(!path_ignored(None, Path::new("/proj/anything.log")));
+        }
+
+        #[test]
+        fn matching_glob_is_ignored() {
+            let m = matcher("/proj", &["*.log"]);
+            assert!(path_ignored(m.as_ref(), Path::new("/proj/noise.log")));
+            assert!(!path_ignored(m.as_ref(), Path::new("/proj/keep.rs")));
+        }
+
+        #[test]
+        fn matching_dir_is_ignored() {
+            // A real temp dir matching the `secret` pattern is pruned.
+            let tmp = tempfile::tempdir().unwrap();
+            let secret = tmp.path().join("secret");
+            std::fs::create_dir_all(&secret).unwrap();
+            let m = matcher(tmp.path().to_str().unwrap(), &["secret"]);
+            assert!(path_ignored(m.as_ref(), &secret));
+            assert!(!path_ignored(m.as_ref(), &tmp.path().join("keep.rs")));
         }
     }
 }

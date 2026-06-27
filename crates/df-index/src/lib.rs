@@ -23,6 +23,7 @@ pub mod mmap_source;
 pub mod overlay_store;
 pub mod permissions;
 pub mod registry;
+pub mod settings;
 
 pub use content_build::{
     build_content_index, build_content_index_with_progress, ContentBuildOptions, ContentReport,
@@ -34,6 +35,11 @@ pub use mmap_source::MmapSource;
 pub use overlay_store::{replay as replay_overlay, OverlayStore};
 pub use permissions::{fda_state, FdaState};
 pub use registry::{DbRecord, Registry, RegistryFile};
+pub use settings::Settings;
+
+/// Re-export so daemon/CLI can name the compiled matcher type without depending
+/// on the `ignore` crate directly.
+pub use ignore::gitignore::Gitignore;
 
 /// Default skip-list (on top of `.gitignore` + hidden), per REVIEW §8.1 #3.
 pub const DEFAULT_SKIP: &[&str] = &[
@@ -65,19 +71,22 @@ pub struct IndexReport {
 /// Build (or rebuild) the index DB for `root` with the default skip-list,
 /// writing atomically to `out_db`. Returns the number of indexed entries.
 pub fn build_index(root: &Path, out_db: &Path) -> Result<u32> {
-    Ok(build_index_report(root, out_db, &[], false)?.docs)
+    Ok(build_index_report(root, out_db, &[], false, &[])?.docs)
 }
 
 /// Like [`build_index`] but with `extra_skip` directory names pruned in addition
 /// to [`DEFAULT_SKIP`] (REVIEW §8.1 #3: configurable skip-list). Extras are
 /// deduped against the defaults. `hidden` includes dotfiles when true.
+/// `ignore_patterns` are gitignore-globs from `settings.json`, applied as a
+/// union with the skip-list (threaded the same way as `extra_skip`).
 pub fn build_index_with(
     root: &Path,
     out_db: &Path,
     extra_skip: &[String],
     hidden: bool,
+    ignore_patterns: &[String],
 ) -> Result<u32> {
-    Ok(build_index_report(root, out_db, extra_skip, hidden)?.docs)
+    Ok(build_index_report(root, out_db, extra_skip, hidden, ignore_patterns)?.docs)
 }
 
 /// Build and return a full [`IndexReport`] (doc count + permission-denied count
@@ -87,6 +96,7 @@ pub fn build_index_report(
     out_db: &Path,
     extra_skip: &[String],
     hidden: bool,
+    ignore_patterns: &[String],
 ) -> Result<IndexReport> {
     let mut skip: Vec<&str> = DEFAULT_SKIP.to_vec();
     for e in extra_skip {
@@ -94,7 +104,7 @@ pub fn build_index_report(
             skip.push(e.as_str());
         }
     }
-    let (recs, denied) = collect_records(root, &skip, hidden)?;
+    let (recs, denied) = collect_records(root, &skip, hidden, ignore_patterns)?;
     let mut builder = DbBuilder::new();
     builder.set_build_time(now_secs());
     for r in &recs {
@@ -123,10 +133,18 @@ fn is_permission_denied(e: &ignore::Error) -> bool {
 
 /// Walk `root` in parallel (gitignore + hidden + `skip` dir names), returning
 /// sorted-unique, valid-UTF-8 records with per-file metadata, plus a count of
-/// permission-denied entries (FDA signal).
-fn collect_records(root: &Path, skip: &[&str], hidden: bool) -> Result<(Vec<DocRec>, u32)> {
+/// permission-denied entries (FDA signal). `ignore_patterns` (settings.json) are
+/// compiled into an in-memory matcher applied as a union with the skip-list.
+fn collect_records(
+    root: &Path,
+    skip: &[&str],
+    hidden: bool,
+    ignore_patterns: &[String],
+) -> Result<(Vec<DocRec>, u32)> {
     let mut walker = WalkBuilder::new(root);
     walker.standard_filters(true).hidden(!hidden);
+
+    let ignore_matcher = Arc::new(content_build::compile_ignore_matcher(root, ignore_patterns));
 
     let collected: Arc<Mutex<Vec<DocRec>>> = Arc::new(Mutex::new(Vec::new()));
     let denied: Arc<AtomicU32> = Arc::new(AtomicU32::new(0));
@@ -135,6 +153,7 @@ fn collect_records(root: &Path, skip: &[&str], hidden: bool) -> Result<(Vec<DocR
     walker.build_parallel().run(move || {
         let sink = sink.clone();
         let denied_c = denied_c.clone();
+        let ignore_matcher = Arc::clone(&ignore_matcher);
         Box::new(move |result| {
             let entry = match result {
                 Ok(e) => e,
@@ -149,6 +168,18 @@ fn collect_records(root: &Path, skip: &[&str], hidden: bool) -> Result<(Vec<DocR
             let name = entry.file_name().to_string_lossy();
             if entry.file_type().is_some_and(|t| t.is_dir()) && skip.iter().any(|s| name == *s) {
                 return WalkState::Skip;
+            }
+            // settings.json ignore patterns (union): prune matching dirs, drop
+            // matching files before they reach the builder.
+            if let Some(m) = ignore_matcher.as_ref() {
+                let is_dir = entry.file_type().is_some_and(|t| t.is_dir());
+                if content_build::is_ignored(m, entry.path(), is_dir) {
+                    return if is_dir {
+                        WalkState::Skip
+                    } else {
+                        WalkState::Continue
+                    };
+                }
             }
             if let Some(s) = entry.path().to_str() {
                 let is_dir = entry.file_type().is_some_and(|t| t.is_dir());

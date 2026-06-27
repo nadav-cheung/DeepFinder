@@ -17,7 +17,7 @@ This adds a JSON config file with an `ignore` field, plus a CLI to manage it. Th
 1. **Scope = global.** One `~/.deep-find/settings.json`; its `ignore` list applies to **every** registered-DB index build, every df-watch rebuild, and `--direct` scans. (Not per-DB, not per-root.)
 2. **Match = gitignore globs.** Entries are `ignore`-crate gitignore patterns, so they match both files and folders, by name, glob, or absolute path (`node_modules`, `*.log`, `**/dist`, `/Users/x/Secret`).
 3. **Union semantics.** The settings `ignore` is unioned with the existing filters — the `ignore` walker's `standard_filters` (`.gitignore`/global-gitignore) **and** the existing `extra_skip` directory-name pruning. All three apply; none replaces another.
-4. **No hot-reload.** Ignore is consumed at walk time, so a settings change takes effect on the next build / next `--direct` scan / next df-watch event. No file watcher (unlike `dbs.toml`); ignore does not affect live queries, so a watcher would add complexity for no benefit.
+4. **No hot-reload.** Ignore is consumed at walk time, so a settings change takes effect on the next **build** / next **`--direct` scan** / next **df-watch event**. Each consumer reads `settings.json` fresh at use time: builds load it in `tracked_build`, `--direct` scan loads it per scan, and df-watch reloads + recompiles the matcher **per debounce batch** (cheap — the file is tiny and patterns are few) so a `config ignore add` during a running watch is honored by the next event. This is read-at-use, **not** a file watcher on `settings.json` (§10 still excludes adding a notify watcher); ignore does not affect live queries.
 5. **`deepfind config` subcommand** mirrors the existing `db add/remove/list` UX (see §6).
 
 ## 3. File location & schema

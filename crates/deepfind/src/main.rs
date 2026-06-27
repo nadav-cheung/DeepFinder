@@ -81,6 +81,11 @@ enum Cmd {
         #[command(subcommand)]
         action: DbAction,
     },
+    /// Manage the global settings.json (`config show` / `config ignore …`).
+    Config {
+        #[command(subcommand)]
+        action: ConfigAction,
+    },
     /// Install a user LaunchAgent so the daemon auto-starts at login (macOS).
     Install {
         /// Do not enable df-watch incremental hot-swap in the agent.
@@ -197,6 +202,29 @@ enum DbAction {
     List,
 }
 
+/// Manage the global `settings.json` (show the file, or edit the `ignore` list).
+#[derive(Subcommand)]
+enum ConfigAction {
+    /// Print the full settings.json (pretty JSON).
+    Show,
+    /// Manage the `ignore` list (gitignore-glob patterns skipped at every build
+    /// / scan / df-watch event).
+    Ignore {
+        #[command(subcommand)]
+        action: IgnoreAction,
+    },
+}
+
+#[derive(Subcommand)]
+enum IgnoreAction {
+    /// Append a pattern (dedup; no-op if already present), then save.
+    Add { pattern: String },
+    /// Remove a pattern (exact match), then save.
+    Remove { pattern: String },
+    /// Print patterns, one per line.
+    List,
+}
+
 #[tokio::main]
 async fn main() {
     let cli = Cli::parse();
@@ -227,6 +255,7 @@ async fn main() {
         Cmd::Status => cmd_status().await,
         Cmd::Doctor => cmd_doctor(),
         Cmd::Db { action } => cmd_db(action),
+        Cmd::Config { action } => cmd_config(action),
         Cmd::Install { no_watch } => cmd_install(!no_watch),
         Cmd::Uninstall => cmd_uninstall(),
         Cmd::Search {
@@ -374,7 +403,8 @@ async fn cmd_index(
     }
 
     if no_content {
-        match df_index::build_index_with(root, &db, &skip, hidden) {
+        let ignore_patterns = df_index::Settings::load(&data_dir()).ignore;
+        match df_index::build_index_with(root, &db, &skip, hidden, &ignore_patterns) {
             Ok(n) => println!("indexed {n} entries (filename only) -> {}", db.display()),
             Err(e) => {
                 eprintln!("index failed: {e}");
@@ -390,6 +420,7 @@ async fn cmd_index(
         extra_skip: skip,
         one_file_system,
         hidden,
+        ignore_patterns: df_index::Settings::load(&data_dir()).ignore,
     };
     match df_index::build_content_index(root, &db, &content_dir, &opts) {
         Ok(r) => {
@@ -468,6 +499,7 @@ fn cmd_db(action: DbAction) {
                 extra_skip: Vec::new(),
                 one_file_system: false,
                 hidden: false,
+                ignore_patterns: df_index::Settings::load(&data).ignore,
             };
             match df_index::build_content_index(&root, &db_path, &content_dir, &opts) {
                 Ok(r) => {
@@ -514,6 +546,62 @@ fn cmd_db(action: DbAction) {
                 println!("{}\t{}\t{}", r.name, r.root.display(), r.db_path.display());
             }
         }
+    }
+}
+
+/// `deepfind config` — show / edit the global `settings.json`. `show`/`list`
+/// are read-only; `add`/`remove` load → mutate → save atomically (errors exit
+/// non-zero, mirroring `cmd_db`).
+fn cmd_config(action: ConfigAction) {
+    let data = data_dir();
+    match action {
+        ConfigAction::Show => {
+            let s = df_index::Settings::load(&data);
+            match serde_json::to_string_pretty(&s) {
+                Ok(json) => println!("{json}"),
+                Err(e) => {
+                    eprintln!("config show failed: {e}");
+                    std::process::exit(1);
+                }
+            }
+        }
+        ConfigAction::Ignore { action } => match action {
+            IgnoreAction::Add { pattern } => {
+                let mut s = df_index::Settings::load(&data);
+                s.add_ignore(&pattern);
+                if let Err(e) = df_index::Settings::save(&data, &s) {
+                    eprintln!("config ignore add failed: {e}");
+                    std::process::exit(1);
+                }
+                println!("added: {pattern}");
+                // No hot-reload (locked decision §2.4): ignore applies at the
+                // next build / --direct scan / df-watch event. Files ALREADY
+                // indexed that now match the pattern remain live in the cold
+                // layer until the next rebuild / daemon compaction drops them.
+                println!(
+                    "note: existing indexed files matching '{pattern}' are dropped on the next \
+                     index rebuild / daemon compaction"
+                );
+            }
+            IgnoreAction::Remove { pattern } => {
+                let mut s = df_index::Settings::load(&data);
+                if !s.remove_ignore(&pattern) {
+                    eprintln!("no such pattern: {pattern}");
+                    std::process::exit(1);
+                }
+                if let Err(e) = df_index::Settings::save(&data, &s) {
+                    eprintln!("config ignore remove failed: {e}");
+                    std::process::exit(1);
+                }
+                println!("removed: {pattern}");
+            }
+            IgnoreAction::List => {
+                let s = df_index::Settings::load(&data);
+                for p in &s.ignore {
+                    println!("{p}");
+                }
+            }
+        },
     }
 }
 
@@ -979,6 +1067,12 @@ async fn direct_scan(
     let cap = limit.map(|l| l as usize).unwrap_or(usize::MAX);
     let root = scope.unwrap_or_else(|| PathBuf::from("."));
     let mut out = Vec::new();
+    // settings.json ignore patterns: applied as a union with the walker's own
+    // standard_filters. Today direct_scan applied no skip — this closes that gap.
+    let ignore_matcher = df_index::content_build::compile_ignore_matcher(
+        &root,
+        &df_index::Settings::load(&data_dir()).ignore,
+    );
     // `-H` includes hidden files in the online scan; default skips them.
     let walker = ignore::WalkBuilder::new(&root)
         .standard_filters(true)
@@ -989,6 +1083,13 @@ async fn direct_scan(
             break;
         }
         let entry = result?;
+        // Skip entries matching the settings ignore matcher (union).
+        if let Some(m) = ignore_matcher.as_ref() {
+            let is_dir = entry.file_type().is_some_and(|t| t.is_dir());
+            if df_index::content_build::is_ignored(m, entry.path(), is_dir) {
+                continue;
+            }
+        }
         if let Some(s) = entry.path().to_str() {
             let hit = if case_sensitive {
                 s.contains(query)
@@ -1173,5 +1274,133 @@ mod tests {
         assert!(!should_open_panel(df_index::FdaState::Denied, false));
         assert!(!should_open_panel(df_index::FdaState::Granted, true));
         assert!(!should_open_panel(df_index::FdaState::Unknown, true));
+    }
+
+    /// HOME is process-global, so serialize the config CLI tests that mutate it
+    /// under one mutex to avoid races under `cargo test` parallelism.
+    fn with_isolated_home<F: FnOnce(&std::path::Path)>(body: F) {
+        use std::sync::Mutex;
+        static LOCK: Mutex<()> = Mutex::new(());
+        let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
+        let tmp = tempfile::tempdir().unwrap();
+        let prev = std::env::var_os("HOME");
+        std::env::set_var("HOME", tmp.path());
+        // ensure the data dir exists so Settings::save can atomic_write into it.
+        std::fs::create_dir_all(tmp.path().join(".deep-find")).unwrap();
+        body(tmp.path());
+        match prev {
+            Some(v) => std::env::set_var("HOME", v),
+            None => std::env::remove_var("HOME"),
+        }
+    }
+
+    #[test]
+    fn config_ignore_add_remove_list_show_roundtrip() {
+        with_isolated_home(|_| {
+            // add two patterns
+            cmd_config(ConfigAction::Ignore {
+                action: IgnoreAction::Add {
+                    pattern: "node_modules".into(),
+                },
+            });
+            cmd_config(ConfigAction::Ignore {
+                action: IgnoreAction::Add {
+                    pattern: "*.log".into(),
+                },
+            });
+            // add dedup: re-adding is a no-op
+            cmd_config(ConfigAction::Ignore {
+                action: IgnoreAction::Add {
+                    pattern: "node_modules".into(),
+                },
+            });
+
+            // persisted on disk (load bypasses the CLI).
+            let loaded = df_index::Settings::load(&data_dir());
+            assert_eq!(
+                loaded.ignore,
+                vec!["node_modules".to_string(), "*.log".to_string()]
+            );
+
+            // remove (exact match)
+            cmd_config(ConfigAction::Ignore {
+                action: IgnoreAction::Remove {
+                    pattern: "node_modules".into(),
+                },
+            });
+            let loaded = df_index::Settings::load(&data_dir());
+            assert_eq!(loaded.ignore, vec!["*.log".to_string()]);
+
+            // show is read-only and emits valid JSON containing the pattern.
+            let s = df_index::Settings::load(&data_dir());
+            let json = serde_json::to_string(&s).unwrap();
+            assert!(json.contains("*.log"));
+        });
+    }
+
+    #[test]
+    fn config_show_on_missing_settings_is_empty_object() {
+        with_isolated_home(|_| {
+            // No settings.json yet → defaults → {"ignore":[]}.
+            let s = df_index::Settings::load(&data_dir());
+            assert!(s.ignore.is_empty());
+            let json = serde_json::to_string(&s).unwrap();
+            assert_eq!(json, r#"{"ignore":[]}"#);
+        });
+    }
+
+    // test-1 / spec §9: `--direct` scan applies settings.json ignore patterns
+    // — an ignored file and an ignored folder are absent from the output while
+    // a non-matching file is present. `direct_scan` reads `data_dir()` (which
+    // resolves via $HOME), so the isolated-home harness points it at our
+    // seeded settings.json.
+    #[test]
+    fn direct_scan_excludes_ignored_file_and_folder() {
+        with_isolated_home(|_| {
+            // Seed settings.json with ignore patterns.
+            let s = df_index::Settings {
+                ignore: vec!["*.log".into(), "secret".into()],
+            };
+            df_index::Settings::save(&data_dir(), &s).unwrap();
+
+            // Build a temp tree to scan.
+            let tree = tempfile::tempdir().unwrap();
+            let root = tree.path();
+            std::fs::write(root.join("keep.rs"), b"fn keepme() {}").unwrap();
+            std::fs::write(root.join("noise.log"), b"fn droplog() {}").unwrap();
+            std::fs::create_dir_all(root.join("secret")).unwrap();
+            std::fs::write(root.join("secret").join("hidden.rs"), b"fn dropdir() {}").unwrap();
+
+            // direct_scan is async but performs no real async I/O (a single
+            // synchronous walk); drive it on a current-thread runtime.
+            let rt = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .unwrap();
+            let (hits, _lines) = rt
+                .block_on(direct_scan(
+                    "keep",
+                    None,
+                    Some(root.to_path_buf()),
+                    df_ipc::proto::SearchOptions::default(),
+                ))
+                .expect("direct_scan must not error");
+
+            let paths: Vec<&str> = hits.iter().map(|(p, _, _)| p.as_str()).collect();
+            assert!(
+                paths.iter().any(|p| p.ends_with("keep.rs")),
+                "keep.rs must be present: {paths:?}"
+            );
+            assert!(
+                !paths.iter().any(|p| p.ends_with("noise.log")),
+                "noise.log must be ignored: {paths:?}"
+            );
+            assert!(
+                !paths
+                    .iter()
+                    .any(|p| p.contains("/secret/") || p.ends_with("/secret")),
+                "secret/ must be ignored: {paths:?}"
+            );
+        });
     }
 }

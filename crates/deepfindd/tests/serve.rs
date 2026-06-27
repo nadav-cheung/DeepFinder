@@ -976,6 +976,122 @@ async fn background_built_db_is_watched() {
     );
 }
 
+/// test-gap-2 / spec §9: a df-watch change event on a path matching
+/// settings.json `ignore` is NOT folded into the overlay. Mirrors
+/// `df_watch_serves_incremental_update`, but seeds `~/.deep-find/settings.json`
+/// (under an isolated HOME so `df_ipc::data_dir()` resolves to our temp dir)
+/// with a `*.log` ignore rule, then writes a matching file into the watched
+/// root and asserts it never surfaces in a query.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn df_watch_ignored_path_not_folded_into_overlay() {
+    let _guard = DF_WATCH_LOCK.lock().await;
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path();
+    let data = home.join(".deep-find");
+    std::fs::create_dir_all(&data).unwrap();
+
+    // Point HOME at the tempdir so df_ipc::data_dir() == <home>/.deep-find.
+    // Save/restore because HOME is process-global.
+    let prev_home = std::env::var_os("HOME");
+    std::env::set_var("HOME", home);
+
+    // Seed settings.json with an ignore rule for *.log files.
+    df_index::Settings::save(
+        &data,
+        &df_index::Settings {
+            ignore: vec!["*.log".into()],
+        },
+    )
+    .unwrap();
+
+    let root = home.join("root");
+    std::fs::create_dir_all(&root).unwrap();
+    // A baseline text file (NOT ignored) the watch will pick up.
+    std::fs::write(root.join("keep.txt"), b"needle here").unwrap();
+
+    // Build a default DB + the watched named DB "w" (cold layer seed).
+    let db_path = data.join("db/index.dfdb");
+    build_content_index(
+        &root,
+        &db_path,
+        &data.join("db/content"),
+        &ContentBuildOptions::default(),
+    )
+    .unwrap();
+    let w_db = data.join("db/w/index.dfdb");
+    build_content_index(
+        &root,
+        &w_db,
+        &data.join("db/w/content"),
+        &ContentBuildOptions::default(),
+    )
+    .unwrap();
+    let mut reg = df_index::Registry::load(&data);
+    reg.upsert(df_index::DbRecord {
+        name: "w".into(),
+        root: root.clone(),
+        db_path: w_db.clone(),
+        content_dir: data.join("db/w/content"),
+    });
+    reg.save().unwrap();
+
+    let socket = data.join("daemon.sock");
+    std::env::set_var("DEEPFIND_WATCH", "1");
+    let sock = socket.clone();
+    let dbp = db_path.clone();
+    let server = tokio::spawn(async move { deepfindd::serve(&sock, &dbp).await });
+    // Give the watcher a moment to install.
+    tokio::time::sleep(Duration::from_millis(300)).await;
+
+    // Sanity: the kept (non-ignored) baseline file is searchable.
+    let req = SearchRequest {
+        query: "needle".into(),
+        scope: None,
+        limit: None,
+        opts: SearchOptions::default(),
+        db: Some("w".into()),
+    };
+    let (_b, got) = query_and_collect(&socket, req).await;
+    assert!(
+        got.iter().any(|p| p.ends_with("keep.txt")),
+        "baseline keep.txt must be searchable: {got:?}"
+    );
+
+    // Write an IGNORED file (*.log) containing the needle. df-watch must NOT
+    // fold it into the overlay — it stays absent from queries.
+    std::fs::write(root.join("noise.log"), b"needle in log").unwrap();
+
+    // Poll for the convergence window; the ignored file must NEVER appear.
+    let deadline = std::time::Instant::now() + Duration::from_secs(15);
+    let mut leaked = false;
+    while std::time::Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(500)).await;
+        let req = SearchRequest {
+            query: "needle".into(),
+            scope: None,
+            limit: None,
+            opts: SearchOptions::default(),
+            db: Some("w".into()),
+        };
+        let (_b, got) = query_and_collect(&socket, req).await;
+        if got.iter().any(|p| p.ends_with("noise.log")) {
+            leaked = true;
+            break;
+        }
+    }
+
+    std::env::remove_var("DEEPFIND_WATCH");
+    server.abort();
+    match prev_home {
+        Some(v) => std::env::set_var("HOME", v),
+        None => std::env::remove_var("HOME"),
+    }
+    assert!(
+        !leaked,
+        "ignored *.log file leaked into the overlay (df-watch must skip ignored paths)"
+    );
+}
+
 /// With no index present, serve() still binds + answers (empty result), so the
 /// background builder (Task 2.3) can populate it later without a restart.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
