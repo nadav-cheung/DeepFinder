@@ -9,7 +9,7 @@ tool. Filename search is inspired by [Everything](https://www.voidtools.com/) /
 > **Status: Rust rewrite shipped.** Dual-layer trigram index — plocate-style
 > filename layer (pread) + zoekt-style content shards (mmap) — behind one shared
 > candidate engine, served by a resident daemon over a Unix socket to a thin CLI.
-> The non-UI scope is feature-complete (Phases A–F delivered; 163 tests green).
+> The non-UI scope is feature-complete (Phases A–F delivered; 193 tests green).
 > GUI / interactive TUI are deferred.
 >
 > Full architecture: [`docs/architecture.md`](docs/architecture.md);
@@ -27,6 +27,9 @@ tool. Filename search is inspired by [Everything](https://www.voidtools.com/) /
   `--filename` layer select.
 - **Expression language** — `--expr` (`-name/-path/-size/-newer` + boolean + parens).
 - **Multi-DB** — `deepfind db add/remove/list`; `search --db <name>`.
+- **Ignore list** — `~/.deep-find/settings.json` holds a global gitignore-style
+  ignore list (union with `.gitignore`/`--skip`), applied to every build + scan.
+  Manage with `deepfind config ignore add/remove/list` (or `config show`).
 - **Process model** — resident daemon + thin CLI; daemon down → CLI auto-falls
   back to `--direct` online scan.
 - **Incremental** — `df-watch` (notify/FSEvents) folds live edits into a hot

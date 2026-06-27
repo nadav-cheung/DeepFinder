@@ -1,6 +1,6 @@
 # DeepFind — System Architecture
 
-> **Status:** Updated 2026-06-27 (v0.1.6) to reflect the code **actually built** on `main` (not a design vision). Phases A–F are fully delivered, plus Full Disk Access detection + `deepfind doctor`, **true incremental indexing via an LSM hot overlay (WAL + compaction + safety-net)**, background index builds, the multi-DB registry, and a **single-instance daemon guard**. 163 tests green.
+> **Status:** Updated 2026-06-27 (v0.1.6) to reflect the code **actually built** on `main` (not a design vision). Phases A–F are fully delivered, plus Full Disk Access detection + `deepfind doctor`, **true incremental indexing via an LSM hot overlay (WAL + compaction + safety-net)**, background index builds, the multi-DB registry, a **single-instance daemon guard**, and a **global `settings.json` ignore list + `deepfind config` subcommand**. 193 tests green.
 > **In one sentence:** a plocate-style filename index + zoekt-style content shards, behind a single shared trigram candidate engine, served by a resident daemon over a Unix socket to a thin CLI — with an LSM hot overlay absorbing live edits between compactions.
 > Diagrams are Mermaid (rendered natively by GitHub / VS Code / GitLab); byte-level on-disk layouts use ASCII.
 
@@ -97,7 +97,7 @@ flowchart BT
 
 ## 4. Dual-layer storage model
 
-Two **fully independent** cold file families — the filename DB and the content shards — live under `~/.deep-find/`, fed simultaneously by a single walk. Beside them sit the daemon's operational files: `overlay.wal` (the hot overlay's WAL, fed by df-watch), `.indexing` (the in-flight build marker), `dbs.toml` (the registry), and `daemon.lock` (the singleton). The cold on-disk layouts are below; the overlay's in-memory + WAL model is §4.4.
+Two **fully independent** cold file families — the filename DB and the content shards — live under `~/.deep-find/`, fed simultaneously by a single walk. Beside them sit the daemon's operational files: `overlay.wal` (the hot overlay's WAL, fed by df-watch), `.indexing` (the in-flight build marker), `dbs.toml` (the registry), `settings.json` (the global ignore list + config), and `daemon.lock` (the singleton). The cold on-disk layouts are below; the overlay's in-memory + WAL model is §4.4.
 
 ```mermaid
 flowchart LR
@@ -105,6 +105,7 @@ flowchart LR
         SOCK["daemon.sock<br/>(Unix domain socket)"]
         LOCK["daemon.lock<br/>(singleton flock)"]
         REG["dbs.toml<br/>(named-DB registry)"]
+        SET["settings.json<br/>(ignore list + config)"]
         subgraph dbdir["db/"]
             FN["index.dfdb<br/>① filename layer · single file · pread"]
             WAL["overlay.wal<br/>③ overlay WAL (append + fsync)"]
@@ -306,6 +307,8 @@ deepfind status
 deepfind doctor                 # self-diagnostic: Full Disk Access check + guidance
 deepfind db      add <name> <root> [--max-file-size N]
                  remove <name>   |   list
+deepfind config  show | ignore add <PATTERN> | ignore remove <PATTERN> | ignore list
+                 # manage ~/.deep-find/settings.json (global gitignore ignore list)
 deepfind install [--no-watch]      # macOS: install user LaunchAgent (login auto-start + KeepAlive + optional df-watch)
 deepfind uninstall                # stop daemon + delete plist
 deepfind search <query>
@@ -352,7 +355,7 @@ flowchart LR
 
 ## 11. Current status and known gaps (honest inventory)
 
-**Built and verified** (Phases A–F all delivered): dual-layer trigram (pread filename + mmap content) × shared candidate engine × daemon + CLI process model × smart-case × boolean AST × **filename + content regex** × `-n/-C` line-number context × layer-selection / path-mode / hidden / sort / early-exit × bfs `--expr` × **multi-DB + `dbs.toml` registry + registry hot-reload** × **lockless ArcSwap hot-swap** × **background index builds (`index_job`) + live progress in `status`** × **LSM incremental: hot overlay + WAL + compaction + daily safety-net (`df-watch`)** × **single-instance daemon guard** × **Full Disk Access detection + `deepfind doctor` guidance**. 163 tests green, clippy/fmt clean, daemon + CLI verified end-to-end. Decision detail in [decisions.md](decisions.md); baselines in [perf-baseline.md](perf-baseline.md).
+**Built and verified** (Phases A–F all delivered): dual-layer trigram (pread filename + mmap content) × shared candidate engine × daemon + CLI process model × smart-case × boolean AST × **filename + content regex** × `-n/-C` line-number context × layer-selection / path-mode / hidden / sort / early-exit × bfs `--expr` × **multi-DB + `dbs.toml` registry + registry hot-reload** × **lockless ArcSwap hot-swap** × **background index builds (`index_job`) + live progress in `status`** × **LSM incremental: hot overlay + WAL + compaction + daily safety-net (`df-watch`)** × **single-instance daemon guard** × **global `settings.json` ignore list + `config` subcommand** × **Full Disk Access detection + `deepfind doctor` guidance**. 193 tests green, clippy/fmt clean, daemon + CLI verified end-to-end. Decision detail in [decisions.md](decisions.md); baselines in [perf-baseline.md](perf-baseline.md).
 
 **Designed but not yet built** (the performance-hardening layer — D2 left **none** of its speculative optimizations in place after measurement):
 
@@ -383,7 +386,7 @@ flowchart LR
 
 ```
 cargo build --workspace
-cargo test --workspace          # 163 tests
+cargo test --workspace          # 193 tests
 cargo clippy --workspace --all-targets -D warnings
 cargo fmt --all -- --check
 ```
@@ -400,6 +403,7 @@ cargo fmt --all -- --check
 | **LSM overlay (MemTable) + WalRecord codec** | `crates/df-content/src/overlay.rs` |
 | **overlay WAL persistence + replay** | `crates/df-index/src/overlay_store.rs` |
 | **named-DB registry (`dbs.toml`)** | `crates/df-index/src/registry.rs` |
+| **global settings (`settings.json`) + ignore matcher** | `crates/df-index/src/settings.rs`, `content_build.rs` (`compile_ignore_matcher`) |
 | streaming build + text gate | `crates/df-index/src/content_build.rs` |
 | pread/mmap source | `crates/df-index/src/lib.rs`, `mmap_source.rs` |
 | Full Disk Access probe | `crates/df-index/src/permissions.rs` |

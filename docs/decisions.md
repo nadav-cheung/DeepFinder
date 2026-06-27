@@ -30,6 +30,7 @@
 | 0016 | Index build = daemon background task submitted over the socket; progress via status | 2026-06-26 | Accepted |
 | 0017 | True incremental = LSM hot overlay (Overlay + WAL + compaction + safety-net); supersedes 0009 | 2026-06-26 | Accepted |
 | 0018 | Single-instance daemon guard via advisory `flock` on `daemon.lock` | 2026-06-26 | Accepted |
+| 0019 | Global `settings.json` config with a gitignore ignore list + `config` subcommand | 2026-06-27 | Accepted |
 
 ---
 
@@ -276,3 +277,15 @@ Revisit when benchmarking incremental latency on a large corpus.
 **Decision.** Serialize daemon startup with an exclusive, non-blocking advisory `flock` (`LOCK_EX | LOCK_NB`) on `<socket dir>/daemon.lock`, held for the daemon's lifetime (`deepfindd::singleton`). Because `flock` is owned by the live open file description, the kernel releases it automatically on crash/exit — **no stale lock to clean up**, unlike the socket file (which is still removed on startup, now safe to do under the lock since no peer can be live). A second acquire returns `EWOULDBLOCK`, surfaced as a clear "deepfindd already running" error. Unix-only (`#![cfg(unix)]`); the project targets apple-darwin.
 
 **Consequences.** At most one daemon per `$HOME`; the manual-start-vs-launchd race resolves with the loser bailing cleanly. No lock-cleanup logic is needed (kernel-managed lifetime). It does **not** prevent a second daemon under a different `$HOME` / data dir — by design, those are independent instances.
+
+---
+
+## ADR-0019 — Global `settings.json` config with a gitignore ignore list + `config` subcommand
+
+**Date:** 2026-06-27 · **Status:** Accepted
+
+**Context.** DeepFind pruned a hardcoded `DEFAULT_SKIP` and offered `--skip NAME` per build, but had no persistent, user-editable, whole-disk ignore list, and `--direct` online scan applied **no** skip at all. Users wanted to permanently exclude paths/patterns (`**/.venv`, `*.log`, `/Users/x/Secret`) across all DBs and scans without retyping flags.
+
+**Decision.** A global `~/.deep-find/settings.json` (JSON, `#[serde(default)]` for forward/back-compat) whose first field is `ignore: Vec<String>` of **gitignore-glob** patterns, **unioned** with the `ignore` walker's `standard_filters` (`.gitignore`) and the existing `extra_skip` name-pruning — all three apply, none replaces another. Patterns compile to an in-memory `ignore::gitignore::Gitignore` rooted at each walk's root; an absolute path under the root is normalized to its anchored root-relative form (a raw `/Users/x/Secret` otherwise silently matches nothing — a false-sense-of-security bug caught in review). Applied at every index build (loaded once in `tracked_build`, covering on-demand/startup/compaction/safety-net), `--direct` scan, and df-watch (matcher recompiled **per debounce batch**, so a `config ignore add` during a running watch is honored by the next event). Managed by `deepfind config show` / `config ignore add|remove|list`. New `df-index::settings` module (next to `registry.rs`); `df-core` stays zero-I/O.
+
+**Consequences.** One persistent global ignore list; no per-build flags; `--direct`'s no-skip gap closed. **No file watcher** on `settings.json` (§10's hot-reload exclusion stands) — each consumer reads at use time, so a change takes effect on the next build / `--direct` scan / df-watch event. Already-indexed-but-now-ignored files drop at the next compaction/safety-net rebuild (documented, tested). Design spec: [`docs/superpowers/specs/2026-06-27-settings-json-design.md`](superpowers/specs/2026-06-27-settings-json-design.md).
