@@ -9,7 +9,7 @@ jobs:
   test:
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -25,7 +25,7 @@ jobs:
     # Uses `cargo check` (no tests) — only proves the floor builds.
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.96
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.100
       - name: Check (MSRV 1.96)
         run: cargo check --workspace --all-targets
